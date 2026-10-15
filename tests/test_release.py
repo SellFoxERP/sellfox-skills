@@ -145,7 +145,7 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
     def test_17_release_archive_excludes_private_files(self):
         self.run_script(self.root,'build_release.py')
         import zipfile
-        with zipfile.ZipFile(self.root/'dist/sellfox-skills-workbuddy.zip') as z:
+        with zipfile.ZipFile(self.root/'dist/sellfox-skills.zip') as z:
             paths=z.namelist()
             self.assertEqual(sum(n.endswith('/SKILL.md') for n in paths),9)
             for n in paths:

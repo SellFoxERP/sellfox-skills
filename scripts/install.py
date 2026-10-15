@@ -65,11 +65,11 @@ def install(destination: Path, update: bool = False):
             raise
     print(f'已一次安装全部 {len(names)} 个技能：{destination}')
     print(f'统一配置目录：{destination / SHARED_NAME / "config"}')
-    print('请在 WorkBuddy 已安装技能中确认九个技能，并在新任务中测试。')
+    print('请在所用客户端中确认九个技能可用，并在新任务中测试。')
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--skills-dir', type=Path, default=Path.home()/'.workbuddy/skills', help='WorkBuddy 实际技能目录，默认 ~/.workbuddy/skills；可按客户端配置覆盖')
+    p.add_argument('--skills-dir', type=Path, default=Path.home()/'.workbuddy/skills', help='目标客户端的技能目录；不传时沿用 ~/.workbuddy/skills，其他客户端请显式指定')
     p.add_argument('--update', action='store_true', help='升级本安装器管理的安装，保留配置和运行产物')
     args=p.parse_args()
     try:

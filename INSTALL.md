@@ -1,19 +1,19 @@
-# 在 WorkBuddy 中批量安装赛狐技能
+# 在 AI 客户端中批量安装赛狐技能
 
-本指南安装全部 9 个技能，一份共享配置供它们复用。完整 ZIP 是**批量安装分发包**，不是声称 WorkBuddy“上传技能”入口支持一次导入多技能 ZIP。
+本指南安装全部 9 个技能，一份共享配置供它们复用。完整 ZIP 是**批量安装分发包**，由本项目安装器复制到目标技能目录，不依赖某个客户端的多技能 ZIP 导入功能。
 
 ## 1. 准备
 
-- WorkBuddy 桌面客户端，能够使用自定义 MCP、技能和本地脚本。
+- 支持技能目录（SKILL.md）、自定义 MCP 和本地 Python 脚本的 AI 客户端。WorkBuddy 可作为使用示例；仅支持聊天或 MCP、无法读取本地技能及执行脚本的环境不能直接运行完整流程。
 - 商家自己的赛狐 MCP 地址与 `X-MCP-Key`，由赛狐提供；本仓库不附带任何凭证。
 - Python 3.10 或更新版本。Mac/Linux 检查 `python3 --version`；Windows 检查 `py -3 --version`。若低于 3.10，先选择已安装的新版本或安装 Python。
 - 核心计算仅依赖标准库。需要广告 xlsx 解析时安装 `openpyxl`；复杂 YAML 配置建议安装 PyYAML：`python3 -m pip install -r requirements-optional.txt`。
 
 ## 2. 配置 Sellfox-MCP
 
-在 WorkBuddy 的连接器/MCP 设置中添加远程服务，名称建议为 `Sellfox-MCP`，协议选择 **Streamable HTTP**，填写赛狐提供的 HTTPS 地址，在请求头中添加 `X-MCP-Key`。
+在所用客户端的连接器/MCP 设置中添加远程服务，名称建议为 `Sellfox-MCP`，协议选择 **Streamable HTTP**，填写赛狐提供的 HTTPS 地址，在请求头中添加 `X-MCP-Key`。
 
-以下是 JSON 配置示例；URL 与 Key 必须替换。不同客户端的传输类型字段可能不同，以当前 WorkBuddy 界面或导出格式为准，不把其他客户端的 `http` 写法当成通用要求。
+以下是采用 `mcpServers` 结构的 JSON 示例，并非所有客户端均可直接粘贴使用；URL 与 Key 必须替换。不同客户端的传输类型字段可能不同，以所用客户端的设置界面或导出格式为准，不把其他客户端的 `http` 写法当成通用要求。
 
 ```json
 {
@@ -28,7 +28,7 @@
 }
 ```
 
-保存并在当前任务启用连接器。如果看不到工具，新建任务或重新加载客户端。对 WorkBuddy 说：
+保存并在当前任务启用连接器。如果看不到工具，新建任务或重新加载客户端。对 AI 助手说：
 
 > 检查 Sellfox-MCP 是否能连接，列出 help、search、action 工具。只查询店铺列表验证访问，不执行写操作，不展示 Key。
 
@@ -36,25 +36,25 @@
 
 ## 3. 一次安装全部技能
 
-从 GitHub 下载完整仓库（Code → Download ZIP），或下载 Release 附件 `sellfox-skills-workbuddy.zip`，解压。
+从 GitHub 下载完整仓库（Code → Download ZIP），或下载 Release 附件 `sellfox-skills.zip`，解压。
 
-**可以直接把下面的话发给 WorkBuddy，并选择解压后的目录：**
+**可以直接把下面的话发给所用客户端的 AI 助手，并选择解压后的目录：**
 
-> 请阅读这个目录的 INSTALL.md，确认 Python 至少 3.10，确认当前 WorkBuddy 使用的技能目录，然后运行 scripts/install.py 一次安装全部 9 个技能。不要逐个导入，不配置或输出我的 Key；若有同名安装，先说明升级会保留哪些配置。
+> 请阅读这个目录的 INSTALL.md，确认 Python 至少 3.10，确认当前客户端使用的技能目录，然后运行 scripts/install.py 一次安装全部 9 个技能。不要逐个导入，不配置或输出我的 Key；若有同名安装，先说明升级会保留哪些配置。
 
-也可以在解压目录运行：
+也可以在解压目录运行，明确指定当前客户端的实际技能目录：
 
 ```bash
 # Mac / Linux
-python3 scripts/install.py
+python3 scripts/install.py --skills-dir "/实际的技能目录"
 # Windows
-py -3 scripts/install.py
+py -3 scripts/install.py --skills-dir "C:\实际的技能目录"
 ```
 
-默认目标为用户主目录下 `.workbuddy/skills`。若客户端实际使用另一目录，明确指定：
+为兼容已有用法，安装器不传参数时仍默认使用用户主目录下 `.workbuddy/skills`。**其他客户端必须传 `--skills-dir`**；不要把源码目录或技能目录的上一级误作为目标。WorkBuddy 的默认目录示例：
 
 ```bash
-python3 scripts/install.py --skills-dir "/实际的技能目录"
+python3 scripts/install.py --skills-dir "~/.workbuddy/skills"
 ```
 
 安装结果：
@@ -66,7 +66,7 @@ python3 scripts/install.py --skills-dir "/实际的技能目录"
 └── .sellfox-install.json               # 本安装器的管理标记
 ```
 
-安装器不会改 MCP 设置，不访问网络、不发送消息；遇到同名目录默认停止。安装后在“已安装技能”中确认九个技能已启用；若未显示，确认目标目录并重新加载客户端。此路径支持由安装器临时目录测试验证，客户端发现与触发仍需在对应 WorkBuddy 版本验收。
+安装器不会改 MCP 设置，不访问网络、不发送消息；遇到同名目录默认停止。安装后在客户端的技能列表或对应检查入口确认九个技能可用；若未显示，确认目标目录并重新加载客户端。此路径支持由安装器临时目录测试验证，客户端发现与触发仍需在对应客户端版本验收。
 
 ## 4. 第一次使用与配置
 
@@ -98,7 +98,7 @@ python3 scripts/install.py --skills-dir "/实际的技能目录"
 
 ## 6. 升级、迁移与卸载
 
-升级前备份商家配置，下载新版完整包，在解压目录运行 `python3 scripts/install.py --update`，自定义目录需同时传 `--skills-dir`。升级保留现有 `config/`、`out/`、`logs/`，更新代码和文档；新增配置键需对照新版说明按需补充。
+升级前备份商家配置，下载新版完整包，在解压目录运行 `python3 scripts/install.py --skills-dir "/实际的技能目录" --update`，始终使用初次安装的目标目录。升级保留现有 `config/`、`out/`、`logs/`，更新代码和文档；新增配置键需对照新版说明按需补充。
 
 移动安装目录后重新运行安装器并指定新目标，以更新共享路径。卸载时在客户端移除九个技能；确认不再需要数据后再清理 `_sellfox_shared` 和管理标记。不要移除其他技能。
 
@@ -114,4 +114,4 @@ python3 scripts/install.py --skills-dir "/实际的技能目录"
 | 只有部分数据 | 按当前契约分页，披露覆盖数量；单页成功不等于全量完成 |
 | 缺少 `openpyxl` | 安装可选依赖，或按技能支持的降级路径处理 |
 
-官方入口说明：[技能](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market)、[连接器](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Connector)。菜单可能随客户端版本调整。这里采用项目提供的批量安装器，不依赖官方未明确说明的多技能 ZIP 导入行为。
+WorkBuddy 示例的官方入口说明：[技能](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market)、[连接器](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Connector)。其他客户端请查阅其官方技能与 MCP 配置说明。菜单、技能目录及启用方式可能随版本调整；没有完成实际客户端测试前，不宣称已经全面兼容。
