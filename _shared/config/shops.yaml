@@ -1,0 +1,32 @@
+# ============================================================================
+# 店铺与负责人（shops.yaml）
+# ============================================================================
+# 影响技能：技能 1「每日经营日报」、技能 2「库存健康与补货」（告警路由）。
+#
+# 用途：
+#   1. 日报按店铺分组、按负责人分发；
+#   2. 异常告警 @ 对应负责人（feishu_open_id）。
+#
+# shop_id 可从 get_shop_page_list 获取（该工具返回 data.rows[]，含 id/name/marketplaceId）。
+# ⚠️ 店铺清单可缓存，不必每天调用 get_shop_page_list。
+
+shops:
+  # - id: "10001"
+  #   name: "美国站-主店"
+  #   marketplace: US
+  #   owner: "张三"
+  #   feishu_open_id: "ou_xxxxx"    # 用于告警 @ 人（飞书 open_id）
+  # - id: "10002"
+  #   name: "德国站-主店"
+  #   marketplace: DE
+  #   owner: "李四"
+  #   feishu_open_id: "ou_yyyyy"
+
+# 日报默认覆盖范围（留空 = 全部店铺）
+default_scope: []
+
+# 告警路由兜底负责人（找不到店铺负责人时使用）。
+# 留空则技能只输出告警、不 @ 人，并标注「未配置负责人」。
+alarm_default_owner:
+  name: ""
+  feishu_open_id: ""

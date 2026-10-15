@@ -1,0 +1,77 @@
+# ============================================================================
+# 广告优化器技能配置（optimizer.yaml）—— 技能自有
+# ============================================================================
+# 这里只放「技能专有」的参数。阈值类（ACOS 上限、目标值、审批闸门等）一律
+# 读 _shared/config/thresholds.yaml，绝不在此重复或硬编码。
+# 修改后无需重启：每次执行重新读取。
+# ============================================================================
+
+# ---------- 数据源 ----------
+# Amazon 广告没有「按 campaign 直接查绩效」的只读工具，绩效数据有两条路：
+#   ① download_task（推荐，L1 只读性质的写）：create_ad_download_task → 轮询
+#      get_ad_download_task_page_list 拿 downloadUrl → 下载 xlsx 解析。
+#   ② custom_report（兜底）：get_custom_report_page_list 的广告字段，但那是
+#      MSKU/商品维度，无法归因到 campaign，只用于店铺级汇总与人工排查。
+# v3：下载任务链（创建/轮询/下载）由 agent 按取数计划执行并把 xlsx 落盘
+#     out/raw/perf_campaign_<end>.xlsx 等；poll_interval_sec / max_polls 仅作为
+#     agent 轮询的建议节奏，脚本不再读取（脚本只解析已落盘的本地 xlsx）。
+data_source:
+  perf_primary: "download_task"            # download_task | custom_report | none
+  download_task:
+    ad_type_code: "sp"                     # sp | sb | sd
+    campaign_report_type: "adCampaignReport"   # 活动级绩效
+    target_report_type: "adTargetReport"       # 投放/关键词级绩效
+    time_unit: "summary"                   # summary | daily
+    poll_interval_sec: 10                  # 轮询进度间隔（agent 轮询建议值）
+    max_polls: 30                          # 最多轮询次数（约 5 分钟，agent 建议值）
+  custom_report:
+    report_id: ""                          # 可选：含 adCost/adClicks 等字段的自定义报表 ID
+    purpose: "广告指标兜底（MSKU 级，仅店铺汇总，不用于 campaign 归因）"
+
+# ---------- 绩效字段映射 ----------
+# xlsx 的列名以「实际导出文件」为准；此处给出候选名，脚本按顺序做归一化匹配。
+# 若某指标全部候选都匹配不到 → 该指标标「无数据」，绝不写 0。
+perf_columns:
+  campaign_id: ["campaignId", "campaign_id", "Campaign ID", "CampaignId"]
+  campaign_name: ["campaignName", "campaign_name", "Campaign Name"]
+  keyword_id: ["keywordId", "keyword_id", "Keyword ID", "KeywordId"]
+  keyword_text: ["keywordText", "keyword", "Keyword Text", "Keyword"]
+  group_id: ["adGroupId", "groupId", "ad_group_id", "Ad Group ID"]
+  cost: ["cost", "adCost", "spend", "Spend", "Cost"]
+  sales: ["sales", "adSales", "attributedSales14d", "Sales", "attributedSalesSameSku14d"]
+  orders: ["orders", "adOrderNum", "purchases14d", "Orders", "purchasesSameSku14d"]
+  clicks: ["clicks", "adClicks", "Clicks"]
+  impressions: ["impressions", "adImpressions", "Impressions"]
+  acos: ["acos", "ACOS"]
+  roas: ["roas", "ROAS"]
+  click_rate: ["adClickRate", "clickRate", "CTR", "Click-Through Rate"]
+
+# ---------- 提案幅度（仍受 thresholds.approval.max_budget_change_pct ≤±30% 硬约束）----------
+proposal:
+  bid_step_pct: 15                # 竞价单次下调/上调幅度 %
+  budget_step_pct: 20             # 预算单次调整幅度 %
+  keyword_min_clicks: 10          # 关键词级规则最小点击数（样本不足不判定）
+  scale_max_impressions: 1000     # 「曝光不足」阈值（用于优质词扩量判定）
+  acos_min_orders: 3              # ACOS 规则要求的最小订单数（样本量保护）
+
+# ---------- 范围与安全阀（硬截断，必须披露覆盖范围）----------
+scope:
+  max_campaigns: 100              # 单次拉取广告活动上限
+  max_keywords: 200               # 单次拉取关键词上限
+  max_perf_rows: 500              # 单次绩效行数上限
+
+# ---------- 写操作开关（默认从最安全的动作起步）----------
+# 建议：先跑 2~4 周纯 dry-run，团队认可后再逐项打开。
+safety:
+  allow_campaign_state_edit: true    # edit_sp_campaign 改 state（campaignId 已实测确认）
+  allow_campaign_budget_edit: true   # edit_sp_campaign 改 budget（campaignId 已实测确认）
+  # ⚠️ edit_sp_targeting 的 targetId 语义未经实测确认（关键词的 targetId 是否等于
+  #    keywordId 未知），默认关闭；打开前请先用一条低风险关键词人工验证。
+  allow_keyword_bid_edit: false
+  # ⚠️ 加否定词需要关键词/搜索词级数据支撑，且在哪个广告组落地需人工判断，默认关闭。
+  allow_negative_keyword_create: false
+
+# ---------- 审批路由 ----------
+approval:
+  owner_open_id: ""               # 广告负责人飞书 open_id（@ 人用）；留空则只出提案不 @
+  folder_token: ""                # 审批文档所在飞书文件夹 token（留空用环境变量 FEISHU_FOLDER_TOKEN）

@@ -1,0 +1,91 @@
+# ============================================================================
+# 指标治理配置（metric_governance.yaml）—— 技能 7 特有
+# ============================================================================
+# 本文件由**使用者维护**。技能读取，绝不硬编码。
+# 通用配置（报表 ID / 审批闸门 / 预警阈值）引用 _shared/config/：
+#   - report_id  → _shared/config/reports.yaml（一等前置）
+#   - 审批上限   → _shared/config/thresholds.yaml → approval
+#   - 口径白皮书 → _shared/METRIC_FORMULAS.md
+# ============================================================================
+
+# 默认只演练：true 时脚本不执行任何 add/update（安全默认）。
+dry_run_default: true
+
+# 取现有自定义指标时的行数安全阀（服务端硬上限 20 行/页；此处为客户端硬截断上限）。
+# 截断发生时脚本**必须**在输出中披露覆盖范围，禁止静默截断。
+max_rows: 100
+
+# 单次提案条数上限。不得大于 _shared/config/thresholds.yaml → approval.max_items_per_batch(20)。
+# 超限则分批，分别审批。
+max_proposals_per_run: 20
+
+# 演示/沙箱环境策略（铁律 11）。
+demo_policy:
+  block_feishu_write: true     # 命中演示指纹时默认阻断写飞书
+  block_write_execute: true    # 演示环境下即使人工批准也不执行写（只跑 dry-run）
+  watermark: true              # 输出顶部加「演示数据」水印
+
+# 拟治理的报表范围（键名对应 _shared/config/reports.yaml）。
+# 仅用于把 report_id_list 传给 get_custom_report_index_page_list 做过滤；
+# 为空则治理全部（口径降级，输出中须标注）。
+target_reports:
+  - daily_ops
+  - profit
+
+# 变更日志路径（累计闸与审计读取）。
+change_log_path: ad_changes.jsonl
+
+# 写后回读时，现有指标列表里公式字段的候选名。
+# ⚠️ get_custom_report_index_page_list 的响应字段名**未经实测**，
+#    脚本按顺序探测；全部未命中则标注「回读字段名未知，需人工核查」。
+readback_formula_fields:
+  - indexFormula
+  - formula
+  - index_formula
+
+# 回读时用于匹配指标的候选 ID 字段名（同样未经实测）。
+readback_id_fields:
+  - id
+  - indexId
+  - index_id
+
+# ----------------------------------------------------------------------------
+# 待治理指标清单（desired_indices）—— 与 _shared/METRIC_FORMULAS.md 对齐
+# ----------------------------------------------------------------------------
+# 每个条目：
+#   name          指标名称（写入赛狐 index_name）
+#   type          指标类型：0 其他 / 1 数量 / 2 货币 / 3 百分比
+#   formula       指标公式（index_formula）。⚠️ 语法无官方文档：
+#                 仅当已人工确认时才填；未确认请留空并置 formula_status: needs_human
+#   formula_status  verified（已人工确认，可进入提案）/ needs_human（不进入提案）
+#   source_fields  口径依据字段（**必须已在 当前 MCP 契约与共享字段字典 / 06-字段字典中核对存在**）
+#   comment        写入赛狐的指标注释（写清口径、利润口径、币种、时区）
+#
+# ⚠️ 说明：index_formula 的语法（运算符/字段记号/引用方式）在 137 个工具文档中
+#    均无说明。示例条目的 formula 一律留空，等业务方在赛狐网页端确认语法后回填。
+# ============================================================================
+
+desired_indices:
+  # 客单价：销售额 / 订单数。字段 productSales、orderNum 均在 get_custom_report_page_list。
+  - name: 客单价-公司口径
+    type: "2"                 # 货币
+    formula: ""               # ← 待业务方确认语法后回填
+    formula_status: needs_human
+    source_fields: ["productSales", "orderNum"]
+    comment: "= 销售额/订单数；利润口径 settlement；币种 USD（自定义报表 currency）；业务日以 bizDay 为准"
+
+  # 广告成本占比：|cpcCost| / productSales（cpcCost 为负数费用，须取绝对值）。
+  - name: 广告成本占比-公司口径
+    type: "3"                 # 百分比
+    formula: ""
+    formula_status: needs_human
+    source_fields: ["cpcCost", "productSales"]
+    comment: "= |广告花费|/销售额；cpcCost 为负数，公式须取绝对值；币种 USD"
+
+  # 毛利率：直接采用赛狐现成口径，不自算（避免与业务方对不上账）。
+  - name: 毛利率-公司口径
+    type: "3"
+    formula: ""
+    formula_status: needs_human
+    source_fields: ["grossProfitRate"]
+    comment: "直接采用赛狐 grossProfitRate；口径由 profit_caliber_type 决定"

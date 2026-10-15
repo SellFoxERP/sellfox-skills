@@ -1,0 +1,71 @@
+{
+  "skill_name": "daily-ops-report",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我出一份昨天的经营日报，发给我看看，重点标一下异常",
+      "expected_output": "按《每日巡店 SOP》7 步输出双分层日报：L1 结论层（红线 ≤5 条 + GMV/订单/毛利/毛利率/ACOS/CVR + 一句话结论）与 L2 明细层（STEP 01 账户 → 07 政策逐项：指标 + 异常 + 归因 + 建议）；异常判定读 _shared/config/thresholds.yaml，不硬编码；必带「数据说明」区块并标注拿不到的项为「需人工核查」、空数据标「无数据」不写 0。仅单个自然日快照。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "report_id 还没配，先给我跑一版今天的日报",
+      "expected_output": "触发首轮引导（提示去赛狐创建自定义报表并给出勾选字段清单），自动降级：用 get_profit_report_by_shop 的 reportList + get_online_product_page_list，并在日报顶部标注「口径降级：缺少自定义报表，部分指标不可用」；不崩、不静默。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "把这份日报推到飞书文档",
+      "expected_output": "走 _shared/scripts/feishu_writer.py 写入，写入前 mask_pii 脱敏、先过 guard_demo 演示环境闸门（演示环境默认阻断）；文档 block 映射严格按 references/report-template.md。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "帮我出一下这周的业务周报，看下目标达成率",
+      "expected_output": "不应触发本技能（周报/目标达成率属 weekly-review）；本技能 description 明确排除周报/月报/目标达成率。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "昨天的日报里加上各平台销量对比，TikTok 和沃尔玛的也要",
+      "expected_tools": ["get_multiplatform_sale_stats"],
+      "expected_output": "启用跨平台销量步骤：type=salePrice、group_type=shop、stat_time_type=1；platform_id_list 按契约枚举传值（tiktok=6、walmart=4，不猜未声明的值）；分页参数类型按当次契约（该工具为 string）；返回行含多币种（USD/GBP/SGD…）时不得跨币种直接合计，按币种分组展示；数据说明标注本次覆盖的平台范围。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "日报改用发货口径再出一版",
+      "expected_tools": ["get_profit_report_by_shop"],
+      "expected_output": "profit_caliber_type=shipment 显式传参（enum：settlement/shipment）；date_type=2、日期 yyyyMMdd；注意新契约中该工具 page_no/page_size 为 integer（与店铺列表的 string 相反），按当次 search 契约构造；报告首部标注「利润口径：shipment」，与上一版 settlement 结果分列不混用，差异解释为口径原因（确认时点不同）而非数据错误。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "只要美国站的日报，其他站点不用",
+      "expected_tools": ["get_profit_report_by_shop", "get_custom_report_page_list"],
+      "expected_output": "站点过滤按契约参数名与类型传入（marketplace_ids/marketplace_code_list 等，以 search 结果为准）；报告覆盖范围披露「仅美国站」；过滤后无数据的环节标「无数据」，不写 0。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "昨天有异常的订单明细发我看看",
+      "expected_tools": ["get_order_page_list"],
+      "expected_output": "订单下钻取异常样本（列表字段 rows，日期格式按契约要求含时分秒）；订单含 buyerEmail/buyerName 等 PII——写入任何文档/飞书前必须脱敏并标注「已脱敏」；订单量截断时披露样本覆盖范围；空数据标「无数据」。",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "出昨天的日报 [[场景注入：action 调 get_custom_report_page_list 时网关返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "contract_version_mismatch",
+      "expected_output": "收到 CONTRACT_VERSION_MISMATCH 后不得重放原请求：重新 search 该 tool_id 一次 → 按新 inputSchema 重建参数 → 重试一次；仍失败则宽表指标标「⚠️ 需人工核查」并继续产出日报其余部分；数据说明记录「宽表契约变更，本次为重取后数据/或已降级」。",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "出昨天的日报 [[场景注入：调 get_profit_report_by_shop 时 page_no 误传了字符串，网关返回 INVALID_PARAMS，field_errors=[{path: page_no, rule: type}]，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "invalid_params_type_retry",
+      "expected_output": "按 field_errors 修正参数类型（page_no/page_size 传 integer）后重试成功；不得原样重放错误请求；参数类型以当次 search 契约为准，不沿用旧接口「全字符串」习惯；报告数据说明不需提及该内部重试（对读者透明）。",
+      "files": []
+    }
+  ]
+}

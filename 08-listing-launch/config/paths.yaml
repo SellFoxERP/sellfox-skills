@@ -1,0 +1,3 @@
+# 可选：共享底座绝对路径；留空自动使用包内 _shared 或源码同级 _shared。
+# 优先级：显式参数（支持时）> SELLFOX_SHARED_ROOT > 本配置 > 自动定位。
+shared_root: ""

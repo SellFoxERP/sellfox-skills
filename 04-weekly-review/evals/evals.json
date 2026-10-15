@@ -1,0 +1,57 @@
+{
+  "skill_name": "weekly-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我出一下上周的经营周报，带上目标达成率和 Top/Bottom ASIN 榜，推到飞书",
+      "expected_output": "含核心结论、目标达成率（或标注未配置目标）、核心指标环比/同比、Top/Bottom ASIN 榜、店铺明细、必填的数据说明区块；利润口径 settlement 显式标注；若为演示环境则顶部水印且默认阻断飞书写入",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "这周生意怎么样？跟上个月同期比一下，商品卖得好和差的分别是哪些",
+      "expected_output": "识别为周报场景；输出本周 vs 上周 vs 上月同期对比；给出 Top/Bottom ASIN 榜并披露榜单覆盖范围（若受 20 条/页截断）；空数据标「无数据」不写 0",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "出个月度经营总结，看下 9 月的 GMV 和毛利有没有完成月目标",
+      "expected_output": "识别为月报场景；本月 vs 月目标达成率（分级达标/预警/未达标）；缺失目标时标注「未配置目标值，无法计算达成率」而非编造；标注利润口径与币种口径",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "给我昨天的经营日报",
+      "expected_output": "不应触发本技能（这是日报技能 daily-ops-report 的场景）；本技能 description 明确将「昨日数据」排除",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Top 50 ASIN 榜拉出来，看下头部集中度",
+      "expected_tools": ["get_profit_report_by_msku"],
+      "expected_output": "get_profit_report_by_msku 分页取数（列表字段 reportList；新契约 page_no/page_size 为 integer，页上限以契约声明为准并实测核对）；拉不满 50 行时按 coverage/totalSize 披露「仅覆盖 Top N，其余未纳入」；禁止静默截断；榜单按指标排序口径标注。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "9 月跟去年 9 月比一下",
+      "expected_tools": ["get_profit_report_by_shop"],
+      "expected_output": "同比窗口构造正确（按月查询日期格式 yyyyMM、窗口限制按契约声明）；去年同期无数据时同比栏标「无数据/不可比」，不写 0 也不编增长率；同比口径（利润口径 settlement/shipment）显式标注。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "本月达成率怎么样",
+      "expected_tools": [],
+      "expected_output": "targets.yaml 未配置月目标时显式标注「未配置目标值，无法计算达成率」，并按统一交互规范一次性询问是否补全（可回写配置）；不编造目标值、不用上月值冒充目标。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "出上周周报 [[场景注入：get_profit_report_by_shop 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "contract_version_mismatch",
+      "expected_output": "重取契约一次并按新 schema 重建参数重试一次；仍失败则店铺利润指标标「⚠️ 需人工核查」，周报其余部分照常产出；数据说明记录契约变更事件；不中断整份周报。",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+# ============================================================================
+# 周报 / 月报技能专属配置（weekly.yaml）
+# ============================================================================
+# 影响技能：技能 4「周报/月报与目标追踪」。
+#
+# ⚠️ 本文件只放「本技能特有的取数窗口 / 榜单 / 截断安全阀」。
+#     业务阈值（预警）、经营目标、report_id、店铺清单一律在 _shared/config/ 维护，
+#     绝不在本文件重复维护，避免与底座分叉。
+#
+# 修改后无需重启：技能每次执行时重新读取。
+
+# ---------- 周期与时间窗 ----------
+period:
+  default: week              # 默认周期：week（周报）| month（月报）
+  week_start: monday         # 周起始日（monday | sunday）
+  # 业务日边界口径：以赛狐 bizDay 为准（yyyyMMdd）。多站点时区不同，
+  # 跨站点聚合时必须标注汇率来源与日期，见 references/metrics-and-fields.md。
+  timezone_mode: bizday
+  # 对比开关（是否启用同比），最终以 _shared/config/targets.yaml 的 compare 为准；
+  # 此处仅作技能级兜底。
+  compare:
+    wow: true                # 本周 vs 上周（环比）
+    prev_month: true         # 本周 vs 上月同期
+    yoy: true                # 同比（去年同周）
+    compare_type_list: [1, 2]  # get_product_analyze_* 的对比方式：1 环比 2 同比
+
+# ---------- 取数安全阀（服务端分页硬上限 20，必须客户端截断）----------
+# ⚠️ 截断发生时必须在报告中披露覆盖范围，禁止静默截断。
+limits:
+  max_rows_shops: 40         # get_shop_page_list 最大行数
+  max_rows_profit: 200       # get_profit_report_by_shop / _msku 最大行数
+  max_rows_custom: 80        # get_custom_report_page_list 最大行数
+  max_rows_analyze: 60       # get_product_analyze_list 最大行数
+  shop_batch_size: 20        # 店铺级取数每批 ≤20（与服务端上限对齐）
+
+# ---------- 榜单与趋势 ----------
+rankings:
+  top:
+    label: "Top ASIN（按销售额）"
+    order_by: product_sales    # 利润报表 order_by 用 snake_case：sales_num/product_sales/gross_profit/gross_profit_rate/roi
+    desc: true
+    n: 5
+  bottom:
+    label: "Bottom ASIN（按毛利升序）"
+    order_by: gross_profit
+    desc: false
+    n: 5
+  min_rows_for_rank: 5         # 榜单可用所需的最小行数，不足则标注覆盖不足
+
+# ---------- 榜单标识列字段映射（get_profit_report_by_msku）----------
+# ⚠️ 06-字段字典中 msku/asin/sku/title 的「出现于」均**不含** get_profit_report_by_msku，
+#    01 对该工具只写「字段结构与利润报表-店铺一致」，未列标识字段名 —— 即未确认。
+#    因此脚本不臆造：只在下面候选里命中时取值，全部落空则标「⚠️ 需人工核查」，
+#    并在报告「数据说明」披露「字段名待核实」。
+#    用一份真实响应核对后：把确认的字段名填到对应候选首位，并将 verified 置 true。
+rank_identifiers:
+  verified: false
+  msku_candidates: [msku, spu]        # 06 确认 get_profit_report_by_msku 有 spu
+  asin_candidates: [asin, parentAsin]
+  title_candidates: [title]
+
+trend:
+  enabled: true
+  points_max: 30               # 趋势图最大点数（周报=7，月报=30）
+  stat_time_type_week: 1       # get_product_analyze_detail：按日
+  stat_time_type_month: 4      # 按月
+
+# ---------- 自定义报表（489 宽表）字段映射 ----------
+# ⚠️ 字段名以 当前 MCP 契约与共享字段字典 / 当前 MCP 契约与共享字段字典 为准。
+# 宽表无字段选择参数，脚本在本地裁剪所需列后再计算。
+custom_report_fields:
+  gmv: salePrice               # get_custom_report_page_list
+  orders: orderNum
+  sessions: sessions
+  conversion_rate: conversionRate   # 会话转化率（06 确认）
+  refund_rate: refundRate
+  acos: acos
+  ad_cost: adCost
+  ad_click_rate: adClickRate
+  ad_conversion_rate: adConversionRateCpc   # 广告转化率（06 确认；ACOS 归因用）
+  ad_order_num: adOrderNum                  # 广告订单数（06 确认）
+  available_days: availableDays
+  rating: rating
+  low_review_num: lowReviewNum
+  asin: asin
+  msku: msku
+  sku: sku
+  title: title
+
+# ---------- 利润报表字段映射（reportList）----------
+# 字段名以 当前 MCP 契约与共享字段字典 为准（get_profit_report_by_shop / _msku）。
+profit_report_fields:
+  gmv: productSales
+  sales_num: salesNum
+  gross_profit: grossProfit
+  gross_profit_rate: grossProfitRate
+  ad_cost: cpcCost             # ⚠️ 为负数（费用）
+  ad_cost_rate: cpcCostRate
+  refund_rate: refundRate
+  commission: commission
+  fba_fulfillment_fee: fbaFulfillmentFee
+  storage_fee: storageFee
+  rate: rate                   # 汇率（msku 报表）
+
+# ---------- 币种 ----------
+currency:
+  # 跨站点聚合时统一折算到的目标币种。留空 = 不折算，按店铺原币种分组展示，
+  # 且禁止直接相加（否则 USD/EUR/JPY 混加会得到荒谬结果）。
+  aggregate_to: ""             # 例如 "USD"
+  # get_online_product_page_list 顶层 currency=USD，其 inventoryManage.currency=CNY，
+  # 跨币种必须显式处理，不得直接相减。
+
+# ---------- 飞书写入 ----------
+feishu:
+  enabled: false               # 默认关闭；显式开启才推送
+  folder_token: ""             # 目标文件夹 token（留空=根目录）
+  # 演示环境默认阻断写入（由 _shared/scripts/feishu_writer.py 的 guard_demo 实现）。

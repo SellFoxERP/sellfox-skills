@@ -1,0 +1,189 @@
+"""Step 6：定价与利润测算（含跨币种显式处理）。
+
+数据来源与口径（字段名已核对 01/06 文档，勿凭记忆改）：
+
+| 值 | 字段 | 所属工具 | 币种 |
+|---|---|---|---|
+| 售价 | ``standardPrice`` / ``listingPrice`` / ``salePrices`` | get_online_product_page_list | 顶层 ``currency``（实测 USD） |
+| 采购成本 | ``purchaseCost`` | get_online_product_page_list / get_custom_report_page_list | 成本口径（CNY） |
+| 平台佣金 | ``referralFee`` | get_online_product_page_list | 售价口径 |
+| FBA 费用 | ``fbaFees`` | get_online_product_page_list | 售价口径 |
+| 变动结算费 | ``variableClosingFee`` | get_online_product_page_list | 售价口径 |
+| 头程 | ``headTripPrice`` | **仅 get_custom_report_page_list** | 成本口径 |
+
+铁律：
+- 售价（USD）与成本（CNY）**不得直接相减**；必须经 ``config/fx.yaml`` 换算并标注来源/日期。
+- 汇率未配置 → 标「⚠️ 需人工核查」，**不臆造汇率、不给假数字**。
+- 头程在 get_online_product_page_list 取不到 → 标「需人工核查」。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+from typing import Any, Dict, Optional
+
+from _common import Notes, as_float, load_skill_yaml
+
+
+def _convert(
+    amount: Optional[float],
+    from_ccy: Optional[str],
+    to_ccy: str,
+    fx: Dict[str, Any],
+    notes: Notes,
+    label: str,
+) -> Optional[float]:
+    """把 amount 从 from_ccy 换算到 to_ccy。跨币种缺汇率时返回 None 并标人工核查。"""
+    if amount is None:
+        return None
+    if not from_ccy or not to_ccy:
+        notes.need_manual(f"{label} 币种不明确，需人工核查")
+        return None
+    if from_ccy == to_ccy:
+        return amount
+    rate = fx.get("rate")
+    base = fx.get("base")
+    quote = fx.get("quote")
+    if rate is None or not base or not quote:
+        notes.need_manual(
+            f"{label} 需要把 {from_ccy} 换算为 {to_ccy}，但 config/fx.yaml 未配置汇率，需人工核查"
+        )
+        return None
+    try:
+        valid_rate = float(rate)
+    except (TypeError, ValueError):
+        valid_rate = 0.0
+    if not math.isfinite(valid_rate) or valid_rate <= 0 or not fx.get("source") or not fx.get("as_of"):
+        notes.need_manual(f"{label} 汇率须为正数，且必须填写来源与日期")
+        return None
+    # 支持 base<->quote 两个方向。
+    if from_ccy == quote and to_ccy == base:
+        converted = amount / float(rate)
+    elif from_ccy == base and to_ccy == quote:
+        converted = amount * float(rate)
+    else:
+        notes.need_manual(
+            f"{label} 的汇率方向未覆盖（{from_ccy}→{to_ccy}），请扩充 config/fx.yaml，需人工核查"
+        )
+        return None
+    notes.note_source(f"fx:{label}", f"{fx.get('source')} @ {fx.get('as_of')}")
+    return converted
+
+
+def estimate_pricing(
+    product: Dict[str, Any],
+    *,
+    notes: Optional[Notes] = None,
+) -> Dict[str, Any]:
+    """基于在线产品记录做定价与利润测算。
+
+    :param product: ``fetch_baseline.summarize_product`` 的输出。
+    """
+    notes = notes or Notes()
+    launch = load_skill_yaml("launch")
+    pricing = launch.get("pricing") or {}
+    fx = load_skill_yaml("fx")
+
+    price_ccy = product.get("price_currency")
+    cost_ccy = product.get("inventory_currency")
+
+    selling_price = (
+        product.get("listing_price")
+        or product.get("standard_price")
+        or product.get("sale_prices")
+    )
+    purchase_cost_raw = product.get("purchase_cost")
+    referral = product.get("referral_fee")
+    fba = product.get("fba_fees")
+    vcs = product.get("variable_closing_fee")
+
+    result: Dict[str, Any] = {
+        "price_currency": price_ccy,
+        "cost_currency": cost_ccy,
+        "selling_price": selling_price,
+        "lines": [],
+        "manual_checks": [],
+    }
+
+    # 采购成本：成本口径 → 换算到售价口径。
+    purchase_cost = _convert(purchase_cost_raw, cost_ccy, price_ccy, fx, notes, "采购成本")
+    result["purchase_cost"] = purchase_cost
+    result["purchase_cost_raw"] = purchase_cost_raw
+
+    # 费用缺省回退（仅在无真实字段时）。
+    if referral is None and pricing.get("default_referral_fee_pct") is not None and selling_price:
+        referral = selling_price * float(pricing["default_referral_fee_pct"]) / 100.0
+        result["lines"].append("referral_fee：用配置缺省佣金率估算")
+    elif referral is None:
+        notes.need_manual("平台佣金（referralFee）取不到且未配置缺省佣金率，需人工核查")
+    if fba is None:
+        if pricing.get("default_fba_fee") is not None:
+            fba = float(pricing["default_fba_fee"])
+            result["lines"].append("fba_fees：用配置缺省值估算")
+        else:
+            notes.need_manual("FBA 费用（fbaFees）取不到且未配置缺省值，需人工核查")
+
+    # 头程：本工具取不到，固定提示。
+    note_headtrip = pricing.get("headtrip_source")
+    notes.need_manual(f"头程成本：{note_headtrip}")
+
+    # 组装单件利润（全部换算到售价口径）。
+    cost_items = [x for x in (purchase_cost, referral, fba, vcs) if x is not None]
+    result["cost_breakdown"] = {
+        "purchase_cost": purchase_cost,
+        "referral_fee": referral,
+        "fba_fees": fba,
+        "variable_closing_fee": vcs,
+        "headtrip": None,  # 需人工核查
+    }
+
+    total_cost: Optional[float] = None
+    if cost_items and not notes.manual_checks:
+        total_cost = sum(cost_items)
+    elif cost_items:
+        # 有缺失项 → 不给「精确」总额，避免误导。
+        total_cost = None
+
+    est_profit: Optional[float] = None
+    est_margin: Optional[float] = None
+    if selling_price is not None and total_cost is not None:
+        est_profit = selling_price - total_cost
+        if selling_price:
+            est_margin = round(est_profit / selling_price * 100.0, 2)
+
+    result["total_cost"] = None if total_cost is None else round(total_cost, 2)
+    result["estimated_profit"] = None if est_profit is None else round(est_profit, 2)
+    result["estimated_margin_pct"] = est_margin
+    result["cost_complete"] = total_cost is not None
+
+    # 目标毛利倒推建议售价。
+    target = pricing.get("target_gross_margin_pct")
+    if target is not None and total_cost is not None:
+        t = float(target) / 100.0
+        if t < 1:
+            result["target_margin_pct"] = target
+            result["suggested_price"] = round(total_cost / (1 - t), 2)
+    elif target is not None:
+        notes.need_manual("成本不完整（有费用缺失），无法倒推建议售价，需人工核查")
+
+    result["manual_checks"] = list(notes.manual_checks)
+    if not result["cost_complete"]:
+        notes.warn("利润测算不完整：存在需人工核查的费用项，估算值仅供参考，勿当作最终利润。")
+    return result
+
+
+def _main() -> int:  # pragma: no cover
+    ap = argparse.ArgumentParser(description="定价与利润测算")
+    ap.add_argument("--product-json", required=True, help="商品基线 JSON 文件")
+    args = ap.parse_args()
+    product = json.loads(open(args.product_json, encoding="utf-8").read())
+    notes = Notes()
+    result = estimate_pricing(product, notes=notes)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_main())

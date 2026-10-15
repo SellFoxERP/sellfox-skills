@@ -1,0 +1,57 @@
+{
+  "skill_name": "inventory-health",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我看下现在哪些 SKU 快断货了，要不要补货？急的那些列出来。",
+      "expected_output": "按 SKILL.md 流程：前置校验 report_id → 四源取数（串行、max_rows 截断披露）→ P0/P1/P2 判定 → 补货建议单（含「周期来源」列）→ 数据说明（含需人工核查项）。拿不到的数据标注「需人工核查」，空数据标「无数据」。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "出一份库存体检报告，重点看滞销和库龄 271 天以上的货，给我清货建议。",
+      "expected_output": "输出双向矩阵与滞销清单；库龄占比对比 thresholds.yaml → inventory 阈值；长期仓储费未配置费率时标「需人工核查」，不编造金额。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "A001 可售 12 天，到货周期 45 天，在途 0，这个是 P0 吗？",
+      "expected_output": "判定为 P0（d<L 且 inb==0），动作：空运/海外仓调拨 + 暂停广告；并在建议单的「周期来源」列标注该到货周期的来源（配置命中/本次填写/默认值⚠️）。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "报表 ID 还没配，先跑一次库存看看。",
+      "expected_output": "触发首轮引导（提示去赛狐创建报表并给出字段清单），走降级路径（get_online_product_page_list 的 inventoryManage），输出顶部标「⚠️ 口径降级：可售天数为自算，非赛狐口径」。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "马上要断货的那批，在途的货来得及吗？AWD 仓里还有多少能调的？",
+      "expected_tools": ["get_fba_shipment_page_list", "get_awd_inventory_page_list"],
+      "expected_output": "取 FBA 在途（时间区间参数按契约至少一组完整 create/update 区间）+ AWD 库存（page_no/page_size 按契约类型必填）；P1 缺口公式计入在途与可调拨量，给出「在途能否覆盖缺口」的量化判断（缺口 = v*(L-d) - inb）；两者返回 data:{} 时标「无数据」不写 0、不重试。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "看下 AWD 仓的库存",
+      "expected_tools": ["get_awd_inventory_page_list"],
+      "expected_output": "AWD 返回空（data:{} / data:null）时结论为「无数据」，绝不写 0、不重试；不把「没拿到」当成「库存为 0」；其余仓库数据照常输出。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "旺季快到了，全部店铺做一次库存体检，到货周期按旺季算",
+      "expected_tools": ["get_shop_page_list", "get_custom_report_page_list"],
+      "expected_output": "先取店铺清单再按 shop_ids 分批（每批 ≤20 行）取宽表，批次间可并行（新网关实测同 session 并发安全）但需按取数计划声明；lead_time 旺季系数按日期匹配 lead_time.yaml，「周期来源」列逐行标注（配置命中/本次填写/默认值⚠️）；触达 max_rows 时披露覆盖范围。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "跑一次今天的库存体检 [[场景注入：get_custom_report_page_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "contract_version_mismatch",
+      "expected_output": "重取契约一次并按新 schema 重建参数重试一次；仍失败则走 get_online_product_page_list 降级路径，顶部标「口径降级：可售天数/建议量为自算，非赛狐口径」；不静默丢步骤、不中断整份体检。",
+      "files": []
+    }
+  ]
+}

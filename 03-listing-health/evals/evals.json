@@ -1,0 +1,51 @@
+{
+  "skill_name": "listing-health",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我看下这几个链接，有几个商品好像搜不到了，也没购物车",
+      "expected_output": "按 SKILL.md 分诊：P0 不可售/被抑制（onlineStatus 非 active）、P1 丢购物车（buyBoxPercent < 阈值）优先，命中后加载 references/buyability.md；输出按严重度排序的问题清单，顶部标覆盖范围/时间窗口/口径降级/演示水印；只诊断不修改。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "这个 listing 有流量但是不出单，帮我查查为什么",
+      "expected_output": "命中「有流量无转化/价格劣势/评分下滑」P2 分支，加载 references/conversion.md；读 sessions 高 + conversionRate 低；类目基准拿不到时标「⚠️ 需人工核查」，不编造基准值。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "没有 report_id，能帮我做 listing 体检吗？",
+      "expected_output": "启用降级路径（只用 get_online_product_page_list 字段：onlineStatus/bsrRank/rating/listingPrice），显式声明 sessions/pageViews/conversionRate/buyBoxPercent/lowReviewNum/availableDays 等只在 489 宽表的字段「取不到」，并列出口径降级说明，不用别的字段冒充。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "『清仓』标签下的商品做一次体检",
+      "expected_tools": ["get_product_by_label"],
+      "expected_output": "按 get_product_by_label 取标签命中商品（标签参数按契约传；config 的 labels.required_groups 缺失时先引导补配置）；命中集合与在售扫描合并分诊；标签无命中标「无数据」；结果按 P0→P3 严重度排序。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "这个类目里 BSR 排名最近往下掉的链接找出来",
+      "expected_tools": ["get_product_analyze_list"],
+      "expected_output": "用 get_product_analyze_list 取类目与 BSR 明细，bsrRank[].rank 名次变差判 P2；类目名与宽表的 big/smallCategoryRanking 分属不同工具，字段来源标注不混淆；缺历史快照时说明需要环比基线，不给无基线的「下降」结论。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "上周新上架的链接帮我跟踪下流量和转化",
+      "expected_tools": ["get_custom_report_page_list", "get_online_product_page_list"],
+      "expected_output": "按上架时间过滤（openDate 类字段，注明其所属工具）；sessions/conversionRate 只存在于宽表——report_id 未配时显式降级标注「流量/转化不可用」，不用别的字段冒充；新品无历史基线时环比标「无基线」，不编趋势结论。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "全店 listing 体检 [[场景注入：get_online_product_page_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "contract_version_mismatch",
+      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败时报告明确标注「在售扫描源不可用」，只输出宽表侧可得结论（或反之），不静默丢步骤、不中断整份体检报告。",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+# ============================================================================
+# Listing 字段 → 数据源映射（field-map.yaml）
+# ============================================================================
+# 权威依据：_shared/FIELD_DICTIONARY.md。
+# 只登记「已核对存在」的字段。凡字段实际不在所列工具中，就是降级/需人工核查。
+#
+# sources:
+#   online  = get_online_product_page_list   （分页类，列表字段 data.rows；79 字段）
+#   custom  = get_custom_report_page_list     （分页类，data.rows；489 字段；需 report_id）
+#   analyze = get_product_analyze_list        （分页类，字段集合取决于 fields 入参，未全量实测）
+#   label   = get_product_by_label            （分页类，入参页名 page_num）
+# ============================================================================
+
+# 检查项 -> 字段 -> 所属工具（用于归因表逐字段标注来源）
+checks:
+  onlineStatus:
+    field: onlineStatus
+    source: online
+    note: 实测样例值 "Active"；筛选参数可选 active/inActive/delete。判定时大小写不敏感。
+
+  buyBoxPercent:
+    field: buyBoxPercent
+    source: custom
+    note: 仅 489 字段宽表可得（实测样例 92.5）。online 侧无此字段。
+
+  buyBoxWinner:
+    field: buyBoxWinner
+    source: online
+    note: 布尔，实测样例 true。无 report_id 时用它作为「丢购物车」的退化信号。
+
+  listingId:
+    field: listingId
+    source: online
+    note: 实测样例 "MOCKLID001"（演示指纹）。用于结果去重主键。
+
+  listingPrice:
+    field: listingPrice
+    source: online
+    note: 数组形如 [{"key":"24.99"}]；custom 也有。取值需按 key 拆分。
+
+  standardPrice:
+    field: standardPrice
+    source: online
+
+  salePrices:
+    field: salePrices
+    source: online
+
+  rating:
+    field: rating
+    source: online
+    note: 字符串，实测样例 "4.5"。custom 也有。环比需历史快照（见 workflow.md）。
+
+  ratingCount:
+    field: ratingCount
+    source: online
+
+  lowReviewNum:
+    field: lowReviewNum
+    source: custom
+    note: 仅 489 字段宽表可得。
+
+  bsrRank:
+    field: bsrRank
+    source: online
+    note: 数组，元素含 rank/bigCategory/categoryID/categoryName。analyze 也有。
+
+  bigCategoryRanking:
+    field: bigCategoryRanking
+    source: custom
+
+  smallCategoryRanking:
+    field: smallCategoryRanking
+    source: custom
+
+  sessions:
+    field: sessions
+    source: custom
+    note: 仅 489 字段宽表可得（实测样例 12500）。
+
+  pageViews:
+    field: pageViews
+    source: custom
+
+  conversionRate:
+    field: conversionRate
+    source: custom
+    note: 仅宽表可得（实测样例 2.8）。
+
+  day7SaleNum:
+    field: day7SaleNum
+    source: online
+    note: 现成窗口字段，直接作近 7 天基线，避免逐日拉数。
+
+  day30SaleNum:
+    field: day30SaleNum
+    source: online
+
+  saleNum:
+    field: saleNum
+    source: online
+
+  profitPrice:
+    field: profitPrice
+    source: online
+
+  profitRate:
+    field: profitRate
+    source: online
+
+  quantity:
+    field: quantity
+    source: online
+    note: 可售库存（断货会拖累排名）。
+
+  availableDays:
+    field: availableDays
+    source: custom
+    note: 仅宽表可得；online 无可用天数。无报表时断货只能看 quantity。
+
+  labels:
+    field: labels
+    source: online
+    note: 数组，元素含 labelName/labelColor/labelType。
+
+  productLabelList:
+    field: productLabelList
+    source: online
+    note: 数组，元素含 groupType/labelDetailList。
+
+  categoryNameList:
+    field: categoryNameList
+    source: analyze
+
+  fbmAvailableDays:
+    field: fbmAvailableDays
+    source: analyze
+    note: analyze 也返回；online 无。
+
+  currency:
+    field: currency
+    source: online
+    note: 顶层 currency 为 USD。
+  inventoryManage.currency:
+    field: currency
+    source: online
+    note: 库存管理子对象币种为 CNY。跨币种必须显式处理，不得直接相减。
+
+# 明确「拿不到」的字段（绝不编造，标注需人工核查）
+unavailable:
+  - 竞品 BuyBox 价 / 竞品售价（无接口字段）
+  - 类目平均转化率基准
+  - 账户健康 / 绩效通知 / 政策合规状态（MCP 无接口）
+  - 评论原文 / 差评明细文本
+  - BuyBox 归属竞品的具体卖家

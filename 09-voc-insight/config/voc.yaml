@@ -1,0 +1,131 @@
+# ============================================================================
+# 评论 VOC 归因 —— 技能专属配置（voc.yaml）
+# ============================================================================
+# 这里只放「本技能特有」的参数。通用阈值（rating_drop_abs / low_review_daily_max）
+# 在 _shared/config/thresholds.yaml 的 after_sales 段维护，技能读取它，不在这里重复。
+# 凡本文件缺失的项，技能按「本次填写 → 配置 → 显式标注默认值」解析，
+# 绝不把默认值混进真实数据里（见 _shared/SELLFOX_CLIENT.md §12）。
+#
+# 单位约定：*_pct 均为百分比数值（30 表示 30%）。
+# ============================================================================
+
+# ---------- 统计窗口 ----------
+stat_windows:
+  short_days: 7          # 「近 7 天」窗口（环比基线）
+  long_days: 30          # 「近 30 天」窗口
+  # ⚠️ 基线优先用接口现成窗口字段（lowReviewNum / rating 快照），不要逐日拉数 ——
+  #    历史测试常见 20 条/页（当前分页以契约为准），逐日拉数会瞬间超预算（见 SELLFOX_CLIENT.md §6）。
+
+# ---------- 取数上限（安全阀，硬截断；截断必须在输出中披露）----------
+max_rows:
+  custom_report: 200     # get_custom_report_page_list 每次扫描的最大行数
+  online_products: 200   # get_online_product_page_list 每次扫描的最大行数（用于补 rating）
+  review_fetch: 200      # 外部 MCP 每个 ASIN 最多取多少条评论原文
+
+# ---------- 异常 ASIN 发现（只用赛狐官方聚合指标，零外部依赖）----------
+# ⚠️ 判定字段与数据源（已核对 _shared/FIELD_DICTIONARY.md）：
+#   lowReviewNum  仅 get_custom_report_page_list（489 宽表）
+#   reviewNum     仅 get_custom_report_page_list
+#   reviewRate    仅 get_custom_report_page_list
+#   rating        get_custom_report_page_list + get_online_product_page_list
+#   ratingCount   get_custom_report_page_list + get_online_product_page_list
+# 无自定义报表时 → 只能退化用 rating/ratingCount（且无环比基线，需历史快照）。
+discovery:
+  # 哪些信号参与「问题 ASIN」判定（可多选，命中任一即入选）
+  signals:
+    - low_review_num_rise     # lowReviewNum 环比上升
+    - rating_drop             # rating 环比下降
+    - review_rate_drop        # reviewRate 下滑
+  # 阈值下界的单一真源在 _shared/config/thresholds.yaml → after_sales：
+  #   low_review_daily_max  （单日新增差评数上限）
+  #   rating_drop_abs       （评分环比下降绝对值）
+  # 本文件【不重复】定义，避免与底座分叉。
+  report_key: "daily_ops"     # 复用 _shared/config/reports.yaml 的报表段（同一张 489 宽表）
+  min_rating_count: 20        # 评论数低于此不判「评分下滑」，避免小样本误报
+  min_low_review_num: 2       # 差评数低于此不入选（单条差评不是问题）
+  max_flagged_asins: 20       # 一次最多深挖几个 ASIN（外部 MCP 按次收费，须控量）
+
+# ---------- 差评主题分类法（归因口径）----------
+# 主题键（英文 slug）→ 中文名 + 关键词。关键词用于**规则初筛**；
+# 真正的语义归因由 AI 助手 阅读原文完成（词典只是兜底与可解释性）。
+# ⚠️ 主题是「可配置」的：不同品类痛点不同，使用者可增删。
+themes:
+  quality:
+    label: "质量/做工"
+    keywords: ["broke", "broken", "defective", "poor quality", "cheap", "flimsy", "stopped working", "quality", "破损", "质量差", "坏了", "易碎"]
+  sizing:
+    label: "尺寸/尺码"
+    keywords: ["too small", "too large", "size", "fit", "smaller than", "larger than", "尺寸", "偏小", "偏大", "不合身"]
+  color:
+    label: "色差/外观"
+    keywords: ["color", "colour", "different color", "shade", "looks nothing like", "色差", "颜色", "与图片不符"]
+  shipping:
+    label: "物流/包装"
+    keywords: ["late", "delayed", "shipping", "damaged in transit", "packaging", "arrived", "物流", "包装", "延迟", "损坏"]
+  description:
+    label: "描述不符"
+    keywords: ["not as described", "misleading", "description", "as pictured", "not what i expected", "描述不符", "与描述不符", "货不对板"]
+  # 兜底主题：无法归入以上任一类的差评（**不要丢弃**，单列以示诚实）
+  other:
+    label: "其他/待归类"
+    keywords: []
+
+# ---------- ⭐ 方法论：多源印证才报「模式」----------
+# 借鉴 Aatirs-Vault/voc-claude-skills：把单条差评当普遍问题是最危险的误报。
+# 只有当【同一主题】被多个【独立评论】印证时，才升级为「模式(pattern)」。
+pattern:
+  min_independent_reviews: 3   # 同一主题至少被 N 条独立评论印证
+  min_distinct_reviewers: 2    # 且来自至少 M 个不同评论者（防同一人刷屏）
+  # 未达阈值的主题只作为「个别反馈(mention)」列出，明确标注「样本不足，不构成模式」。
+  require_distinct_reviewers: true
+
+# ---------- 外部评论 MCP 适配器（可插拔，不锁定实现）----------
+# 本技能**不内置**任何具体评论 MCP。适配器描写「怎么调」，真正调用由 AI 助手 执行
+# （见 adapters/README.md 的接口契约）。留空 = 未接入 → 走降级路径。
+external_reviews:
+  adapter: ""                  # 例："voc-amazon-reviews" / "amazon-scraper-v2" / "hasdata-amazon"
+  enabled: false               # 未显式开启时，技能只跑赛狐聚合指标，不调外部
+  require_confirmation: true   # 调外部 MCP 前先报「预计调用次数/条数/成本」待确认
+  # ⚠️ 成本与合规提示（必须写进报告，不可省略）：
+  #   外部评论源多为**付费/需授权**，非官方免费能力；
+  #   抓取 Amazon 评论可能触及平台 ToS 与当地法律，请自行确认合规性；
+  #   评论原文含**评论者昵称**等潜在 PII，写入外部文档前必须脱敏。
+  cost_note: "外部评论 MCP 按次/按量计费；调用前请确认预算与合规性"
+  max_calls_per_run: 40        # 单次运行对外部 MCP 的调用次数上限（成本闸）
+
+# ---------- 评论原文的 PII 处理 ----------
+privacy:
+  mask_reviewer_name: true     # 评论者昵称在输出中掩码
+  # 订单类 PII（buyerEmail/buyerName）由 _shared/scripts/feishu_writer.py 兜底脱敏；
+  # 评论原文的昵称由本技能 scripts/voc_common.py 处理。
+
+# ---------- 可选：优化素材（生图 MCP）----------
+# 与技能 8 同构：本技能只产出「素材需求单」，不直接生图。
+optimization_brief:
+  enabled: false               # 关闭时不产出素材需求单
+  adapter: ""                  # 例："MiniMax text_to_image"
+  # 触发条件：某主题被印证为「模式」且其 action 属于「改图/改文案」类。
+  themes_to_brief: ["sizing", "color", "description"]
+
+# ---------- 交付设置 ----------
+delivery:
+  write_feishu: false          # 是否把 VOC 报告写入飞书（演示环境默认阻断）
+  feishu_folder_token: ""      # 目标文件夹 token；留空 = 应用根目录
+  local_out_dir: "out"         # 本地输出目录（相对技能根目录）
+
+# ---------- 降级路径声明 ----------
+degradation:
+  # 外部评论 MCP 不可用（未接入/失败/超预算）时的行为：
+  no_external_reviews:
+    mode: "aggregate_only"
+    banner: "⚠️ 未接入外部评论源：本报告仅用赛狐官方聚合指标定位问题 ASIN，**无评论原文**，无法做主题归因。"
+    still_do:
+      - "按 lowReviewNum 环比 / rating 下降 / reviewRate 下滑 定位问题 ASIN"
+      - "给出「需人工核查评论原文」清单与建议抽查方向"
+    cannot_do:
+      - "差评主题聚类（质量/尺寸/色差/物流/描述不符）"
+      - "高频问题词提取"
+      - "基于原文的行动建议归因"
+  # 无 report_id（自定义报表）时的行为：连聚合差评信号都拿不全。
+  no_custom_report:
+    banner: "⚠️ 口径降级：缺少自定义报表 report_id，lowReviewNum/reviewNum/reviewRate 不可用；仅能用 online 侧 rating/ratingCount（且无环比基线，需历史快照）。"

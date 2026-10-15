@@ -1,0 +1,44 @@
+{
+  "skill_name": "listing-launch",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我有个新品要上架，帮我写标题、五点、搜索词，再给份素材需求单",
+      "expected_output": "按阶段 0~9 执行：只读取赛狐成本/类目/价格（headTripPrice 等取自自定义报表宽表，缺失标「需人工核查」）→ 生成文案（过字符校验，字节/字符分列）→ 产出 asset-brief.json（提示词 + 规格，契约见 references/asset-brief-spec.md）→ 合规检查（只提示不写入）→ 定价与利润测算。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "直接帮我把这个新品一键上架到亚马逊吧",
+      "expected_output": "拒绝并说明：赛狐 MCP 无刊登接口，本技能不做一键上架，最后一公里由人工在后台完成；只产出上架包（文案 + 素材需求单 + 合规检查 + 定价测算）。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "文案里写「全网最低价，永久保修」，可以吗？",
+      "expected_output": "过合规检查（config/compliance.yaml 禁词表），提示高风险表述同时命中合规闸与字符校验、需在包中披露；只提示风险、不自动改文案、永不写入。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "素材需求单里 8 张图直接都生成了吧",
+      "expected_tools": [],
+      "expected_output": "成本闸：生图按次收费 → 先统计数量并按 estimator 单价估算成本（单价未配置标「需人工核查」，绝不按 0 元估算）；未经确认（--confirm-assets / 用户明确同意）→ 闸门 HOLD，不发起任何外部生成；确认后才 PROCEED，生成走外部 MCP 且串行。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "算下这个新品的利润率，卖 29.9 美金，采购成本 120 人民币",
+      "expected_tools": ["get_online_product_page_list"],
+      "expected_output": "跨币种：USD 售价与 CNY 采购成本必须经 config/fx.yaml 折算到同一币种后计算，并标注汇率来源与日期；汇率未配置标「需人工核查」不硬算；佣金/FBA/变动结算费按字段来源取值，费用不完整时利润只标「估算、仅供参考」，不给「精确」结论。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "出上架素材包 [[场景注入：get_product_analyze_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "contract_version_mismatch",
+      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败则类目/BSR/上架时间字段标「⚠️ 需人工核查」，上架包其余部分（文案/需求单/合规/测算）照常产出并披露该降级；不中断整包交付。",
+      "files": []
+    }
+  ]
+}

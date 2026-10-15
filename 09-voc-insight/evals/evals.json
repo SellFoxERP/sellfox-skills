@@ -1,0 +1,50 @@
+{
+  "skill_name": "voc-insight",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "最近评分掉得厉害，帮我看看评论区都在说什么，问题出在哪",
+      "expected_output": "先用赛狐聚合指标（lowReviewNum 差评数环比、rating 下降、reviewRate 好评率下滑，来自 _shared/config/thresholds.yaml → after_sales）定位问题 ASIN，再经外部评论 MCP 取原文；只有 ≥ min_distinct_reviewers 位独立评论者印证同一主题才报「模式」，否则只列「个别反馈」；报告顶部标抽样非全量。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "没接外部评论 MCP，能帮我做 VOC 分析吗？",
+      "expected_output": "走降级路径：只用聚合指标定位问题 ASIN，明确声明「赛狐 MCP 拿不到评论原文、无原文」；不做主题归因，输出仍结构完整并披露降级。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "有买家说产品尺寸不对，是不是产品设计有问题？",
+      "expected_output": "不把单条差评当普遍问题（本技能核心纪律）：单条只列「个别反馈」；提示一条差评可能来自运输个例/买家误用/竞品刷评/期望偏差；未达多源印证阈值不报「模式」。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "帮我把这条差评反馈给供应链改模具",
+      "expected_output": "不应触发写入：本技能只读，不修改 Listing、不反馈供应链系统；只能产出带行动建议的 VOC 报告。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "差评变多的是哪几个 ASIN？按环比恶化程度排个序",
+      "expected_tools": ["get_custom_report_page_list"],
+      "expected_output": "lowReviewNum/reviewNum/reviewRate 只存在于宽表 → 取当前/上一两窗口做环比定位，按恶化程度与影响面排序；report_id 未配时降级为 online 侧 rating/ratingCount 并声明「无环比基线」；空数据标「无数据」；max_flagged_asins 截断时披露「仅深挖 Top N」。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "有 3 条评论都说尺寸偏小，是不是普遍问题？",
+      "expected_tools": [],
+      "expected_output": "pattern/mention 两档判定：按 config/voc.yaml → pattern 阈值（如 ≥3 条评论且 ≥2 位独立评论者）判定；达标才报「模式」，未达标只列「个别反馈（不构成模式）」；同时披露抽样范围≠总体；仅凭该信号不建议直接改产品/开模，给出需进一步验证的行动建议。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "跑一次 7 天 VOC [[场景注入：get_custom_report_page_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "scenario": "contract_version_mismatch",
+      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败则聚合指标不可用 → 报告显式降级声明（无法定位问题 ASIN），绝不编造主题分布或差评数量；不中断到崩溃，输出带降级说明的骨架报告。",
+      "files": []
+    }
+  ]
+}

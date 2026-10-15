@@ -1,0 +1,92 @@
+# ============================================================================
+# Listing 健康体检 —— 技能专属配置（listing.yaml）
+# ============================================================================
+# 这里只放「本技能特有」的参数。通用阈值（buybox_pct_min / sessions_zero_days /
+# rating_drop_abs）在 _shared/config/thresholds.yaml 的 listing 段维护，技能读取它，
+# 不在这里重复。凡本文件缺失的项，技能按「本次填写 → 配置 → 显式标注默认值」解析，
+# 绝不把默认值混进真实数据里。
+#
+# 单位约定：*_pct 均为百分比数值（30 表示 30%）。
+# ============================================================================
+
+# ---------- 统计窗口 ----------
+stat_windows:
+  short_days: 7          # 「近 7 天」窗口（销量/BSR 环比基线）
+  long_days: 30          # 「近 30 天」窗口
+  # ⚠️ 基线优先用接口现成窗口字段（day7SaleNum / day30SaleNum / bsrRank 等），
+  #    不要为了自算基线而逐日拉数——历史测试常见 20 条/页（当前分页以契约为准），逐日拉数会瞬间超预算。
+
+# ---------- 取数上限（安全阀，硬截断；截断必须在输出中披露）----------
+max_rows:
+  online_products: 200   # get_online_product_page_list 每次扫描的最大行数
+  by_label: 100          # get_product_by_label 最大行数
+  analyze: 100           # get_product_analyze_list 最大行数（可选增强）
+
+# ---------- 扫描范围 ----------
+online_status_scan:      # 显式分状态扫描，避免服务端默认过滤漏掉不可售商品
+  - active
+  - inActive
+  - delete               # 实测：参数可选值 active/inActive/delete；响应字段 onlineStatus 实测样例 "Active"
+shop_batch_size: 1       # 每次调用带几个 shop_id（20 条/页硬上限下逐店取更可控；批次间可并行）
+
+# ---------- 各检查项阈值 ----------
+# ⚠️ 通用阈值是「单一真源」，只维护在 _shared/config/thresholds.yaml 的 listing 段，
+#    本文件【不重复】定义，避免与底座分叉（诊断脚本 diagnose.py 直接读 shared）：
+#      buyBoxPercent 下限  → thresholds.listing.buybox_pct_min
+#      「无流量」连续天数  → thresholds.listing.sessions_zero_days
+#      评分环比下降绝对值  → thresholds.listing.rating_drop_abs
+#    下面只保留【本技能特有】的补充参数。
+buybox:
+  require_winner: true   # 无自定义报表时，退化为用 buyBoxWinner=false 判定「丢购物车」
+
+bsr:
+  rank_drop_pct: 30      # BSR 名次变差超过该百分比 → 「BSR 恶化」（名次数字变大=变差）
+
+sales:
+  drop_pct_vs_30d: 30    # day30 折算日均低于 day7 折算日均该百分比 → 「流量/销量衰退」
+
+conversion:
+  # ⚠️ 类目均值 / 类目 CVR 基准：赛狐 MCP 拿不到 → 保持 null。
+  #    为 null 时该检查只做「高流量 + 低转化」的同店横向对比，并标注「需人工核查类目基准」。
+  category_cvr_pct: null
+  min_sessions_for_check: 100  # 会话低于此不判「有流量无转化」，避免小样本误报
+  below_median_pct: 20         # 无类目基准时：CVR 低于同店中位数该百分比 → 提示
+
+price:
+  # 竞品价、BuyBox 价：get_online_product_page_list 无竞品价字段 → 仅有 listingPrice/standardPrice。
+  # 为 null 表示「缺竞品基准」→ 只做同店铺同 ASIN 自身价格变动提示，标注需人工核查。
+  competitor_price_source: null
+
+labels:
+  # 必填标签分组（productLabelList.groupType / labels.labelName）。
+  # 留空 = 不做「标签缺失」判定；填了才启用（避免把标签体系强加给所有团队）。
+  required_groups: []
+
+# ---------- 降级 / 数据源 ----------
+degradation:
+  # 流量/购物车占比/CVR/类目排名/评分数等字段只在 get_custom_report_page_list（489 字段宽表）。
+  # 报表 ID 复用 _shared/config/reports.yaml 的 daily_ops 段（同一张宽表）。
+  traffic_fields_tool: get_custom_report_page_list
+  report_key: daily_ops
+  # 未配置 report_id 时，以下检查项直接标「需人工核查」，不得编造、不得写 0：
+  manual_when_no_report:
+    - 丢购物车占比（buyBoxPercent）
+    - 无流量（sessions/pageViews 连续为 0）
+    - 有流量无转化（conversionRate）
+    - BSR 类目名次恶化（bigCategoryRanking/smallCategoryRanking）
+    - 评分下滑（lowReviewNum / reviewNum 环比）
+
+# ---------- 严重度排序（问题清单按此排序）----------
+severity:
+  P0:  # 立即处理
+    - 不可售 / 被删除（onlineStatus 非 active）
+  P1:
+    - 丢购物车（低于 buybox_pct_min 或 buyBoxWinner=false）
+    - 无流量（连续 N 天会话为 0）
+    - 价格劣势（自身价格异常波动，缺竞品基准时标注）
+  P2:
+    - 评分下滑
+    - BSR 恶化
+    - 有流量无转化
+  P3:
+    - 标签缺失

@@ -1,0 +1,23 @@
+# 运行产物
+**/out/
+**/logs/
+# 本地配置回写（含 Key 类敏感值的可能性）
+**/config/local.yaml
+.DS_Store
+__pycache__/
+*.pyc
+
+# 内部工程文档与归档（不发布）
+_internal/
+.zcode/
+
+# 发布与本机环境
+dist/
+.venv/
+.env
+.env.*
+!.env.example
+*.bak
+.workbuddy/
+.codebuddy/
+mcp.local.json

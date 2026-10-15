@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""渲染层（周报 / 月报）。
+
+输入 `computed.json` → 输出 Markdown（严格遵循 references/report-template.md 的结构）。
+只做渲染，不做取数、不做写入。数据说明区块为**必填**，缺失即视为报告不合格。
+
+可选：`--mermaid` 输出趋势图的 Mermaid 源码（若接了图表 MCP 可替换）。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import skill_paths  # noqa: F401  （bootstrap 供后续可能的加载）
+
+NA = "不适用"
+NEEDS_REVIEW = "⚠️ 需人工核查"
+
+
+def _n(v: Optional[float], digits: int = 2, money: bool = False) -> str:
+    if v is None:
+        return NA
+    if money:
+        return f"{v:,.{digits}f}"
+    return f"{v:,.{digits}f}"
+
+
+def _pct(v: Optional[float], digits: int = 1) -> str:
+    return NA if v is None else f"{v:+.{digits}f}%"
+
+
+def _grade_icon(grade: str) -> str:
+    return {"达标": "🟢", "预警": "🟡", "未达标": "🔴"}.get(grade, "⚪")
+
+
+def _trend_mermaid(trend: Dict[str, Any]) -> Optional[str]:
+    series = trend.get("series")
+    if not series:
+        return None
+    points = [p for p in series if p.get("gmv") is not None]
+    if not points:
+        return None
+    labels = [str(p["day"]) for p in points]
+    values = [round(float(p["gmv"]), 2) for p in points]
+    def line(name, vals):
+        return f'    "{name}" : [' + ", ".join(str(v) for v in vals) + "]"
+    return (
+        "```mermaid\nxychart-beta\n"
+        f'    title "GMV 趋势"\n'
+        f"    x-axis [{', '.join(labels)}]\n"
+        f"    y-axis \"GMV\"\n"
+        f"{line('GMV', values)}\n```"
+    )
+
+
+def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
+    meta = computed["meta"]
+    plan = meta["period"]
+    win = plan["windows"]["current"]
+    agg = computed["aggregate"]
+    cur = agg["current"]
+    L: List[str] = []
+
+    title = "月报" if plan["period"] == "month" else "周报"
+    period_label = f'{win["start_iso"]} ~ {win["end_iso"]}'
+    L.append(f"# 📈 经营{title}｜{period_label}")
+
+    # 演示环境水印（铁律 11）
+    if meta.get("mock"):
+        L.append("")
+        L.append(f"> ⚠️ **演示数据，非真实经营数据**（指纹：{meta.get('demo_fingerprint')}）。"
+                 "不可用于任何业务决策。")
+    L.append("")
+
+    # ---- 核心结论 ----
+    L.append("## 核心结论")
+    if computed["anomalies"]:
+        for f in computed["anomalies"]:
+            icon = {"red": "🔴", "yellow": "🟡", "info": "ℹ️"}.get(f["level"], "•")
+            L.append(f"- {icon} **{f['title']}** — {f['detail']}")
+    else:
+        L.append("- 本期未触发配置阈值内的异常项。")
+    L.append("")
+
+    # ---- 目标达成率 ----
+    L.append("## 目标达成率")
+    ach = computed["achievement"]
+    if ach["status"] != "ok":
+        L.append(f"> ⚠️ {ach.get('note', '未配置目标值，无法计算达成率')}")
+    else:
+        L.append(f"口径：{ach['basis']} vs {ach['month_key']} 月目标")
+        L.append("")
+        L.append("| 指标 | 实际 | 目标 | 达成率 | 评级 |")
+        L.append("|---|---:|---:|---:|---|")
+        for it in ach["items"]:
+            rate = NA if it["rate"] is None else f"{it['rate']:.1f}%"
+            L.append(f"| {it['label']} | {_n(it['actual'])} | {_n(it['target'])} | {rate} | "
+                     f"{_grade_icon(it['grade'])} {it['grade']} |")
+    L.append("")
+
+    # ---- 核心指标与环比/同比 ----
+    L.append("## 核心指标")
+    L.append("| 指标 | 本期 | 上期 | 环比 | 上月同期 | 去年同期 |")
+    L.append("|---|---:|---:|---:|---:|---:|")
+    d = computed["deltas"]
+    def row(label, key, is_pct=False):
+        c = cur.get(key)
+        p = agg["prev"].get(key)
+        pm = agg["prev_month_same_period"].get(key)
+        yy = agg["yoy"].get(key)
+        def f(v):
+            if v is None:
+                return NA
+            return f"{v*100:.1f}%" if is_pct else _n(v)
+        return (f"| {label} | {f(c)} | {f(p)} | {_pct(d['prev'].get(key + '_pct'))} | "
+                f"{f(pm)} | {f(yy)} |")
+    L.append(row("GMV", "gmv"))
+    L.append(row("销量", "sales_num"))
+    L.append(row("毛利", "gross_profit"))
+    def _rate(v):
+        return NA if v is None else f"{v*100:.1f}%"
+    L.append(f"| 毛利率 | {_rate(cur.get('gross_profit_rate'))} | "
+             f"{_rate(agg['prev'].get('gross_profit_rate'))} | "
+             f"{_pct(d['prev'].get('gross_profit_rate_pct'))} | "
+             f"{_rate(agg['prev_month_same_period'].get('gross_profit_rate'))} | "
+             f"{_rate(agg['yoy'].get('gross_profit_rate'))} |")
+    L.append(row("广告花费", "ad_cost"))
+    def _pctcell(v: Optional[float]) -> str:
+        return NA if v is None else f"{v:.1f}%"
+    L.append(f"| 广告成本占比 | {_pctcell(cur.get('ad_cost_rate'))} | {_pctcell(agg['prev'].get('ad_cost_rate'))} | "
+             f"{_pct(d['prev'].get('ad_cost_rate_pct'))} | {_pctcell(agg['prev_month_same_period'].get('ad_cost_rate'))} | "
+             f"{_pctcell(agg['yoy'].get('ad_cost_rate'))} |")
+    L.append(f"| 退款率 | {_n(cur.get('refund_rate'))} | {_n(agg['prev'].get('refund_rate'))} | — | "
+             f"{_n(agg['prev_month_same_period'].get('refund_rate'))} | — |")
+    L.append(f"| 客单价 | {_n(cur.get('avg_order_value'))} | {_n(agg['prev'].get('avg_order_value'))} | — | "
+             f"{_n(agg['prev_month_same_period'].get('avg_order_value'))} | — |")
+
+    # ---- 宽表指标（自定义报表，489 字段）：利润报表没有的流量/广告/库存维度 ----
+    # 宽表只取本期窗口，没有同口径的历史基线，故除「本期」外其余列用 —。
+    cr = agg.get("custom_report") or {}
+    if cr.get("status") == "ok":
+        def _cn(val: Optional[float], unit: str = "") -> str:
+            return NA if val is None else f"{val:,.2f}{unit}"
+        acos_note = ""
+        if cr.get("acos") is not None and "单位待核实" in (cr.get("acos_source") or ""):
+            acos_note = "（报表现成，单位待核实）"
+        L.append(f"| 会话数 | {_cn(cr.get('sessions'))} | — | — | — | — |")
+        L.append(f"| ACOS | {_cn(cr.get('acos'), ' %')}{acos_note} | — | — | — | — |")
+        L.append(f"| 广告点击率 | {_cn(cr.get('ad_click_rate'), ' %')} | — | — | — | — |")
+        L.append(f"| 广告转化率 | {_cn(cr.get('ad_conversion_rate'), ' %')} | — | — | — | — |")
+        L.append(f"| 可售天数（平均） | {_cn(cr.get('available_days_avg'), ' 天')} | — | — | — | — |")
+        L.append(f"| 可售天数（最短） | {_cn(cr.get('available_days_min'), ' 天')} | — | — | — | — |")
+        L.append(f"| 评分 | {_cn(cr.get('rating'))} | — | — | — | — |")
+        L.append(f"| 差评数 | {_cn(cr.get('low_review_num'))} | — | — | — | — |")
+        L.append("> 宽表指标仅本期、无同口径历史基线，故不参与环比/同比。")
+
+    L.append("")
+
+    # ---- 趋势 ----
+    L.append("## 趋势")
+    trend = computed["trend"]
+    if trend["status"] != "ok":
+        L.append(f"> ⚠️ 趋势图不可用：{trend.get('source', '')}（{trend.get('note', '无数据')}）")
+    else:
+        L.append(f"来源：{trend['source']}")
+        if trend.get("charData"):
+            L.append("")
+            L.append("数据源已返回 `charData`（可由图表 MCP 直接渲染）。")
+        if include_mermaid and trend.get("series"):
+            mm = _trend_mermaid(trend)
+            if mm:
+                L.append("")
+                L.append(mm)
+    L.append("")
+
+    # ---- 榜单 ----
+    rk = computed["rankings"]
+    # 标识列字段名未经核实 → 缺失处显示「⚠️ 需人工核查」而非静默的「不适用」。
+    ident_na = NA if rk.get("identifier_verified") else NEEDS_REVIEW
+    for key, label in (("top", rk["top_label"]), ("bottom", rk["bottom_label"])):
+        L.append(f"## {label}")
+        rows = rk[key]
+        if not rows:
+            L.append("> 无数据。")
+        else:
+            if not rk.get("identifier_verified"):
+                L.append("> ⚠️ 标识列（MSKU/ASIN/标题）字段名待核实："
+                         "get_profit_report_by_msku 的标识字段名未在 01/06 中确认，"
+                         "取不到的行标「需人工核查」。")
+            L.append("| MSKU | ASIN | 标题 | GMV | 毛利 | 毛利率 | 广告花费 |")
+            L.append("|---|---|---|---:|---:|---:|---:|")
+            for r in rows:
+                gpr = r.get("gross_profit_rate")
+                gpr_s = NA if gpr is None else f"{gpr*100:.1f}%"
+                L.append(f"| {r.get('msku') or ident_na} | {r.get('asin') or ident_na} | "
+                         f"{(r.get('title') or ident_na)} | {_n(r.get('gmv'))} | {_n(r.get('gross_profit'))} | "
+                         f"{gpr_s} | {_n(r.get('ad_cost'))} |")
+        L.append("")
+
+    # ---- 店铺明细（L2）----
+    L.append("## 店铺明细")
+    shops = computed.get("per_shop") or []
+    if not shops:
+        L.append("> 无数据。")
+    else:
+        L.append("| 店铺 | GMV | 销量 | 毛利 | 毛利率 | 广告成本占比 |")
+        L.append("|---|---:|---:|---:|---:|---:|")
+        for s in shops:
+            gpr = s.get("gross_profit_rate")
+            gpr_s = NA if gpr is None else f"{gpr*100:.1f}%"
+            acr = s.get("ad_cost_rate")
+            acr_s = NA if acr is None else f"{acr:.1f}%"
+            L.append(f"| {s['shop']} | {_n(s.get('gmv'))} | {_n(s.get('sales_num'))} | "
+                     f"{_n(s.get('gross_profit'))} | {gpr_s} | {acr_s} |")
+    L.append("")
+
+    # ---- 数据说明（必填）----
+    L.append("---")
+    L.append("### 数据说明")
+    L.append(f"- 利润口径：{meta['profit_caliber_type']}（"
+             f"{'结算口径' if meta['profit_caliber_type']=='settlement' else '发货口径'}）")
+    L.append(f"- 币种：{meta['currency']}")
+    L.append(f"- 业务日边界：以赛狐 bizDay 为准（{plan.get('timezone_mode','bizday')}）")
+    L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / _msku"
+             + (" / get_custom_report_page_list" if meta.get("report_id_present") else "")
+             + " / get_product_analyze_detail）")
+    cov = computed["coverage"]
+    if cov.get("mixed_currency"):
+        L.append(f"- ⚠️ **多币种且未折算**（{', '.join(cov.get('currencies') or [])}）："
+                 "已按币种分组，**禁止跨币种直接相加**。")
+    if cov.get("disclosures"):
+        L.append("- 取数覆盖与降级：")
+        for line in cov["disclosures"]:
+            L.append(f"  - {line}")
+    if not meta.get("report_id_present"):
+        L.append("- ⚠️ 口径降级：未配置 custom report_id，流量/广告/退款等 489 字段不可用。")
+
+    L.append("")
+    L.append("### ⚠️ 本报告未能覆盖（赛狐 MCP 无对应数据源）")
+    for item in [
+        "账户健康 / 绩效通知 — 请人工登录 Seller Central 核查",
+        "买家消息 / 待回工单 — MCP 无客服接口",
+        "政策合规 / 绩效风险 — MCP 无此接口",
+        "评论原文 — 仅有聚合指标（好评率 / 差评数）",
+        "广告活动级归因（servingStatus=BUDGET_CAPPED 等）— 取值未经实测验证，需人工核查",
+    ]:
+        L.append(f"- {item}")
+    L.append("")
+    if meta.get("mock"):
+        L.append("> ⚠️ 演示数据，非真实经营数据 —— 本报告不可作为经营依据。")
+    return "\n".join(L) + "\n"
+
+
+def _main() -> None:
+    ap = argparse.ArgumentParser(description="周报/月报渲染（只读）")
+    ap.add_argument("--in", dest="inp", default="computed.json")
+    ap.add_argument("--out", default="weekly_report.md")
+    ap.add_argument("--no-mermaid", action="store_true")
+    args = ap.parse_args()
+
+    computed = json.loads(Path(args.inp).read_text(encoding="utf-8"))
+    md = render(computed, include_mermaid=not args.no_mermaid)
+    Path(args.out).write_text(md, encoding="utf-8")
+    print(f"✅ 渲染完成 → {args.out}（{len(md.splitlines())} 行）")
+
+
+if __name__ == "__main__":
+    _main()

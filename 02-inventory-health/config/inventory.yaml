@@ -1,0 +1,62 @@
+# ============================================================================
+# 库存健康与补货 —— 本技能特有配置（inventory.yaml）
+# ============================================================================
+# 通用配置（阈值 / 到货周期 / 报表 ID / 店铺）一律引用 _shared/config/，本文件不重复：
+#   - 预警阈值（可售天数、库龄占比、周转天数上限） → _shared/config/thresholds.yaml → inventory
+#   - 到货周期                                   → _shared/config/lead_time.yaml
+#   - report_id                                  → _shared/config/reports.yaml → inventory
+#   - 店铺与负责人                                → _shared/config/shops.yaml
+#
+# 本文件只放【本技能专属】的取数上限与判定补充参数。使用者可维护。
+# ============================================================================
+
+# ---------- 取数安全阀（客户端硬截断，触达即披露覆盖范围）----------
+# ⚠️ 服务端分页硬上限恒为 20 条/页，这些 max_rows 是技能侧总量上限，防止上下文爆炸。
+#    触达上限时输出必须写明「本次仅覆盖 Top N，其余未纳入统计」。
+max_rows:
+  custom_report: 200        # 主源：单次技能运行的 MSKU 行数上限
+  online_product: 200       # 降级源上限
+  fba_shipment: 100         # 在途货件明细上限
+  awd_inventory: 100        # AWD 库存上限
+
+# 店铺分批：按 shop_ids 分批取数，每批店铺数。批越小越不容易被单页 20 条上限截断。
+shop_batch_size: 3
+
+# 自定义报表取数窗口（天）。库存是快照，但周转/销量速率字段需要一个时间窗才有值。
+report_window_days: 30
+
+# ---------- 双向矩阵分界（销量轴）----------
+# 高销量 = salesVelocityMonth >= high_velocity_min（月销速率，件/月）
+quadrant:
+  high_velocity_min: 10     # 低于此视为低动销（滞销侧判定用）
+
+# ---------- 滞销侧补充 ----------
+dead_stock:
+  # 库龄占比红线读 thresholds.yaml → inventory（inv_age_271_365_pct_max / inv_age_365_plus_pct_max）
+  # 此处仅补充「动销低」的定义与库龄分母口径。
+  low_velocity_ratio: 0.5   # 动销 < 类目均值 * 该系数 视为低动销（无类目均值时退化为 high_velocity_min）
+  age_denominator: "bucket_sum"   # 库龄占比分母：bucket_sum=各分桶求和；fba_total=用 fbaTotalInventory
+
+# ---------- 币种（铁律 7：跨币种必须显式处理）----------
+currency:
+  sales_currency: "USD"     # get_online_product_page_list 顶层 currency
+  cost_currency: "CNY"      # inventoryManage.currency / 自定义报表成本口径
+  # 处理原则：售价类与成本类字段【不同时相减】；确需合并时按此汇率来源折算并标注日期。
+  fx_rate: null             # 例：{"USD_CNY": 7.15, "as_of": "2026-09-29"}；null → 标注「需人工核查汇率」
+
+# ---------- 长期仓储费估算（可选）----------
+# 无可靠费率来源时留空 → 输出标注「⚠️ 需人工核查」，不编造金额。
+long_term_storage:
+  fee_per_cubic_foot: null  # 例：{"currency": "USD", "amount": 6.9, "as_of": "2026-09-29"}
+
+# ---------- 供应商 / 运输方式映射（MCP 不返回，需人工维护）----------
+# 用于 lead_time.yaml 的 by_supplier / by_shipping_method 命中。
+# 缺失时按 default 计算，并在「周期来源」列标注「默认值⚠️」。
+sku_supplier_map: {}        # 例：{"MOCK-SKU-001": "深圳XX电子"}
+sku_shipping_method_map: {} # 例：{"MOCK-SKU-001": "海运"}
+
+# ---------- 输出 ----------
+output:
+  top_n_each_quadrant: 20   # 每个矩阵象限最多展示条数（超出披露）
+  p0_max_items: 10          # P0 紧急清单最多条数
+  dead_stock_max_items: 10  # 滞销清单最多条数

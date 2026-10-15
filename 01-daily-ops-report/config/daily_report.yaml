@@ -1,0 +1,62 @@
+# ============================================================================
+# 每日经营日报 —— 技能专属配置（daily_report.yaml）
+# ============================================================================
+# ⚠️ 业务阈值（预警线、红线条数）不在这里，在 _shared/config/thresholds.yaml。
+#    本文件只放「本技能特有」的取数与口径开关。
+# 使用者维护；技能每次执行时重新读取，改后无需重启。
+
+report:
+  # L1 跨站点聚合币种。get_profit_report_by_shop 支持 currency 参数折算。
+  # ⚠️ 跨站点的各站点原币可能不同，聚合必须显式指定币种并在输出标注。
+  currency: USD
+  # 利润口径：settlement（结算，默认）/ shipment（发货）。同一次报告不得混用。
+  profit_caliber_type: settlement
+  # 「昨日」的业务日口径：
+  #   bizday = 以赛狐返回的 bizDay 字段为准（推荐，多站点边界由数据源统一）
+  #   local  = 按 timezone 计算本地自然日
+  date_mode: bizday
+  timezone: America/Los_Angeles
+  # 基线对比方案：
+  #   window_field = 用报表现成窗口字段 sevenSaleNum / thirtySaleNum（省调用，默认）
+  #   slice_30d    = 额外取 30 天店铺级利润报表，在技能内按日切片
+  baseline: window_field
+  baseline_days: 30
+
+# 每个数据源的 max_rows（硬截断安全阀）。
+# 历史测试常见 20 条/页（当前分页以契约为准），不能靠 page_size 控量；截断**必须**在输出中披露。
+limits:
+  shops: 40                # get_shop_page_list 店铺清单（可缓存）
+  shop_profit_rows: 40     # get_profit_report_by_shop（店铺级）
+  msku_per_shop: 20        # get_custom_report_page_list，每批（店铺）≤20 行，与硬上限对齐
+  orders: 40               # get_order_page_list（仅作异常订单下钻样本）
+  campaigns_per_shop: 200  # get_sp_campaign_list（游标）
+  multiplatform_rows: 200  # get_multiplatform_sale_stats
+
+# 店铺清单缓存（避免每天调用 get_shop_page_list）
+shop_cache:
+  enabled: true
+  file: ./out/shops_cache.json
+  ttl_days: 7
+
+# 跨平台销量（非亚马逊平台）。默认关闭；需要时配置平台 ID 与指标。
+multiplatform:
+  enabled: false
+  platform_id_list: []     # 2:ebay 3:shopify 4:walmart 6:tiktok 7:ozon 8:shein 12:temu ...
+  metrics: [salePrice]     # 可选 salePrice / orderNum / productNum（逐个串行取）
+  group_type: shop
+
+output:
+  dir: ./out
+  feishu_folder_token: ""      # 留空则用环境变量 FEISHU_FOLDER_TOKEN
+  feishu_default_enabled: false  # 只读日报默认只出本地 Markdown，写飞书需显式 --feishu
+
+# 缺少 daily_ops report_id 时的降级说明（写进「数据说明」区块，口径降级需显式标注）
+degradation:
+  no_report_id_note: "缺少自定义报表 report_id：L2 明细层口径降级。仅使用店铺级利润报表 （get_profit_report_by_shop）与在线产品（get_online_product_page_list）可得的指标； 流量（sessions/转化率）、广告点击、库龄分桶、补货建议等宽表字段不可用，标注「需人工核查」。"
+
+# MCP 无对应数据源、必须人工核查的巡检项（显式占位，绝不编造）
+human_check:
+  - 账户健康 / 绩效通知（需人工登录 Seller Central）
+  - 买家消息 / 待回工单（MCP 无客服接口）
+  - 政策合规 / 绩效风险（MCP 无此接口）
+  - 评论原文（MCP 仅有聚合指标：好评率 / 差评数）

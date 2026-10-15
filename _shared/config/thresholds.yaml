@@ -1,0 +1,87 @@
+# ============================================================================
+# 预警阈值配置（thresholds.yaml）
+# ============================================================================
+# 使用者维护。技能绝不硬编码阈值 —— 不同类目、不同阶段的合理值差别很大。
+#
+# 用法：
+#   from config_loader import ConfigLoader
+#   th = ConfigLoader().load("thresholds")
+#   if drop_pct > th["sales"]["drop_pct_vs_7d"]: ...
+#
+# 约定：
+#   - 所有 *_pct 单位均为「百分比数值」（30 表示 30%），不是小数。
+#   - 技能若发现本文件缺失或某项缺失，不得静默用内置值，
+#     必须按 _shared/config_loader.py 的批量询问流程补全，并在输出中标注来源。
+#
+# 修改后无需重启：技能每次执行时重新读取本文件。
+# 建议按类目分档次维护（可另建 thresholds.<类目>.yaml，由使用者自行扩展）。
+# ============================================================================
+
+# ---------- 销售 / 订单 ----------
+sales:
+  drop_pct_vs_7d: 30          # 销售额低于近 7 天均值 30% → 预警
+  drop_pct_vs_30d: 25         # 销售额低于近 30 天均值 25% → 预警
+
+orders:
+  drop_pct_vs_7d: 30          # 订单量低于近 7 天均值 30% → 预警
+
+# ---------- 转化 ----------
+conversion:
+  drop_pct_vs_30d: 25         # CVR 低于近 30 天均值 25% → 预警
+  sessions_zero_days: 7       # 连续 N 天会话为 0 → 判定「无流量」
+
+# ---------- 广告（判定条件只用实测确认的字段）----------
+ad:
+  acos_abs_max: 35            # ACOS 绝对值上限 %（超过即异常）
+  acos_rise_pct_vs_7d: 50     # ACOS 高于近 7 天均值 50% → 预警
+  acos_target: 25             # 目标 ACOS %（用于「优质词扩量」判定 acos < target）
+  roas_min: 2.0               # ROAS 下限
+  click_rate_drop_pct: 30     # 点击率（adClickRate）环比下降 → 疑似素材衰退
+  high_cost_zero_order_days: 7  # 高花费零转化持续天数
+  zero_order_cost_min: 30     # 「高花费」的下限金额（单活动 7 天累计花费）
+  # ⚠️ 不要用 servingStatus = BUDGET_CAPPED 作为诊断条件：
+  #    servingStatus 字段真实存在（实测见 CAMPAIGN_PAUSED），
+  #    但取值 BUDGET_CAPPED 未经实测验证，仅可作为人工提示，不得作为自动判定规则。
+  # ⚠️ state 取值只用实测确认的 enabled / paused / archived。
+
+# ---------- 库存 ----------
+inventory:
+  available_days_min: 30      # 可售天数低于此 → 断货预警
+  available_days_critical: 15 # 可售天数低于此 → 紧急
+  inv_age_271_365_pct_max: 10 # 库龄 271~365 天占比上限 %
+  inv_age_365_plus_pct_max: 5 # 库龄 365 天以上占比上限 %（长期仓储费红线）
+  turnover_days_max: 120      # 周转天数上限
+
+# ---------- Listing ----------
+listing:
+  buybox_pct_min: 90          # 购物车占比（buyBoxPercent）下限 %
+  sessions_zero_days: 7       # 连续无流量天数（与 conversion.sessions_zero_days 保持一致）
+  rating_drop_abs: 0.2        # 评分环比下降绝对值
+
+# ---------- 售后 ----------
+after_sales:
+  refund_rate_rise_pct_vs_30d: 50  # 退款率高于近 30 天均值 50% → 预警
+  low_review_daily_max: 3     # 单日新增差评数上限
+  rating_drop_abs: 0.2        # 评分单日/环比下降
+
+# ---------- 利润 ----------
+profit:
+  gross_profit_rate_min: 0    # 毛利率下限 %，低于此判定为亏损/微利
+  drop_pct_vs_30d: 25         # 毛利低于近 30 天均值 25% → 预警
+
+# ---------- 报告红线 ----------
+redline:
+  max_items: 5                # 「今日红线」最多条数（SOP 规定 ≤5）
+
+# ---------- 写操作审批闸门（供 scripts/approval.py 读取）----------
+# ⚠️ 这些是安全上限，不是业务阈值，改动需谨慎。技能绝不硬编码。
+approval:
+  max_items_per_batch: 20         # 单次变更条数上限（远低于接口的 100 上限）
+  max_budget_change_pct: 30       # 单次预算调整幅度上限 ±%
+  max_changes_per_campaign_24h: 2 # 单 campaign 24h 内调整次数上限（累计闸）
+  max_net_change_pct_24h: 30      # 单 campaign 24h 净变化上限（防复利累加）
+  max_daily_budget_increment: 5000  # 全局单日预算增量总额上限（金额，按报表币种）
+  require_read_back: true         # 写后必须回读校验
+  forbid_batch_pause_all: true    # 禁止批量全暂停
+  forbid_zero_budget: true        # 禁止预算清零
+  forbid_delete_targeting: true   # 禁止删除投放
