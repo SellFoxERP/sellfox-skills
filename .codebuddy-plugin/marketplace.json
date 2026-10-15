@@ -1,0 +1,15 @@
+{
+  "name": "sellfox-marketplace",
+  "owner": {
+    "name": "SellFoxERP"
+  },
+  "plugins": [
+    {
+      "name": "sellfox-skills",
+      "source": "./",
+      "description": "赛狐经营技能包：一次安装经营日报、库存健康、Listing 体检、周月复盘、利润诊断、广告优化、指标治理、上架素材和评论分析九个技能。",
+      "version": "1.0.0",
+      "strict": true
+    }
+  ]
+}

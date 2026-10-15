@@ -1,0 +1,20 @@
+{
+  "name": "sellfox-skills",
+  "description": "赛狐经营技能包：一次安装经营日报、库存健康、Listing 体检、周月复盘、利润诊断、广告优化、指标治理、上架素材和评论分析九个技能。",
+  "version": "1.0.0",
+  "author": {
+    "name": "SellFoxERP"
+  },
+  "repository": "https://github.com/SellFoxERP/sellfox-skills",
+  "skills": [
+    "./01-daily-ops-report/SKILL.md",
+    "./02-inventory-health/SKILL.md",
+    "./03-listing-health/SKILL.md",
+    "./04-weekly-review/SKILL.md",
+    "./05-profit-diagnosis/SKILL.md",
+    "./06-ad-optimizer/SKILL.md",
+    "./07-metric-governance/SKILL.md",
+    "./08-listing-launch/SKILL.md",
+    "./09-voc-insight/SKILL.md"
+  ]
+}

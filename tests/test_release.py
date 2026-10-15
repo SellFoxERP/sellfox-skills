@@ -152,6 +152,36 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
                 self.assertFalse({'out','logs','_internal','__pycache__'} & set(Path(n).parts),n)
             self.assertIn('sellfox-skills/scripts/install.py',paths)
             self.assertEqual(sum(n.endswith('/_shared/config/reports.yaml') for n in paths),1)
+    def test_22_marketplace_bundle(self):
+        import zipfile
+        self.run_script(self.root,'build_release.py')
+        dest=Path(self.tmp.name)/'market plugin cache'
+        with zipfile.ZipFile(self.root/'dist/sellfox-skills.zip') as z:
+            z.extractall(dest)
+        root=dest/'sellfox-skills'
+        market=json.loads((root/'.codebuddy-plugin/marketplace.json').read_text())
+        self.assertEqual(len(market['plugins']),1)
+        entry=market['plugins'][0]
+        plugin_root=(root/entry['source']).resolve()
+        self.assertEqual(plugin_root,root.resolve())
+        plugin=json.loads((plugin_root/'.codebuddy-plugin/plugin.json').read_text())
+        self.assertEqual(entry['name'],plugin['name'])
+        self.assertEqual(entry['version'],plugin['version'])
+        self.assertEqual(len(set(plugin['skills'])),9)
+        self.assertEqual(set(plugin['skills']),{'./'+p.relative_to(self.root).as_posix()+'/SKILL.md' for p in sorted(self.root.glob('0[1-9]-*'))})
+        entries=['run_daily_report.py','run_inventory_health.py','fetch_listing_data.py','fetch_weekly_data.py','run_profit_diagnosis.py','optimize.py','run_governance.py','listing_launch.py','voc_insight.py']
+        for path,script in zip(plugin['skills'],entries):
+            skill=(plugin_root/path).parent
+            self.assertTrue((skill/'SKILL.md').is_file())
+            self.run_script(skill,script,'--help')
+        self.assertTrue((plugin_root/'_shared/scripts/config_loader.py').is_file())
+        # 在模拟插件缓存路径执行实际日报，验证不依赖源码绝对路径。
+        skill=(plugin_root/plugin['skills'][0]).parent
+        self.raw(skill,'shops',envelope([{'id':'SHOP-DEMO-1','name':'演示店'}]))
+        self.raw(skill,'profit_shop',envelope([PROFIT],'reportList'))
+        self.run_script(skill,'run_daily_report.py','--date','2026-10-14')
+        self.assertIn('1,000',(skill/'out/daily_report.md').read_text())
+
     def test_18_voc_default_keywords_without_pyyaml(self):
         code="""from pathlib import Path
 import voc_common as v

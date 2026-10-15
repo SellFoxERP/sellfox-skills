@@ -11,7 +11,7 @@ def build():
         raise SystemExit('发布检查失败，停止打包。')
     dest=ROOT/'dist';dest.mkdir(exist_ok=True)
     output=dest/'sellfox-skills.zip'
-    roots=[ROOT/n for n in ('README.md','INSTALL.md','scripts','docs','_shared','tests','requirements-optional.txt')]
+    roots=[ROOT/n for n in ('.codebuddy-plugin','README.md','INSTALL.md','scripts','docs','_shared','tests','requirements-optional.txt')]
     roots+=sorted(ROOT.glob('[0-9][0-9]-*'))
     with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
         for item in roots:

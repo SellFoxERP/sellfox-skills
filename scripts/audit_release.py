@@ -7,7 +7,7 @@ import re
 import sys
 ROOT=Path(__file__).resolve().parent.parent
 EXCLUDED={'_internal','out','logs','__pycache__','.git','.venv','dist','.workbuddy','.codebuddy'}
-ALLOWED_ROOTS={'README.md','INSTALL.md','.gitignore','requirements-optional.txt','docs','scripts','tests','_shared','.github','LICENSE','LICENSE.md'}
+ALLOWED_ROOTS={'.codebuddy-plugin','README.md','INSTALL.md','.gitignore','requirements-optional.txt','docs','scripts','tests','_shared','.github','LICENSE','LICENSE.md'}
 PATTERNS={
  'private-key':re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----'),
  'token':re.compile(r'(?<![\w])[a-fA-F0-9]{64}(?![\w])'),
