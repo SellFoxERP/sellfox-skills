@@ -73,6 +73,7 @@ python3 scripts/build_release.py
 - WorkBuddy 随附 CLI 的 `plugin validate` 对市场和插件清单均返回通过。
 - 使用临时 `CODEBUDDY_CONFIG_DIR`、`WORKBUDDY_CONFIG_DIR` 和工作目录，实际添加目录市场、安装插件并确认状态为 enabled。
 - 第 22 项测试从发行 ZIP 解压模拟插件缓存，核验九个技能路径、版本一致性、九个脚本入口及共享依赖，并实际生成日报。
+- 从 GitHub HTTPS 仓库地址实际添加 git 类型市场并安装成功；隔离缓存包含 9 个 SKILL.md，插件列表显示 1.0.0、enabled。
 - 原有通用批量安装、升级保留配置与报告的回归测试继续覆盖。
 
 验证依据：[官方市场格式](https://www.workbuddy.cn/docs/cli/plugin-marketplaces)。尚未操作 WorkBuddy 图形界面验证自动触发，也未声称所有客户端完整兼容。
