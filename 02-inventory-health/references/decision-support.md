@@ -17,3 +17,5 @@
 scenarios.py 的 shipment 模式输入 mode、source_note、as_of、shipped_date（已按确认业务时区转换为 YYYY-MM-DD）、status、terminal_statuses（经本次契约确认的结束状态）、followup_days（商家阈值）。输出仅为发货天数及待跟进标记。
 
 两模式均运行 python <组件目录>/scripts/scenarios.py --input <本次输入.json> --output <新输出.json>。输入及结果本地保存；不得用当前快照冒充历史库存轨迹。
+
+quantity与inventoryManage.available可能不同口径，不相加或任取较大值；inboundWorking不是确认到货。测试可明确假设不计在途，但不等于实际在途为零。

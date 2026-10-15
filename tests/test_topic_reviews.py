@@ -66,6 +66,32 @@ class TopicTest(unittest.TestCase):
         p={'mode':'sales_change','source_note':'synthetic','current_sales':2,'baseline_sales':0,'current_days':7,'baseline_days':7}
         self.assertIsNone(scenarios.calculate(p)['change_percent']);p['current_days']=3
         with self.assertRaises(ValueError):scenarios.calculate(p)
+    def test_sample_requires_reason_and_preserves_date_mismatch(self):
+        p=self.plan('11-returns-loss');self.page(p,[self.row(bizDay=20250115)])
+        self.assertEqual(topic_review.review(p,self.base,'returns')['datasets']['current']['status'],'unavailable')
+        p['mode']='sample'
+        with self.assertRaises(ValueError):topic_review.review(p,self.base,'returns')
+        p['topic']['sample_reason']='Explicit synthetic capability demonstration'
+        r=topic_review.review(p,self.base,'returns')
+        self.assertEqual(r['datasets']['current']['observed_dates'],['20250115'])
+        self.assertEqual(r['findings'][0]['refund_units'],2)
+        self.assertIn('返回样本演示',topic_review.render(r))
+        self.assertTrue(any('日期不匹配' in x for x in r['datasets']['current']['issues']))
+
+    def test_sample_never_accepts_failed_data(self):
+        p=self.plan('11-returns-loss');p['mode']='sample';p['topic']['sample_reason']='Synthetic demonstration'
+        self.page(p,[self.row()],status='failed')
+        self.assertEqual(topic_review.review(p,self.base,'returns')['findings'],[])
+
+    def test_old_launch_outside_new_product_scope(self):
+        p=self.plan('12-new-product-review');p['topic']['max_age_days']=60
+        self.page(p,[{'shopId':'fixture','id':'old','openDate':'2025-01-20'}])
+        r=topic_review.review(p,self.base,'launch')
+        self.assertEqual(r['findings'][0]['new_product_scope'],'outside')
+        self.assertEqual(r['findings'][0]['launch_date_raw'],'2025-01-20')
+        p['topic']['max_age_days']=True
+        with self.assertRaises(ValueError):topic_review.review(p,self.base,'launch')
+
     def test_installed_topic_cli_and_upgrade_from_ten(self):
         dest=self.base/'installed'
         subprocess.run([sys.executable,str(ROOT/'scripts/install.py'),'--skills-dir',str(dest)],check=True,capture_output=True)

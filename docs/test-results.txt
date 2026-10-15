@@ -65,14 +65,17 @@ test_installed_topic_cli_and_upgrade_from_ten (test_topic_reviews.TopicTest.test
 test_launch_age_and_immature_window (test_topic_reviews.TopicTest.test_launch_age_and_immature_window) ... ok
 test_launch_future_and_unparsed_timestamp_unknown (test_topic_reviews.TopicTest.test_launch_future_and_unparsed_timestamp_unknown) ... ok
 test_missing_assumptions_not_zero (test_topic_reviews.TopicTest.test_missing_assumptions_not_zero) ... ok
+test_old_launch_outside_new_product_scope (test_topic_reviews.TopicTest.test_old_launch_outside_new_product_scope) ... ok
 test_pricing_nonpositive_contribution_no_break_even_volume (test_topic_reviews.TopicTest.test_pricing_nonpositive_contribution_no_break_even_volume) ... ok
 test_replenishment_pack_rounding_and_early_shortage (test_topic_reviews.TopicTest.test_replenishment_pack_rounding_and_early_shortage) ... ok
 test_returns_currency_and_missing_amount (test_topic_reviews.TopicTest.test_returns_currency_and_missing_amount) ... ok
 test_returns_preserves_sign_and_separate_events (test_topic_reviews.TopicTest.test_returns_preserves_sign_and_separate_events) ... ok
 test_sales_zero_baseline_and_unequal_periods (test_topic_reviews.TopicTest.test_sales_zero_baseline_and_unequal_periods) ... ok
+test_sample_never_accepts_failed_data (test_topic_reviews.TopicTest.test_sample_never_accepts_failed_data) ... ok
+test_sample_requires_reason_and_preserves_date_mismatch (test_topic_reviews.TopicTest.test_sample_requires_reason_and_preserves_date_mismatch) ... ok
 test_shipment_closed_and_future (test_topic_reviews.TopicTest.test_shipment_closed_and_future) ... ok
 
 ----------------------------------------------------------------------
-Ran 73 tests in 3.966s
+Ran 76 tests in 4.347s
 
 OK

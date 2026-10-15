@@ -10,8 +10,9 @@ def review(plan, base, topic):
     spec = plan.get('topic', {})
     if not isinstance(spec, dict):
         raise ValueError('topic 必须为对象')
-    if plan.get('mode', 'production') != 'production':
-        raise ValueError('主题复盘需要 production 模式；样本演示请直接使用通用处理器')
+    sample = plan.get('mode', 'production') == 'sample'
+    if sample and not spec.get('sample_reason'):
+        raise ValueError('样本模式必须提供 topic.sample_reason，说明用户授权及样本限制')
     if not plan.get('group_by') or not plan.get('dedupe_by'):
         raise ValueError('主题复盘需要显式商品分组键和业务去重键')
     if not spec.get('scope_note'):
@@ -36,7 +37,10 @@ def review(plan, base, topic):
             raise ValueError('新品复盘需要 as_of 和 launch_date_field，日期须已核实为日历日期')
     else:
         raise ValueError('未知主题')
-    # Array projections are allowed only when cardinality is exactly one.
+    max_age = spec.get('max_age_days')
+    if max_age is not None and (isinstance(max_age, bool) or not isinstance(max_age, int) or max_age <= 0):
+        raise ValueError('max_age_days 必须为正整数')
+    # Do not project arrays into a single product identity.
     # Never assign multi-MSKU aggregate money to the first SKU.
     for path in plan['group_by'] + plan['dedupe_by']:
         if any(part.isdigit() for part in path.split('.')):
@@ -44,8 +48,10 @@ def review(plan, base, topic):
     result = data.process(plan, base)
     result['topic'] = topic
     result['scope_note'] = spec['scope_note']
+    result['sample_reason'] = spec.get('sample_reason') if sample else None
     result['findings'] = []
     for name, ds in result['datasets'].items():
+        ds['observed_dates'] = sorted({str(data.at(x['row'], plan.get('date_field'))) for x in ds['records']}) if plan.get('date_field') else []
         if topic == 'returns':
             for group in ds['groups']:
                 metrics = group['metrics']
@@ -62,7 +68,9 @@ def review(plan, base, topic):
                 age = (as_of-launch).days+1 if launch and launch <= as_of else None
                 result['findings'].append({'dataset':name,
                     'product':{key:data.at(row,key) for key in plan['group_by']},
-                    'launch_date':str(launch) if launch else None,'age_days':age,
+                    'launch_date':str(launch) if launch else None,'launch_date_raw':data.at(row,spec['launch_date_field']),'age_days':age,
+                    'new_product_scope':'unknown' if age is None else 'outside' if max_age is not None and age>max_age else 'within' if max_age is not None else 'not_defined',
+                    'max_age_days':max_age,
                     'completed_observation_windows':[n for n in (7,14,30,60) if age is not None and age>=n],
                     'sources':record['sources'],
                     'note':'已达到的日历观察窗口，不表示数据完整或目标达成；未知/未来上架日期不评阶段。'})
@@ -71,7 +79,8 @@ def review(plan, base, topic):
 
 def render(result):
     title = '退款退货损失分析' if result['topic']=='returns' else '新品上市复盘'
-    lines = ['# '+title,'',data.cell(result['scope_note']),'',
+    banner = '返回样本演示：不能作为当前经营结论。原因：'+data.cell(result.get('sample_reason')) if result['mode']=='sample' else '生产模式：仍需核验业务范围和覆盖。'
+    lines = ['# '+title,'',banner,'',data.cell(result['scope_note']),'',
              '仅基于已取得记录，不认证全量覆盖。目标达成、原因判断和行动建议须结合证据另行分析。','',
              '| 数据集 | 商品 | 观察结果 |','|---|---|---|']
     for item in result['findings']:
