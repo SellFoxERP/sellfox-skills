@@ -199,7 +199,7 @@ def assemble_custom(
     """自定义宽表（489 字段，本期窗口）。缺 report_id / 缺落盘 → 降级（不崩）。"""
     if not report_id:
         note = ("未配置 reports.yaml → daily_ops.id，流量/广告/退款等 489 字段不可用；"
-                "请去赛狐网页端创建自定义报表并回填 report_id（口径降级）")
+                "助手可自动发现适用报表；当前按可得数据展示（口径降级）")
         return _make_source("degraded", TOOL_CUSTOM, note), [], None
     env, err = _load(raw_dir, "custom_current")
     source, rows = _consume_envelope(env, err, TOOL_CUSTOM, "宽表（本期）", "rows")

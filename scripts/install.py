@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一次安装九个技能，共享底座独立命名；升级保留商家配置和运行产物。"""
+"""一次安装通用技能与九个专项技能；升级保留商家配置和运行产物。"""
 from __future__ import annotations
 import argparse
 import json
@@ -17,8 +17,10 @@ def copy_clean(source: Path, target: Path):
 def install(destination: Path, update: bool = False):
     destination = destination.expanduser().resolve()
     skills = sorted(ROOT.glob('[0-9][0-9]-*/SKILL.md'))
-    if len(skills) != 9:
-        raise ValueError('安装源不完整：需要九个技能和 _shared，请解压完整发布包。')
+    manifest = json.loads((ROOT / '.codebuddy-plugin/plugin.json').read_text(encoding='utf-8'))
+    expected = {(ROOT / entry).resolve() for entry in manifest['skills']}
+    if {entry.resolve() for entry in skills} != expected or not (ROOT / '_shared').is_dir():
+        raise ValueError('安装源不完整：技能应与插件清单一致，并包含 _shared，请解压完整发布包。')
     names = [p.parent.name[3:] for p in skills]
     targets = names + [SHARED_NAME]
     conflicts = [n for n in targets if (destination / n).exists()]
@@ -26,7 +28,8 @@ def install(destination: Path, update: bool = False):
     if conflicts and not update:
         raise ValueError('目标已存在：' + ', '.join(conflicts) + '。升级请使用 --update，配置与 out/logs 将保留。')
     if conflicts:
-        if not marker.exists() or json.loads(marker.read_text()).get('skills') != names:
+        managed = json.loads(marker.read_text()).get('skills', []) if marker.exists() else []
+        if not managed or not set(managed).issubset(names) or any(n not in managed + [SHARED_NAME] for n in conflicts):
             raise ValueError('目标不是本安装器管理的完整安装；请选择其他目录，避免覆盖已有技能。')
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.sellfox-stage-', dir=destination.parent) as temp:
@@ -35,7 +38,8 @@ def install(destination: Path, update: bool = False):
         for entry, name in zip(skills, names):
             copy_clean(entry.parent, stage / name)
             # 唯一共享配置，迁移安装目录后请重新执行安装器。
-            (stage / name / 'config/paths.yaml').write_text('shared_root: ' + json.dumps(str(destination / SHARED_NAME), ensure_ascii=False) + '\n', encoding='utf-8')
+            if (stage / name / 'config').is_dir():
+                (stage / name / 'config/paths.yaml').write_text('shared_root: ' + json.dumps(str(destination / SHARED_NAME), ensure_ascii=False) + '\n', encoding='utf-8')
             entrypoint = stage / name / 'SKILL.md'
             content = entrypoint.read_text(encoding='utf-8')
             content = content.replace('## 运行环境与路径', '## 运行环境与路径\n\n本次批量安装：文中 `_shared/...` 引用指向技能根目录旁的 `../_sellfox_shared/...`。')
@@ -45,7 +49,7 @@ def install(destination: Path, update: bool = False):
             for folder in ('config', 'out', 'logs'):
                 if (old / folder).is_dir():
                     shutil.copytree(old / folder, new / folder, dirs_exist_ok=True)
-            if name != SHARED_NAME:
+            if name != SHARED_NAME and (new / 'config').is_dir():
                 (new / 'config/paths.yaml').write_text('shared_root: ' + json.dumps(str(destination / SHARED_NAME), ensure_ascii=False) + '\n', encoding='utf-8')
         backup = stage / 'backup'
         backup.mkdir()
@@ -65,7 +69,7 @@ def install(destination: Path, update: bool = False):
             raise
     print(f'已一次安装全部 {len(names)} 个技能：{destination}')
     print(f'统一配置目录：{destination / SHARED_NAME / "config"}')
-    print('请在所用客户端中确认九个技能可用，并在新任务中测试。')
+    print(f'请在所用客户端中确认 {len(names)} 个技能可用，并在新任务中测试。')
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)

@@ -3,11 +3,10 @@ name: daily-ops-report
 description: 当用户要求“配置赛狐”“配置经营报表”或“初始化赛狐技能”时，引导共享报表配置；也可生成跨境电商每日经营日报（赛狐/SellFox ERP 数据），按《每日巡店 SOP》7 步顺序巡检账户/订单、销售、广告、库存、转化、售后、政策，产出给管理层（L1 结论）与运营（L2 明细）的双分层日报，并可选写入飞书文档。当用户说“经营日报 / 每日日报 / 巡店 / 昨日数据 / 昨天的销售订单广告库存 / 店铺日报 / 每日报表 / 给管理层看的数据 / 生成今天的巡检报告”，或要求把某一天的经营数据整理成文档时，务必使用本技能，即使用户没说“日报”二字。只覆盖单一自然日（默认昨日）的快照与异常归因；不生成周报 / 月报 / 目标达成率（用周报技能）。
 ---
 
-## 商家初始化与报表配置
+## 报表自动发现
 
-首次使用或商家要求“配置赛狐 / 配置报表 / 暂不配置”时，读取共享底座的 `ONBOARDING.md`，运行其中的 `merchant_setup.py status`。
-不让商家编辑 YAML；助手做只读验证后保存报表 ID。独立用户配置跨版本保留，九个技能共用。
-未配置时先使用简版；已选择 `deferred` 不再询问，只在报告说明缺口。下文旧路径指默认配置，实际以共享加载器合并后的值为准；配置交互统一按 ONBOARDING.md，不重复要求回填缓存文件。
+任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
+匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
 
 ## 运行环境与路径
 
@@ -54,9 +53,7 @@ description: 当用户要求“配置赛狐”“配置经营报表”或“初�
    （Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，
    技能会运行时识别指纹并加水印、默认阻断写入（见第 3 条）。快速自检：
    `python scripts/run_daily_report.py --check-only`。
-2. **`report_id`**：`_shared/config/reports.yaml` 的 `daily_ops.id` 是否已回填。
-   目录里没有任何工具能列出报表 —— 用户必须去**赛狐网页端 → 自定义报表**创建并手工记下 ID。
-   为空时主动引导（勾选字段：库存/流量/广告/评论/退款），并**在日报中标注口径降级**。
+2. **报表选择**：按 `ONBOARDING.md` 自动发现并验证 daily_ops 用途的报表；不可用时跳过宽表，标注 L2 指标缺口，不要求手工配置。
 3. **演示环境指纹**：`MOCK-` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」。命中 → 顶部加水印，
    **默认阻断写飞书**。
 
@@ -177,7 +174,7 @@ python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step pr
 |---|---|---|
 | 预警阈值 / 红线上限 | `_shared/config/thresholds.yaml` | 异常判定 |
 | 店铺与负责人 | `_shared/config/shops.yaml` | 范围与告警路由 |
-| 报表 ID | `_shared/config/reports.yaml` | `daily_ops.report_id` |
+| 报表 ID | `_shared/config/reports.yaml` | `reports.daily_ops.id` |
 | 本技能开关 | `config/daily_report.yaml` | 币种、口径、max_rows、时区 |
 | 路径 | `config/paths.yaml` | `shared_root` 绝对路径（不写死 `../_shared/`） |
 
@@ -225,4 +222,4 @@ python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step pr
 - `references/report-template.md` —— **渲染日报时读**：模板骨架、双读者分层、飞书 block 映射。
 - `_shared/SELLFOX_CLIENT.md` —— **必读**：11 条铁律、MCP 调用契约。
 - `_shared/METRIC_FORMULAS.md` —— 指标口径（利润口径必须显式选择）。
-- `_shared/config/reports.yaml` —— `report_id` 一等前置配置（缺失走降级）。
+- `_shared/config/reports.yaml` —— `report_id` 助手自动发现后可缓存的选择（缺失走降级）。

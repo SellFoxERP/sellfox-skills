@@ -25,9 +25,7 @@
 1. **客户端 MCP 就绪**：会话内能调 `mcp__Sellfox-MCP__*`（Key 只在客户端 MCP 配置里，
    脚本不需要也不读 `SELLFOX_MCP_KEY`）。数据源是沙箱还是生产由客户端配置决定；
    技能对落盘数据做演示指纹运行时识别，不预设环境。
-2. **`_shared/config/reports.yaml` 的 `inventory.report_id`**：一等前置配置。137 个工具里
-   **没有任何一个能列出报表**——用户必须去赛狐网页端「自定义报表」创建并手工记下 ID。
-   为空 → 主源整步跳过走降级（见 §四），并在报告「数据说明」标注口径降级。
+2. **报表自动发现**：按共享 `ONBOARDING.md` 获取并验证 inventory 报表；无适用报表则跳过宽表走降级，不能把当前关联清单当作完整报表目录。
 3. **`out/raw/` 已有取数落盘**：v3 取数面由 agent 完成，计算面脚本只读落盘文件（零网络）。
 4. **阈值 / 到货周期配置**：`thresholds.yaml → inventory`、`lead_time.yaml` 缺失项不得
    静默用内置值，按 `config_loader.ensure_params` 的批量询问流程补全，并在输出标注来源。
@@ -63,7 +61,7 @@ session 并发安全，实测 10 并发 10/10 成功），但每步都要落盘�
 主源取数窗口：库存是快照，但周转/销量速率字段需要时间窗才有值 —— 取
 `on_date - report_window_days`（默认 30 天，`config/inventory.yaml`）到 `on_date`。
 
-### 降级源自算口径（report_id 未回填时）
+### 降级源自算口径（report_id 尚未发现时）
 
 降级源**没有** `availableDays` / `fbmAvailableDays` / `suggestNumSum`（仅属自定义报表与
 产品分析），字段名也和宽表不同，必须用在线产品真实字段自算：
@@ -109,7 +107,7 @@ python scripts/run_inventory_health.py --check-only    # 只做前置校验（�
 | 落盘状态 | 影响 | 降级做法 | 必须标注 |
 |---|---|---|---|
 | `out/raw/` 为空 | 无法组装 | 停止并提示按取数计划落盘 | — |
-| `inventory.report_id` 为空 | 主源（宽表）不可用 | 跳过步骤 2，用步骤 3 组装降级数据 | 「⚠️ 口径降级：缺少自定义报表，可售天数/建议量为自算，非赛狐口径」 |
+| `reports.inventory.id` 为空 | 主源（宽表）不可用 | 跳过步骤 2，用步骤 3 组装降级数据 | 「⚠️ 口径降级：缺少自定义报表，可售天数/建议量为自算，非赛狐口径」 |
 | 某步骤信封 `status=failed` | 该源缺失 | 该批记录不纳入 + 警告，其余照常；主源整批 failed → 切换降级源组装 | 数据说明记录 error_code |
 | 某 data 为空（`data:{}`） | 该项无数据 | 标「无数据」，不写 0，不重试 | — |
 | `msku_*.json` 缺失（report_id 已配） | L2 明细缺失 | 用步骤 3 组装，标「口径降级」 | 「宽表落盘缺失，明细层降级」 |

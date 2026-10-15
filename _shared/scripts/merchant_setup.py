@@ -34,7 +34,7 @@ def read_state() -> dict:
 
 def validate_id(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value):
-        raise ValueError('请提供报表 ID（字母、数字、下划线或连字符），不要填写名称、链接或凭证。')
+        raise ValueError('报表 ID 格式无效；助手应从实时查询结果取得有效 ID，不把名称、链接或凭证作为 ID。')
     return value
 
 
@@ -136,7 +136,8 @@ def status() -> dict:
                'id': effective.get(kind, {}).get('id', ''),
                'validation': state.get(kind, {}).get('validation'),
                'empty': state.get(kind, {}).get('empty'),
-               'prompt': kind not in state and not bool(effective.get(kind, {}).get('id'))}
+               'prompt': False,
+               'auto_discover': kind not in state and not bool(effective.get(kind, {}).get('id'))}
         for kind in KINDS}}
 
 
@@ -144,6 +145,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description='赛狐报表引导助手（不联网，不保存 MCP Key）')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('status')
+    discovery = sub.add_parser('candidates', help='从指标列表完整信封提取关联报表候选，不保存配置')
+    discovery.add_argument('--input', type=Path, nargs='+', required=True)
     defer = sub.add_parser('defer')
     defer.add_argument('--kind', choices=KINDS, required=True)
     save = sub.add_parser('save')
@@ -152,6 +155,11 @@ def main() -> None:
     save.add_argument('--evidence', type=Path, required=True)
     args = parser.parse_args()
     try:
+        if args.command == 'candidates':
+            from report_discovery import candidates
+            result = candidates([json.loads(path.read_text(encoding='utf-8')) for path in args.input])
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         if args.command == 'defer':
             update(args.kind)
         elif args.command == 'save':

@@ -243,7 +243,7 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     if not report_id:
         note = str(_cfg("degradation", "no_report_id_note", default="") or "")
         if not note or note.startswith((">", "|")):  # YAML 块标量被朴素解析时的兜底
-            note = "缺少 report_id，L2 口径降级（宽表不可用，请回填 _shared/config/reports.yaml）。"
+            note = "尚未取得适用报表，L2 口径降级；助手可自动发现关联报表，当前先展示已有数据。"
         degradations.append(note)
         bundle["data"]["msku_report"] = None
     elif msku_envs:

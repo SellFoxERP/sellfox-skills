@@ -417,7 +417,7 @@ def assemble_all(
         result.sources.append("get_online_product_page_list(降级)")
         result.warnings.append(
             "⚠️ 口径降级：未配置 reports.yaml → inventory.id，改用在线产品 inventoryManage "
-            "子对象；可售天数为自算口径，与赛狐 availableDays 不一致，请尽快回填 report_id。"
+            "子对象；可售天数为自算口径，与赛狐 availableDays 不一致，尚未取得适用报表时先展示当前自算结果。"
         )
         result.records = fallback
         if not fallback:

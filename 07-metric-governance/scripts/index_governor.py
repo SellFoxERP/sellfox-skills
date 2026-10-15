@@ -129,7 +129,7 @@ def load_skill_config(path: Optional[str] = None) -> Dict[str, Any]:
 
 
 def load_shared_reports() -> Dict[str, Any]:
-    """读取 _shared/config/reports.yaml（report_id 一等前置配置，供取数计划过滤用）。"""
+    """读取 _shared/config/reports.yaml（report_id 自动发现缓存，供取数计划过滤用）。"""
     loader = cfgmod.ConfigLoader(shared_root=str(SHARED_ROOT))
     return loader.load("reports")
 

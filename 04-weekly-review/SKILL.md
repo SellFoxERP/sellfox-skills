@@ -3,11 +3,10 @@ name: weekly-review
 description: 生成跨境电商经营周报与月报（赛狐/SellFox ERP 数据）：按自然周/自然月聚合 GMV、销量、毛利、毛利率、广告成本占比、退款率，计算对月/季/年目标的达成率，给出环比（本周 vs 上周）、对比上月同期与同比，输出 Top/Bottom ASIN 榜与趋势图，并可写入飞书文档。当用户提到"周报""月报""本周复盘""月度复盘""经营复盘""目标达成率""这周生意怎么样""上周数据汇总""本月经营总结""给管理层看的周报/月报""周会或月度经营分析材料""月度总结"时，务必使用本技能，即使用户没有明确说"周报"二字。只读，不修改任何赛狐数据。若用户要的是"某一天"的经营数据（经营日报、巡店、昨日数据），那是日报技能，不要用本技能。
 ---
 
-## 商家初始化与报表配置
+## 报表自动发现
 
-首次使用或商家要求“配置赛狐 / 配置报表 / 暂不配置”时，读取共享底座的 `ONBOARDING.md`，运行其中的 `merchant_setup.py status`。
-不让商家编辑 YAML；助手做只读验证后保存报表 ID。独立用户配置跨版本保留，九个技能共用。
-未配置时先使用简版；已选择 `deferred` 不再询问，只在报告说明缺口。下文旧路径指默认配置，实际以共享加载器合并后的值为准；配置交互统一按 ONBOARDING.md，不重复要求回填缓存文件。
+任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
+匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
 
 ## 运行环境与路径
 
@@ -71,9 +70,7 @@ description: 生成跨境电商经营周报与月报（赛狐/SellFox ERP 数据
 2. 客户端 MCP 就绪：会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（Key 只在客户端
    MCP 配置里，脚本零 HTTP、不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，
    命中指纹时报告加水印并默认阻断写飞书。
-3. 读 `_shared/config/reports.yaml` 的 `daily_ops.id`：
-   - 为空 → **口径降级**：489 字段宽表（流量/广告/退款/可售天数）不可用，报告必须标注；
-   - 并提示用户去赛狐网页端创建报表、按 `fields_hint` 勾选字段、回填 ID 后重跑。
+3. 按 `ONBOARDING.md` 自动发现并验证 daily_ops 报表，沿用本次选择读取多个窗口；无法使用时展示利润等内置数据并披露宽表字段缺口，不要求手工配置。
 4. `out/raw/` 已有本周期窗口的取数落盘（v3 取数面由 agent 完成，见 Step 2）。
 
 ### Step 1：确认参数
@@ -167,7 +164,7 @@ python scripts/push_feishu.py --markdown weekly_report.md --computed computed.js
 | 路径解析 | `config/paths.yaml` | `shared_root` 绝对路径（**不写死 `../_shared/`**） |
 | 预警阈值 | `_shared/config/thresholds.yaml` | 异常判定阈值 |
 | 经营目标 | `_shared/config/targets.yaml` | 月/季/年目标 + 达成率分级线 |
-| report_id | `_shared/config/reports.yaml` | 自定义报表 ID（一等前置） |
+| report_id | `_shared/config/reports.yaml` | 自定义报表 ID（自动发现后可缓存） |
 | 店铺/负责人 | `_shared/config/shops.yaml` | 范围与告警路由 |
 
 ## 常见错误

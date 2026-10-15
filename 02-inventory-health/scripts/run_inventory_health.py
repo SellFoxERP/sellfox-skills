@@ -6,7 +6,7 @@
 
 v3 前置校验（--check-only）：
   1. 客户端已配置 Sellfox-MCP（脚本不再需要 ``SELLFOX_MCP_KEY`` —— Key 只在客户端配置里）；
-  2. ``reports.yaml`` 的 ``inventory.report_id`` 是否已回填（缺失 → 提示去赛狐网页端创建并走降级）；
+  2. ``reports.yaml`` 的 ``inventory.report_id`` 是否已回填（缺失 → 助手自动发现，无可用报表则降级）；
   3. ``out/raw/`` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
   4. 演示环境指纹运行期识别 → 顶部水印 + 默认阻断写飞书。
 
@@ -72,9 +72,8 @@ def precheck(report_id: str | None, raw_dir: Path | None = None) -> list[str]:
 
     if not report_id:
         warnings.append(
-            "reports.yaml 的 inventory.report_id 为空：主源（自定义报表宽表）不可用，"
-            "本次走在线产品降级口径（可售天数/建议量为自算）。请登录赛狐网页端"
-            "「自定义报表」创建库存报表并回填 _shared/config/reports.yaml。"
+            "尚未取得适用库存报表：本次走在线产品降级口径（可售天数/建议量为自算）。"
+            "报表由助手按 ONBOARDING.md 自动发现，无需商家手工配置。"
         )
 
     raw_dir = Path(raw_dir) if raw_dir else SKILL_DIR / "out" / "raw"
@@ -91,7 +90,7 @@ def precheck(report_id: str | None, raw_dir: Path | None = None) -> list[str]:
 def _print_first_run_guidance() -> None:
     from merchant_setup import is_deferred
     if not is_deferred('inventory'):
-        print('尚未配置增强报表；可以对助手说“配置赛狐报表”或“暂不配置”。')
+        print('尚未取得适用增强报表；由助手自动发现，当前先用简版。')
     print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
 
 

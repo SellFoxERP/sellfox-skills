@@ -199,8 +199,8 @@ def main(argv=None) -> int:
         print(
             "⚠️ 以下报表 report_id 为空，取数计划将按无报表过滤执行"
             "（口径降级：治理范围=全部「我的」指标）：\n"
-            f"   {', '.join(missing_reports)} → 请在赛狐网页端创建自定义报表并把 ID 回填到 "
-            f"{gov.SHARED_ROOT / 'config' / 'reports.yaml'}"
+            f"   {', '.join(missing_reports)} → 助手可自动发现报表；当前仅按已声明的只读范围分析。"
+            "不能因目标报表缺失扩大批准的写入范围。"
         )
 
     desired = [gov.DesiredIndex.from_dict(d) for d in (cfg.get("desired_indices") or [])]

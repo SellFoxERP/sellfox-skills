@@ -91,7 +91,7 @@ class ReleaseTest(unittest.TestCase):
     def test_10_bulk_install_and_update(self):
         dest=Path(self.tmp.name)/'installed skills'
         self.run_script(self.root,'install.py','--skills-dir',dest)
-        self.assertEqual(len(list(dest.glob('*/SKILL.md'))),9)
+        self.assertEqual(len(list(dest.glob('*/SKILL.md'))),10)
         marker=dest/'_sellfox_shared/config/reports.yaml';marker.write_text('reports: {daily_ops: {id: "TEST-REPORT"}}\n')
         out=dest/'daily-ops-report/out/keep.txt';out.parent.mkdir();out.write_text('local report')
         self.run_script(self.root,'install.py','--skills-dir',dest,expected=1)
@@ -148,7 +148,7 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
         import zipfile
         with zipfile.ZipFile(self.root/'dist/sellfox-skills.zip') as z:
             paths=z.namelist()
-            self.assertEqual(sum(n.endswith('/SKILL.md') for n in paths),9)
+            self.assertEqual(sum(n.endswith('/SKILL.md') for n in paths),10)
             for n in paths:
                 self.assertFalse({'out','logs','_internal','__pycache__'} & set(Path(n).parts),n)
             self.assertIn('sellfox-skills/scripts/install.py',paths)
@@ -168,8 +168,8 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
         plugin=json.loads((plugin_root/'.codebuddy-plugin/plugin.json').read_text())
         self.assertEqual(entry['name'],plugin['name'])
         self.assertEqual(entry['version'],plugin['version'])
-        self.assertEqual(len(set(plugin['skills'])),9)
-        self.assertEqual(set(plugin['skills']),{'./'+p.relative_to(self.root).as_posix()+'/SKILL.md' for p in sorted(self.root.glob('0[1-9]-*'))})
+        self.assertEqual(len(set(plugin['skills'])),10)
+        self.assertEqual(set(plugin['skills']),{'./'+p.relative_to(self.root).as_posix()+'/SKILL.md' for p in sorted(self.root.glob('[0-9][0-9]-*'))})
         entries=['run_daily_report.py','run_inventory_health.py','fetch_listing_data.py','fetch_weekly_data.py','run_profit_diagnosis.py','optimize.py','run_governance.py','listing_launch.py','voc_insight.py']
         for path,script in zip(plugin['skills'],entries):
             skill=(plugin_root/path).parent
@@ -334,6 +334,40 @@ assert r['msku']=='MSKU-A' and r['asin']=='ASIN-A'
 r=aggregate_custom_report([{'salePrice':100,'adCost':10,'sessions':50,'orderNum':5}],{})
 assert r['status']=='ok' and r['sessions']==50 and r['orders']==5
 """)
+
+    def test_33_upgrade_from_nine_skills(self):
+        dest=Path(self.tmp.name)/'legacy-nine'
+        self.run_script(self.root,'install.py','--skills-dir',dest)
+        shutil.rmtree(dest/'sellfox-business')
+        marker=dest/'.sellfox-install.json'
+        state=json.loads(marker.read_text());state['skills'].remove('sellfox-business')
+        marker.write_text(json.dumps(state))
+        config=dest/'_sellfox_shared/config/reports.yaml'
+        config.write_text('reports: {daily_ops: {id: "MERCHANT-REPORT"}}\n')
+        self.run_script(self.root,'install.py','--skills-dir',dest,'--update')
+        self.assertTrue((dest/'sellfox-business/references/finance.md').is_file())
+        self.assertIn('MERCHANT-REPORT',config.read_text())
+        self.assertEqual(len(json.loads(marker.read_text())['skills']),10)
+
+    def test_34_upgrade_preserves_unmanaged_collision(self):
+        dest=Path(self.tmp.name)/'unmanaged-collision'
+        self.run_script(self.root,'install.py','--skills-dir',dest)
+        marker=dest/'.sellfox-install.json'
+        state=json.loads(marker.read_text());state['skills'].remove('sellfox-business')
+        marker.write_text(json.dumps(state))
+        own=dest/'sellfox-business/SKILL.md';own.write_text('user-owned skill')
+        self.run_script(self.root,'install.py','--skills-dir',dest,'--update',expected=1)
+        self.assertEqual(own.read_text(),'user-owned skill')
+
+    def test_35_general_skill_references_survive_install(self):
+        import re
+        dest=Path(self.tmp.name)/'reference-check'
+        self.run_script(self.root,'install.py','--skills-dir',dest)
+        skill=dest/'sellfox-business'
+        for file in [skill/'SKILL.md',*sorted((skill/'references').glob('*.md'))]:
+            for target in re.findall(r'\]\(([^)]+)\)',file.read_text()):
+                self.assertTrue((file.parent/target).is_file(),f'{file}: {target}')
+        self.assertEqual(len(list((skill/'references').glob('*.md'))),10)
 
     def run_code(self,p,code):
         result=subprocess.run([sys.executable,'-c',"import sys;sys.path.insert(0,'scripts');"+code],cwd=p,env=self.env,text=True,capture_output=True,timeout=30)

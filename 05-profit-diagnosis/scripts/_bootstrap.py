@@ -115,7 +115,7 @@ def load_shops() -> Dict[str, Any]:
 
 
 def load_reports() -> Dict[str, Any]:
-    """读 _shared/config/reports.yaml（report_id 一等前置）。"""
+    """读 _shared/config/reports.yaml（report_id 自动发现缓存）。"""
     return loader().load("reports")
 
 

@@ -6,7 +6,7 @@
 
 v3 前置校验（不再需要 SELLFOX_MCP_KEY —— Key 只在客户端 MCP 配置里）：
   1. 会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（agent 取数面前提）；
-  2. `reports.yaml` 的 `reports.profit.id` 是否已回填（缺失 → 首轮引导 + 降级路径）；
+  2. `reports.yaml` 的 `reports.profit.id` 是否已回填（缺失 → 自动发现 + 降级路径）；
   3. `out/raw/` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
   4. 演示环境指纹运行时识别 → 顶部水印 + 默认阻断写飞书。
 
@@ -78,7 +78,7 @@ def precheck(report_id: str | None, raw_dir: Path = RAW_DIR) -> list[str]:
 def _print_first_run_guidance() -> None:
     from merchant_setup import is_deferred
     if not is_deferred('profit'):
-        print('尚未配置增强报表；可以对助手说“配置赛狐报表”或“暂不配置”。')
+        print('尚未取得适用增强报表；由助手自动发现，当前先用简版。')
     print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
 
 

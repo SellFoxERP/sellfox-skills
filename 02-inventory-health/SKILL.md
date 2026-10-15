@@ -3,11 +3,10 @@ name: inventory-health
 description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只读，不下采购单）。逐 MSKU 计算可售天数、在途、到货周期、缺口与建议补货量，输出断货预警（P0/P1/P2）与「断货↔滞销」双向矩阵，生成含「周期来源」列的补货建议单，可写入飞书。当用户提到"库存健康""补货建议""要不要补货""断货预警""缺货风险""可售天数""还能卖几天""库存周转""滞销清理""呆滞库存""库龄""库存体检""补货单"，或询问某个 SKU/MSKU 该不该下补货、哪些货要清时，务必使用本技能，即使用户没有明确说"库存"二字。也适用于每日/每周的例行库存巡检。
 ---
 
-## 商家初始化与报表配置
+## 报表自动发现
 
-首次使用或商家要求“配置赛狐 / 配置报表 / 暂不配置”时，读取共享底座的 `ONBOARDING.md`，运行其中的 `merchant_setup.py status`。
-不让商家编辑 YAML；助手做只读验证后保存报表 ID。独立用户配置跨版本保留，九个技能共用。
-未配置时先使用简版；已选择 `deferred` 不再询问，只在报告说明缺口。下文旧路径指默认配置，实际以共享加载器合并后的值为准；配置交互统一按 ONBOARDING.md，不重复要求回填缓存文件。
+任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
+匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
 
 ## 运行环境与路径
 
@@ -52,7 +51,7 @@ description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只
 | `_shared/SELLFOX_CLIENT.md` | **必读**：v2 agent 调用纪律（三段式 / contract_version / 参数类型 / 错误语义 / 并发与落盘，12 条） |
 | `_shared/config/lead_time.yaml` | 解析到货周期（由使用者维护） |
 | `_shared/config/thresholds.yaml` | 读取 `inventory` 预警阈值 |
-| `_shared/config/reports.yaml` | 读取 `inventory.report_id`（本技能唯一部署前置） |
+| `_shared/config/reports.yaml` | 读取 `reports.inventory.id`（由助手自动发现，不是部署前置） |
 
 ## 如何执行
 
@@ -69,15 +68,7 @@ python scripts/run_inventory_health.py --answers '{"MOCK-SKU-001":45}' --write-b
 
 ### Step 0：前置校验（技能能不能跑）
 
-1. **读 `_shared/config/reports.yaml` 的 `inventory.id`。**
-   - 若为空：**主动引导**用户去赛狐网页端「自定义报表」创建一张库存报表，勾选
-     `availableDays / 在途 / 库龄分桶 / 周转 / suggestNumSum` 等字段，把报表 ID 回填。
-   - 用户暂不回填 → 走**降级路径**：改用 `get_online_product_page_list`。该工具**没有**
-     `availableDays`/`suggestNumSum`（二者仅属自定义报表），只能用其真实字段
-     `day30SaleNum`/`day7SaleNum`（日均销量）、`inventoryManage.available` 或顶层
-     `quantity`/`totalInventory`（可用库存）自算可售天数与建议量，并在输出顶部标注
-     「⚠️ 口径降级：缺少自定义报表，可售天数/建议量为自算，非赛狐口径」。缺这些字段的行标
-     「⚠️ 需人工核查」，绝不拿自定义报表的 `salesVelocityMonth`/`fbaInventory` 去套（取不到）。
+1. **库存报表自动发现。** 按 `ONBOARDING.md` 查找并验证 inventory 用途的报表。未取得适用报表时改用在线产品的真实销量/库存字段自算覆盖天数，标明与赛狐宽表口径的差异，缺字段标需核查；不要求商家创建报表或回填 ID。
 2. **客户端 MCP 就绪与数据环境。** Key 只在客户端 MCP 配置里，脚本零网络、不需要
    `SELLFOX_MCP_KEY`。数据源是沙箱还是生产由客户端配置决定；组装层扫落盘识别演示指纹
    （`MOCK-` 前缀 / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」），命中 → 输出顶部加水印，

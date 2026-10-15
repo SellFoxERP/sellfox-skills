@@ -29,7 +29,7 @@
 |---|---|---|
 | 客户端 MCP 就绪 | 会话内能调 `mcp__Sellfox-MCP__*`（Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）；数据源是沙箱还是生产由客户端配置决定，技能运行时识别演示指纹 | 提示在客户端配置；**不要**伪造数据 |
 | `_shared/` 可定位 | `python scripts/skill_paths.py` 能打印 `shared_root` | 修 `config/paths.yaml` 的 `shared_root` |
-| `report_id` 已回填 | 读 `_shared/config/reports.yaml` 的 `daily_ops.id` | 走降级路径，并**显式标注口径降级**（见下） |
+| `report_id` 已自动发现或复用 | 读 `_shared/config/reports.yaml` 的 `daily_ops.id` | 走降级路径，并**显式标注口径降级**（见下） |
 | 取数落盘就绪 | `out/raw/` 有本周期窗口文件（见取数计划） | 按「取数计划」由 agent 落盘后重跑脚本 |
 
 **「演示环境」是运行期判定，不是文档里的一句提醒。** 指纹：`MOCK-` / `demo.example.com` /
@@ -44,8 +44,7 @@
 - 仅保留店铺级利润（`get_profit_report_by_shop`）与 MSKU 利润（`get_profit_report_by_msku`）
   可得的 GMV / 销量 / 毛利 / 毛利率 / 广告花费；
 - 报告「数据说明」区块必须写明「⚠️ 口径降级：未配置 custom report_id」；
-- **首轮引导**：提示用户去赛狐网页端「自定义报表」创建报表、勾选
-  `reports.yaml → daily_ops.fields_hint` 列出的字段，把 ID 回填后重跑。
+- **自动发现**：先按共享 `ONBOARDING.md` 获取适用报表；失败或无候选时继续上述简版，不要求商家手工配置。
 
 ---
 
@@ -172,7 +171,7 @@ python scripts/push_feishu.py --markdown weekly_report.md --computed computed.js
 | `out/raw/` 为空 | 无法组装 | `fetch_weekly_data.py` 直接退出并提示按取数计划落盘 | — |
 | `profit_shop_current.json` 缺失/failed/损坏 | 本期核心指标不可用 | 脚本退出码 2；补齐落盘后重跑 | — |
 | 某历史窗口文件缺失（prev/prev_month/prev_year/mtd） | 对应环比/同比列「不适用」、达成率不可用 | 继续组装，`sources` 标 degraded | 数据说明记录缺失步骤 |
-| `daily_ops.report_id` 为空 | 宽表指标（流量/广告/退款/可售天数）不可用 | 取数计划第 7/8 步整步跳过 | 「口径降级：未配置 custom report_id」 |
+| `reports.daily_ops.id` 为空 | 宽表指标（流量/广告/退款/可售天数）不可用 | 取数计划第 7/8 步整步跳过 | 「口径降级：未配置 custom report_id」 |
 | `custom_current.json` 缺失/失败 | 同上 | 宽表步骤标 degraded，其余照常 | 数据说明记录 |
 | `profit_msku.json` 缺失/行数不足 | Top/Bottom 榜降级 | 榜单「无数据」或标「榜单覆盖不足」 | 数据说明记录 |
 | `trend.json` 缺失 | 趋势图降级 | 利润报表 `bizDay` 日粒度序列 | 「charData 缺失，降级」 |

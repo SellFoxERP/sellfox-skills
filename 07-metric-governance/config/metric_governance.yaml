@@ -3,7 +3,7 @@
 # ============================================================================
 # 本文件由**使用者维护**。技能读取，绝不硬编码。
 # 通用配置（报表 ID / 审批闸门 / 预警阈值）引用 _shared/config/：
-#   - report_id  → _shared/config/reports.yaml（一等前置）
+#   - report_id  → _shared/config/reports.yaml（自动发现后的兼容缓存）
 #   - 审批上限   → _shared/config/thresholds.yaml → approval
 #   - 口径白皮书 → _shared/METRIC_FORMULAS.md
 # ============================================================================

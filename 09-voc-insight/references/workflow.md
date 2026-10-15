@@ -235,7 +235,7 @@ mention  ： 未达线 → 只作「个别反馈」列出，明确标注「不�
 |---|---|---|
 | `fetch_signals.py` 报「缺少取数计划落盘」 | agent 未按第 2 节取数计划落盘（或 report_id 与落盘步骤不匹配） | 按取数计划补齐 `out/raw/` 再重跑；先跑 `validate_raw.py` 核对 |
 | 所有字段恒空 | 用 `rows` 解析利润报表 | 本技能用 `get_custom_report_page_list`，列表键是 `rows`；确认 tool 名 |
-| `lowReviewNum` 总是「无数据」 | 没配 `report_id`，字段只在宽表 | 去赛狐网页端创建报表并回填 `reports.yaml → daily_ops.id` |
+| `lowReviewNum` 总是「无数据」 | 没配 `report_id`，字段只在宽表 | 助手按共享 ONBOARDING.md 自动查找适用报表；无可用报表时仅展示评分快照 |
 | `action` 被 `CONTRACT_VERSION_MISMATCH` 拒 | 契约已变更 | 重 `search` 一次、按新 schema 重建参数、重试一次（只一次） |
 | `action` 被 `INVALID_PARAMS` 拒 | 参数类型/字段与当次契约不符 | 按 `field_errors[{path,rule}]` 修正；只传契约 properties 里的字段 |
 | 外部评论源调用挂起/超时 | 外部 MCP 并发能力未知 | 外部源默认串行调用；赛狐取数走 agent 元工具（并发安全），无此问题 |

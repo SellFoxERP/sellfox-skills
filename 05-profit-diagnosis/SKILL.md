@@ -3,11 +3,10 @@ name: profit-diagnosis
 description: 诊断跨境电商的利润异常并给出可核对的归因（赛狐/SellFox ERP 数据，只读）。同时拉取 MSKU 利润报表（171 字段财务深度）与自定义报表（489 字段含采购成本/头程/赔偿/延期结算），做本期 vs 基期的环比，把毛利下滑收敛成 3~5 条归因，每条逐字段标注来源工具与建议动作，并显式标注利润口径（settlement 结算 / shipment 发货）。当用户提到"利润诊断""为什么亏""为什么没利润""毛利下滑""利润下降""亏在哪里""利润归因""这个 ASIN 为什么不赚钱""哪个产品在亏钱""利润越来越薄""成本涨了""费用异常""延期结算""赔偿漏领""利润异常""赔的钱没到账"时，务必使用本技能，即使用户没有明确说"诊断"二字。只读，不改价、不改广告、不改 Listing；不生成周报/月报与目标达成率（用周报技能）。
 ---
 
-## 商家初始化与报表配置
+## 报表自动发现
 
-首次使用或商家要求“配置赛狐 / 配置报表 / 暂不配置”时，读取共享底座的 `ONBOARDING.md`，运行其中的 `merchant_setup.py status`。
-不让商家编辑 YAML；助手做只读验证后保存报表 ID。独立用户配置跨版本保留，九个技能共用。
-未配置时先使用简版；已选择 `deferred` 不再询问，只在报告说明缺口。下文旧路径指默认配置，实际以共享加载器合并后的值为准；配置交互统一按 ONBOARDING.md，不重复要求回填缓存文件。
+任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
+匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
 
 ## 运行环境与路径
 
@@ -77,12 +76,7 @@ python scripts/selfcheck.py                                             # 离线
 
 1. **利润口径确认。** 默认读 `config/diagnosis.yaml → caliber.default`（`settlement`）。
    可 `--caliber shipment` 覆盖。**报告首部必须标注用了哪个口径**。
-2. **report_id 检查。** 读 `_shared/config/reports.yaml` 的 `reports.profit.id`。
-   - 为空 → **主动引导**用户去赛狐网页端「自定义报表」创建一张利润/成本报表，勾选
-     `purchaseCost / headTripPrice / reimbursementAmount / warehouseLostAmount /
-     missingFromInboundAmount / deferredAmount` 及仓储细分字段，把 ID 回填。
-   - 用户暂不回填 → 走**降级路径**：只用 `get_profit_report_by_msku`，并在输出顶部标注
-     「⚠️ 口径降级」，且**明确声明**采购成本/头程/赔偿/延期结算类归因**不可用**（标「需人工核查」）。
+2. **利润报表自动发现。** 按 `ONBOARDING.md` 查找并验证 profit 用途；缺少适用报表时用内置 MSKU 利润数据继续，成本/赔偿/延期等归因按实际返回字段判断，不要求商家手填 ID。
 3. **阈值检查。** 读 `_shared/config/thresholds.yaml → profit`。缺失项按
    `config_loader.ensure_params` 一次性批量询问补全并标注来源，不静默用内置值。
 4. **客户端 MCP 就绪。** 会话内可调 `mcp__Sellfox-MCP__{help,search,action}`

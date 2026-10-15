@@ -6,7 +6,7 @@
 
 v3 前置校验：
   1. 客户端已配置 Sellfox-MCP（脚本不再需要 SELLFOX_MCP_KEY —— Key 只在客户端配置里）；
-  2. ``reports.yaml`` 的 daily_ops ``report_id`` 是否已回填（缺失 → 提示去赛狐网页端创建并存降级）；
+  2. ``reports.yaml`` 的 daily_ops ``report_id`` 是否已回填（缺失 → 助手自动发现，无可用报表则降级）；
   3. ``out/raw/`` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
   4. 演示环境指纹运行时识别 → 顶部水印 + 默认阻断写飞书。
 

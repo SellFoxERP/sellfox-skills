@@ -113,8 +113,7 @@ coverage 截断），组装出与旧版相同形状的 `data.json` —— diagno
 `sessions` / `pageViews` / `conversionRate` / `buyBoxPercent` / `lowReviewNum` / `reviewNum` /
 `bigCategoryRanking` / `smallCategoryRanking` / `availableDays`。
 
-首轮引导：检测到 `daily_ops.id` 为空时，提示用户去赛狐网页端创建报表、勾选
-流量/转化/购物车/评论/类目排名字段并回填 `report_id`。
+自动发现：按共享 `ONBOARDING.md` 获取适用报表并核对流量/转化/购物车/评论/类目排名字段；未找到则使用在线商品数据并说明缺口，不要求商家回填 ID。
 
 ## 4. 字段裁剪
 

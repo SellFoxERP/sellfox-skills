@@ -34,7 +34,8 @@ class OnboardingTest(unittest.TestCase):
 
     def test_status_does_not_create_config(self):
         state = self.cli('status')
-        self.assertTrue(all(v['prompt'] for v in state['reports'].values()))
+        self.assertTrue(all(v['auto_discover'] for v in state['reports'].values()))
+        self.assertFalse(any(v['prompt'] for v in state['reports'].values()))
         self.assertFalse(self.path.parent.exists())
 
     def test_defer_persists_without_reprompt(self):
@@ -42,7 +43,8 @@ class OnboardingTest(unittest.TestCase):
         state = self.cli('status')['reports']
         self.assertFalse(state['inventory']['prompt'])
         self.assertEqual(state['inventory']['status'], 'deferred')
-        self.assertTrue(state['profit']['prompt'])
+        self.assertFalse(state['inventory']['auto_discover'])
+        self.assertTrue(state['profit']['auto_discover'])
 
     def test_save_merge_backup_and_voc(self):
         self.cli('defer', '--kind', 'inventory')
@@ -85,6 +87,61 @@ class OnboardingTest(unittest.TestCase):
         (self.path.parent/'.reports.lock').touch()
         self.cli('defer', '--kind', 'inventory', ok=False)
         self.assertEqual(self.path.read_bytes(), old)
+
+    def indices(self, name, rows, **changes):
+        obj={'tool_id':'get_custom_report_index_page_list','status':'complete',
+             'trace_id':'synthetic-discovery','data':{'rows':rows},
+             'coverage':{'complete':False},'warnings':[]}
+        obj.update(changes)
+        path=self.directory/name
+        path.write_text(json.dumps(obj))
+        return str(path)
+
+    def test_discovery_deduplicates_without_saving_or_selecting(self):
+        first=self.indices('first.json',[
+            {'indexId':'not-a-report','reportList':[{'reportId':'11','reportName':'经营'}]},
+            {'reportList':[{'reportId':'11','reportName':'旧名称'},{'reportId':12,'reportName':'经营'}]},
+            {'reportList':None}])
+        second=self.indices('second.json',[{'reportList':[{'reportId':'11','reportName':'经营'}]}])
+        result=self.cli('candidates','--input',first,second)
+        self.assertEqual([r['report_id'] for r in result['candidates']],['11','12'])
+        self.assertEqual(result['candidates'][0]['names'],['经营','旧名称'])
+        self.assertEqual(result['candidates'][0]['source_pages'],[1,2])
+        self.assertFalse(result['report_catalog_complete'])
+        self.assertFalse(self.path.parent.exists())
+
+    def test_discovery_keeps_success_with_failed_page(self):
+        good=self.indices('good.json',[{'reportList':[{'reportId':'11','reportName':'经营'}]}])
+        bad=self.indices('bad.json',[{'reportList':[{'reportId':'unsafe','reportName':'不可信'}]}],
+                         status='failed',error_code='UPSTREAM_RESPONSE_INVALID')
+        result=self.cli('candidates','--input',good,bad)
+        self.assertEqual(len(result['candidates']),1)
+        self.assertFalse(result['pages'][1]['usable'])
+        self.assertEqual(result['pages'][1]['error_code'],'UPSTREAM_RESPONSE_INVALID')
+
+    def test_discovery_rejects_unknown_and_wrong_tool(self):
+        for changes in ({'status':'unknown'},{'tool_id':'get_order_page_list'}):
+            path=self.indices('untrusted.json',[{'reportList':[{'reportId':'11'}]}],**changes)
+            result=self.cli('candidates','--input',path)
+            self.assertEqual(result['status'],'unavailable')
+            self.assertEqual(result['candidates'],[])
+
+    def test_discovery_missing_links_are_not_report_ids(self):
+        path=self.indices('missing.json',[{'indexId':'index-only','indexName':'收入'},
+            {'reportList':[{'id':'wrong-field'},{'reportId':True},'bad-entry']},
+            {'reportList':{'reportId':'wrong-shape'}}])
+        result=self.cli('candidates','--input',path)
+        self.assertEqual(result['status'],'empty')
+        self.assertFalse(result['report_catalog_complete'])
+        self.assertEqual(result['pages'][0]['invalid_entries'],4)
+
+    def test_discovery_partial_retains_warnings(self):
+        path=self.indices('partial.json',[{'reportList':[{'reportId':'11'}]}],
+                          status='partial',warnings=['incomplete'],output_validation={'status':'mismatch'})
+        result=self.cli('candidates','--input',path)
+        self.assertEqual(result['status'],'candidates')
+        self.assertEqual(result['pages'][0]['warnings'],['incomplete'])
+        self.assertEqual(result['pages'][0]['output_validation'],{'status':'mismatch'})
 
 if __name__ == '__main__':
     unittest.main()

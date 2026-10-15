@@ -28,7 +28,7 @@ _shared/
 │   ├── lead_time.yaml           头程到货周期（三级配置 + 旺季系数）
 │   ├── shops.yaml               店铺与负责人
 │   ├── targets.yaml             经营目标
-│   └── reports.yaml             ⭐ report_id（一等前置）
+│   └── reports.yaml             ⭐ report_id（自动发现后可缓存）
 ├── scripts/
 │   ├── sellfox_offline.py       v3 离线工具（信封解析/演示指纹/空数据判定）——脚本用这个
 │   ├── validate_raw.py          落盘校验器 CLI（校验 out/raw/*.json）

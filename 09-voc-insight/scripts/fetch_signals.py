@@ -314,7 +314,7 @@ def run(args: argparse.Namespace) -> int:
             raise SystemExit(
                 "❌ report_id 未配置，且缺少 out/raw/online_products.json（取数计划步骤 3，"
                 "get_online_product_page_list）。请由 agent 按取数计划落盘后重跑本脚本，"
-                "或先在 _shared/config/reports.yaml 回填 daily_ops.id 再落盘宽表两窗口。"
+                "或由助手自动发现并验证适用报表后，再落盘宽表两窗口。"
             )
         _check_envelope(online_env, "online_products", errors, disclosures, notes_warnings)
         _scan_demo([online_env])

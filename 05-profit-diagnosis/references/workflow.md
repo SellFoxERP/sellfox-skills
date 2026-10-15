@@ -41,27 +41,9 @@
 3. **阈值配置是否存在。** 读 `_shared/config/thresholds.yaml → profit`（毛利率下限、毛利环比跌幅）。
    缺失项不得静默用内置值，按 `config_loader.ensure_params` 的批量询问流程补全，并在输出标注来源。
 
-## 2. report_id 首轮引导与降级路径
+## 2. report_id 自动发现与降级路径
 
-`get_custom_report_page_list` 需要 `report_id`，而目录里**没有任何一个工具能列出报表**——
-用户必须去赛狐网页端「自定义报表」创建并手工记下 ID。
-
-**首轮引导**（检测到 `_shared/config/reports.yaml → reports.profit.id` 为空时）：
-主动提示用户创建一张利润/成本报表，并给出需勾选的字段清单：
-
-```
-成本类：purchaseCost / headTripPrice / commodityCost
-赔偿类：reimbursementAmount / warehouseLostAmount / missingFromInboundAmount
-       / warehouseDamageAmount
-延期类：deferredAmount
-仓储细分：storageFeeAmount / fbaLongTermStorageFeeAmount / fbaOverageFeeAmount
-补充上下文：sessions / orderConversionRate / buyBoxPercent / invAge271To365Days /
-          invAge365PlusDays / returnSaleNum / refundPrice
-```
-
-**降级路径**（用户暂不回填）：**只落盘 `get_profit_report_by_msku`**（171 字段）相关步骤，
-并在输出顶部标「⚠️ 口径降级」。降级**不是失败**，是**显式的口径降级** —— 必须让使用者知道
-结论建立在更弱的数据上。
+按共享 `ONBOARDING.md` 自动提取关联报表 ID，核对 profit 用途及成本/赔偿/延期/仓储等所需字段。未取得适用报表时继续内置利润查询，并标注当前不可用的归因；不要求商家提供 ID 或创建新报表。
 
 降级时**明确不可用的归因**（这些字段**只存在于自定义报表**，实测确认，msku 报表拿不到）：
 

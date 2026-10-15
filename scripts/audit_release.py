@@ -25,7 +25,7 @@ def audit():
  errors=[];count=0;skill_names=[]
  for p in publish_files():
   rel=p.relative_to(ROOT);count+=1
-  if rel.parts[0] not in ALLOWED_ROOTS and not re.fullmatch(r'0[1-9]-[a-z-]+',rel.parts[0]):errors.append(f'{rel}: 非发布白名单文件')
+  if rel.parts[0] not in ALLOWED_ROOTS and not re.fullmatch(r'(?:0[1-9]|10)-[a-z-]+',rel.parts[0]):errors.append(f'{rel}: 非发布白名单文件')
   if p.is_symlink():errors.append(f'{rel}: 不发布符号链接');continue
   try:s=p.read_text(encoding='utf-8')
   except UnicodeError:errors.append(f'{rel}: 未审核的二进制文件');continue
@@ -46,7 +46,10 @@ def audit():
    skill_names.append(name)
    for ref in re.findall(r'`((?:references|config|scripts|adapters)/[\w./-]+\.(?:md|py|yaml|json))`',s):
     if not (p.parent/ref).exists():errors.append(f'{rel}: 引用缺失 {ref}')
- if len(skill_names)!=9 or len(set(skill_names))!=9:errors.append('技能数量或命名不正确')
+ if len(skill_names)!=10 or len(set(skill_names))!=10:errors.append('技能数量或命名不正确')
+ manifest=json.loads((ROOT/'.codebuddy-plugin/plugin.json').read_text(encoding='utf-8'))
+ expected={'./'+p.relative_to(ROOT).as_posix() for p in ROOT.glob('[0-9][0-9]-*/SKILL.md')}
+ if set(manifest['skills'])!=expected or len(manifest['skills'])!=len(expected):errors.append('插件清单与技能目录不一致')
  print(f'检查 {count} 个发布候选文件、{len(skill_names)} 个技能。')
  for error in errors:print('FAIL',error)
  if not (ROOT/'LICENSE').exists() and not (ROOT/'LICENSE.md').exists():print('NOTE 未选择开源许可证；发布者需决定授权条款，不能宣称已采用 MIT/Apache。')

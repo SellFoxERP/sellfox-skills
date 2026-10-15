@@ -1,7 +1,26 @@
+test_comparison_missing_groups_and_zero_baseline (test_business_data.BusinessDataTest.test_comparison_missing_groups_and_zero_baseline) ... ok
+test_currency_groups_and_weighted_ratio (test_business_data.BusinessDataTest.test_currency_groups_and_weighted_ratio) ... ok
+test_date_scope_is_checked_including_integer_dates (test_business_data.BusinessDataTest.test_date_scope_is_checked_including_integer_dates) ... ok
+test_duplicate_rows_and_conflicting_keys (test_business_data.BusinessDataTest.test_duplicate_rows_and_conflicting_keys) ... ok
+test_envelopes_nested_fields_and_request_scope (test_business_data.BusinessDataTest.test_envelopes_nested_fields_and_request_scope) ... ok
+test_failed_and_unknown_pages_are_not_data (test_business_data.BusinessDataTest.test_failed_and_unknown_pages_are_not_data) ... ok
+test_missing_and_invalid_values_do_not_become_zero (test_business_data.BusinessDataTest.test_missing_and_invalid_values_do_not_become_zero) ... ok
+test_missing_currency_cannot_sum_money (test_business_data.BusinessDataTest.test_missing_currency_cannot_sum_money) ... ok
+test_real_failure_shape_preserves_upstream_diagnostics (test_business_data.BusinessDataTest.test_real_failure_shape_preserves_upstream_diagnostics) ... ok
+test_repeated_page_not_double_counted (test_business_data.BusinessDataTest.test_repeated_page_not_double_counted) ... ok
+test_standalone_cli_outputs_and_refuses_overwrite (test_business_data.BusinessDataTest.test_standalone_cli_outputs_and_refuses_overwrite) ... ok
+test_unavailable_cli_writes_diagnostics_and_nonzero (test_business_data.BusinessDataTest.test_unavailable_cli_writes_diagnostics_and_nonzero) ... ok
+test_warning_preservation_and_empty_not_zero (test_business_data.BusinessDataTest.test_warning_preservation_and_empty_not_zero) ... ok
+test_wrong_tool_and_required_money_mapping (test_business_data.BusinessDataTest.test_wrong_tool_and_required_money_mapping) ... ok
 test_concurrent_write_refused (test_onboarding.OnboardingTest.test_concurrent_write_refused) ... ok
 test_corrupt_config_not_overwritten (test_onboarding.OnboardingTest.test_corrupt_config_not_overwritten) ... ok
 test_defer_persists_without_reprompt (test_onboarding.OnboardingTest.test_defer_persists_without_reprompt) ... ok
 test_different_package_copy_reads_same_user_state (test_onboarding.OnboardingTest.test_different_package_copy_reads_same_user_state) ... ok
+test_discovery_deduplicates_without_saving_or_selecting (test_onboarding.OnboardingTest.test_discovery_deduplicates_without_saving_or_selecting) ... ok
+test_discovery_keeps_success_with_failed_page (test_onboarding.OnboardingTest.test_discovery_keeps_success_with_failed_page) ... ok
+test_discovery_missing_links_are_not_report_ids (test_onboarding.OnboardingTest.test_discovery_missing_links_are_not_report_ids) ... ok
+test_discovery_partial_retains_warnings (test_onboarding.OnboardingTest.test_discovery_partial_retains_warnings) ... ok
+test_discovery_rejects_unknown_and_wrong_tool (test_onboarding.OnboardingTest.test_discovery_rejects_unknown_and_wrong_tool) ... ok
 test_failed_validation_preserves_previous_state (test_onboarding.OnboardingTest.test_failed_validation_preserves_previous_state) ... ok
 test_save_merge_backup_and_voc (test_onboarding.OnboardingTest.test_save_merge_backup_and_voc) ... ok
 test_status_does_not_create_config (test_onboarding.OnboardingTest.test_status_does_not_create_config) ... ok
@@ -37,8 +56,11 @@ test_29_voc_snapshot_without_baseline (test_release.ReleaseTest.test_29_voc_snap
 test_30_ad_missing_performance_is_not_no_issue (test_release.ReleaseTest.test_30_ad_missing_performance_is_not_no_issue) ... ok
 test_31_weekly_msku_list_is_not_spu (test_release.ReleaseTest.test_31_weekly_msku_list_is_not_spu) ... ok
 test_32_weekly_custom_report_still_computes (test_release.ReleaseTest.test_32_weekly_custom_report_still_computes) ... ok
+test_33_upgrade_from_nine_skills (test_release.ReleaseTest.test_33_upgrade_from_nine_skills) ... ok
+test_34_upgrade_preserves_unmanaged_collision (test_release.ReleaseTest.test_34_upgrade_preserves_unmanaged_collision) ... ok
+test_35_general_skill_references_survive_install (test_release.ReleaseTest.test_35_general_skill_references_survive_install) ... ok
 
 ----------------------------------------------------------------------
-Ran 39 tests in 3.304s
+Ran 61 tests in 3.762s
 
 OK
