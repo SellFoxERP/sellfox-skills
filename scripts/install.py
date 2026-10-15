@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一次安装通用技能与九个专项技能；升级保留商家配置和运行产物。"""
+"""一次安装通用技能与十一个专项技能；升级保留商家配置和运行产物。"""
 from __future__ import annotations
 import argparse
 import json

@@ -59,8 +59,20 @@ test_32_weekly_custom_report_still_computes (test_release.ReleaseTest.test_32_we
 test_33_upgrade_from_nine_skills (test_release.ReleaseTest.test_33_upgrade_from_nine_skills) ... ok
 test_34_upgrade_preserves_unmanaged_collision (test_release.ReleaseTest.test_34_upgrade_preserves_unmanaged_collision) ... ok
 test_35_general_skill_references_survive_install (test_release.ReleaseTest.test_35_general_skill_references_survive_install) ... ok
+test_array_first_item_and_wrong_mapping_refused (test_topic_reviews.TopicTest.test_array_first_item_and_wrong_mapping_refused) ... ok
+test_failed_response_does_not_become_zero (test_topic_reviews.TopicTest.test_failed_response_does_not_become_zero) ... ok
+test_installed_topic_cli_and_upgrade_from_ten (test_topic_reviews.TopicTest.test_installed_topic_cli_and_upgrade_from_ten) ... ok
+test_launch_age_and_immature_window (test_topic_reviews.TopicTest.test_launch_age_and_immature_window) ... ok
+test_launch_future_and_unparsed_timestamp_unknown (test_topic_reviews.TopicTest.test_launch_future_and_unparsed_timestamp_unknown) ... ok
+test_missing_assumptions_not_zero (test_topic_reviews.TopicTest.test_missing_assumptions_not_zero) ... ok
+test_pricing_nonpositive_contribution_no_break_even_volume (test_topic_reviews.TopicTest.test_pricing_nonpositive_contribution_no_break_even_volume) ... ok
+test_replenishment_pack_rounding_and_early_shortage (test_topic_reviews.TopicTest.test_replenishment_pack_rounding_and_early_shortage) ... ok
+test_returns_currency_and_missing_amount (test_topic_reviews.TopicTest.test_returns_currency_and_missing_amount) ... ok
+test_returns_preserves_sign_and_separate_events (test_topic_reviews.TopicTest.test_returns_preserves_sign_and_separate_events) ... ok
+test_sales_zero_baseline_and_unequal_periods (test_topic_reviews.TopicTest.test_sales_zero_baseline_and_unequal_periods) ... ok
+test_shipment_closed_and_future (test_topic_reviews.TopicTest.test_shipment_closed_and_future) ... ok
 
 ----------------------------------------------------------------------
-Ran 61 tests in 3.762s
+Ran 73 tests in 3.966s
 
 OK

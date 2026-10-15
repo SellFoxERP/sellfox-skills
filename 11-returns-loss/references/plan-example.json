@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "tool_id": "get_profit_report_by_msku",
+  "rows_path": "data.reportList",
+  "group_by": [
+    "shopId",
+    "id"
+  ],
+  "dedupe_by": [
+    "shopId",
+    "id",
+    "bizDay",
+    "currency"
+  ],
+  "currency_field": "currency",
+  "date_field": "bizDay",
+  "metrics": {
+    "sales_units": {
+      "op": "sum",
+      "field": "salesNum",
+      "unit": "count"
+    },
+    "refund_units": {
+      "op": "sum",
+      "field": "refundNum",
+      "unit": "count"
+    },
+    "return_units": {
+      "op": "sum",
+      "field": "returnNum",
+      "unit": "count"
+    },
+    "refund_amount_signed": {
+      "op": "sum",
+      "field": "refundSales",
+      "unit": "money"
+    },
+    "refund_rate": {
+      "op": "ratio",
+      "numerator": "refundNum",
+      "denominator": "salesNum",
+      "unit": "percent",
+      "currency_sensitive": false
+    },
+    "return_rate": {
+      "op": "ratio",
+      "numerator": "returnNum",
+      "denominator": "salesNum",
+      "unit": "percent",
+      "currency_sensitive": false
+    }
+  },
+  "topic": {
+    "scope_note": "示例：Amazon，MSKU 粒度，结算口径；id 必须经验证为稳定商品标识，否则更换映射"
+  },
+  "datasets": {
+    "current": {
+      "inputs": [
+        "current.json"
+      ],
+      "period": {
+        "start": "2026-10-01",
+        "end": "2026-10-07"
+      }
+    }
+  }
+}

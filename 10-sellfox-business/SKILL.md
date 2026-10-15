@@ -36,3 +36,10 @@ description: 通过 Sellfox-MCP 完成跨境电商的日常业务查询、跨域
 - 需要固定日报、周月复盘或专门计算流水线时，可在已安装的专项技能中选择相应能力；本技能不要求用户先安装专项技能。
 
 索引未覆盖的新需求，先按完整业务问句调用 help；只在当前连接确实返回支持能力时继续，不从工具命名猜测功能。
+
+## 主题与决策路由
+
+- 退款率、退货费用或售后侵蚀利润：已安装时使用 returns-loss；不把退款量与退货量相加。
+- 新品上架后阶段表现及是否继续投入：使用 new-product-review；上线前内容仍用 listing-launch。
+- 销量下降：结合产品分析与 listing-health 的专项排查；补货/货件跟进用 inventory-health；活动保本测算用 profit-diagnosis。
+- 情景计算使用 `scripts/scenarios.py`，输入规范见 [数据处理](references/data-processing.md)；脚本不调用 MCP 或修改业务。

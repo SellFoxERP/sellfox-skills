@@ -171,3 +171,6 @@ python scripts/render_report.py --in problems.json --out report.md
 | 拉宽表 489 字段全量 / 对话中复述行级数据 | 上下文爆炸 | 字段裁剪；数据只落盘，分析交给脚本 |
 | 跨币种相减 | 价格/利润计算错误 | `listingPrice`(USD) 与 `inventoryManage.currency`(CNY) 显式标注，不直接相减 |
 | 静默截断 | 被读成「已覆盖全部」 | `coverage.truncated` → 输出披露「仅覆盖 Top N」 |
+## 销量下降专项排查
+
+遇到该主题时阅读 [决策支持](references/decision-support.md)，使用随批量包提供的情景脚本；先核对输入来源，输出假设与缺口。

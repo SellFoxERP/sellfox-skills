@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "tool_id": "get_online_product_page_list",
+  "rows_path": "data.rows",
+  "group_by": [
+    "shopId",
+    "id"
+  ],
+  "dedupe_by": [
+    "shopId",
+    "id"
+  ],
+  "metrics": {
+    "products": {
+      "op": "count",
+      "unit": "count"
+    },
+    "rolling_7d_units": {
+      "op": "sum",
+      "field": "day7SaleNum",
+      "unit": "count"
+    },
+    "rolling_30d_units": {
+      "op": "sum",
+      "field": "day30SaleNum",
+      "unit": "count"
+    }
+  },
+  "topic": {
+    "scope_note": "示例：Amazon 在线商品快照；滚动销量不是上市首 N 天数据",
+    "as_of": "2026-10-15",
+    "launch_date_field": "openDate"
+  },
+  "datasets": {
+    "snapshot": {
+      "inputs": [
+        "snapshot.json"
+      ]
+    }
+  }
+}
