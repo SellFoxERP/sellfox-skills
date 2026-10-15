@@ -51,6 +51,7 @@ SHARED_ROOT = skill_paths.bootstrap()
 from sellfox_offline import (  # type: ignore  # noqa: E402
     RawEnvelope,
     detect_demo_environment,
+    detect_date_filter_unreliable,
     is_no_data,
     load_envelope,
 )
@@ -287,6 +288,12 @@ def fetch_all(
         if out_key == "profit_yoy" and "yoy" not in plan["windows"]:
             continue  # 同比关闭时不输出该键（与旧版一致）
         src, rows, env = assemble_profit_window(raw_dir, step, label)
+        if env is not None:
+            period = env.obj.get("period") or {}
+            start, end = period.get("start_date"), period.get("end_date")
+            if start and end and detect_date_filter_unreliable(env.data, str(start), str(end)):
+                src["note"] = "返回业务日期与请求窗口不符；数值仅展示返回样本，不能解释为该周经营结果。"
+                src["truncation"] = (src.get("truncation") or "") + " " + src["note"]
         sources[out_key] = src
         data[out_key] = rows
         envs.append(env)

@@ -92,7 +92,15 @@ def _flagged_section(signals: Dict[str, Any]) -> str:
     flagged = signals.get("flagged") or []
     lines = ["## 1. 问题 ASIN（来自赛狐聚合指标，零外部依赖）", ""]
     if not flagged:
-        lines.append("未发现达标的问题 ASIN（若 report_id 未配置，则本步为口径降级所致，见数据说明）。")
+        if not (signals.get("counts") or {}).get("previous_rows"):
+            lines.append("缺少历史基线，无法判断评分是否下降；不代表没有问题。以下展示已取到的评分快照。")
+        else:
+            lines.append("本次可比较样本未触发配置阈值。")
+        observed = signals.get("observed") or []
+        if observed:
+            lines.extend(["", "| ASIN | 评分 | 评分数 |", "|---|---|---|"])
+            for row in observed:
+                lines.append(f"| {vc.key_of(row.get('asin')) or '无数据'} | {_fmt(row.get('rating'))} | {_fmt(row.get('ratingCount'))} |")
         lines.append("")
         return "\n".join(lines)
     lines.append("| ASIN | 店铺 | 标题 | 差评数(前→今) | 评分(前→今) | 好评率(前→今) | 命中信号 |")

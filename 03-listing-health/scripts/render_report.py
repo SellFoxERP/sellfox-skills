@@ -67,7 +67,7 @@ def render(result: Dict[str, Any]) -> str:
     discs = meta.get("disclosures") or []
     if discs:
         for d in discs:
-            lines.append(f"- ⚠️ 截断披露：本次仅覆盖 Top N，其余未纳入（{d}）")
+            lines.append(f"- 数据说明：{d}")
     else:
         lines.append("- 截断披露：未触发截断")
     if meta.get("demo_fingerprint"):

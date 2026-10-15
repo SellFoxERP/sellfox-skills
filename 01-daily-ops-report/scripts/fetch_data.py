@@ -52,6 +52,7 @@ from config_loader import ConfigLoader, load_yaml_file  # noqa: E402
 from sellfox_offline import (  # noqa: E402
     RawEnvelope,
     detect_demo_environment,
+    detect_date_filter_unreliable,
     is_no_data,
     load_envelope,
 )
@@ -178,6 +179,10 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
                     degradations.append(note)
             if obj.get("status") != "complete":
                 degradations.append(f"数据响应状态 {obj.get('status', '缺失')}，不代表完整成功。")
+        if isinstance(obj, dict) and detect_date_filter_unreliable(obj.get("data"), rd["iso"], rd["iso"]):
+            note = "返回业务日期不在请求窗口内；以下数值仅展示返回样本，不能解释为该日经营结果。"
+            if note not in degradations:
+                degradations.append(note)
         fp = detect_demo_environment(obj)
         if fp and not demo_fingerprint:
             demo_fingerprint = fp

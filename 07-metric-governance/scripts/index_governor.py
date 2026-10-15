@@ -241,12 +241,14 @@ def _read_envelope(path: Path) -> Tuple[Optional[Any], List[str], Optional[str]]
     if env.partial:
         notes.append(f"🟡 {path.stem}：status=partial（读可采信但须在数据说明披露）")
     cov = env.coverage or {}
-    if cov.get("truncated") or cov.get("complete") is not True:
+    if cov.get("truncated"):
         truncated = True
         notes.append(
             f"⚠️ {path.stem}：本次仅覆盖 {cov.get('fetched_count')} 行"
-            f"（服务端报告约 {cov.get('total_count')} 行），达 max_rows 上限，其余未纳入比对。"
+            f"（服务端报告约 {cov.get('total_count')} 行），响应声明截断，其余未纳入比对。"
         )
+    if cov.get("complete") is not True and not truncated:
+        notes.append(f"⚠️ {path.stem}：覆盖范围未知，未据此认定达到 max_rows 上限。")
     return env, notes, truncated
 
 

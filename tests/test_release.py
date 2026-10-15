@@ -233,6 +233,108 @@ unsafe=g.build_plan([{'indexName':'change','indexFormula':'a/b'}],wanted)
 assert len(unsafe.updates)==0
 """
         self.run_code(self.skill(7),code)
+    def test_23_daily_mixed_currency_and_date(self):
+        p=self.skill(1)
+        self.raw(p,'shops',envelope([{'id':'SHOP-DEMO-1'}]))
+        rows=[dict(PROFIT,currency='USD',bizDay=20250115),dict(PROFIT,currency='EUR',productSales=2000,bizDay=20250115)]
+        self.raw(p,'profit_shop',envelope(rows,'reportList'))
+        self.run_script(p,'run_daily_report.py','--date','2026-10-14')
+        a=json.loads((p/'out/analysis.json').read_text())
+        self.assertIsNone(a['l1']['gmv'])
+        self.assertEqual(a['l1']['by_currency']['USD']['gmv'],1000)
+        report=(p/'out/daily_report.md').read_text()
+        self.assertIn('业务日期',report)
+        self.assertIn('销量（件）',report)
+        self.assertNotIn('| 订单量 |',report)
+
+    def test_24_weekly_requested_currency_not_conversion(self):
+        p=self.skill(4)
+        rows=[dict(PROFIT,currency='USD'),dict(PROFIT,currency='EUR',productSales=2000)]
+        self.raw(p,'profit_shop_current',envelope(rows,'reportList'))
+        self.run_script(p,'fetch_weekly_data.py','--period','week','--anchor','2026-10-12','--currency','USD','--out','out/mixed.json')
+        self.run_script(p,'compute_metrics.py','--in','out/mixed.json','--out','out/mixed_computed.json')
+        result=json.loads((p/'out/mixed_computed.json').read_text())
+        self.assertTrue(result['coverage']['mixed_currency'])
+        self.assertIsNone(result['aggregate']['current'].get('gmv'))
+        self.assertEqual(result['aggregate']['current']['by_currency']['EUR']['gmv'],2000)
+        self.assertNotEqual(result['trend']['status'],'ok')
+
+    def test_25_listing_warnings_not_truncation(self):
+        self.run_code(self.skill(3),"""from render_report import render
+r=render({'meta':{'disclosures':['schema warning'],'report_configured':False}})
+assert 'schema warning' in r and 'Top N' not in r
+""")
+
+    def test_26_inventory_observation_not_urgent(self):
+        self.run_code(self.skill(2),"""from types import SimpleNamespace
+from replenishment import compute
+class Loader:
+ def section(self,*args):return {}
+ def resolve_lead_time(self,**kwargs):return SimpleNamespace(days=30,source='test',layer='default')
+base={'msku':'fixture','thirty_sale_num':300,'available_days':10,'inbound_total':300}
+r=compute([base],loader=Loader(),skill_cfg={}).rows[0]
+assert r.quadrant=='① 补货观察' and r.gap==0
+r=compute([dict(base,inbound_total=None)],loader=Loader(),skill_cfg={}).rows[0]
+assert r.quadrant=='⑤ 数据不足'
+""")
+
+    def test_27_governance_unknown_coverage_not_limit(self):
+        self.run_code(self.skill(7),"""import json,tempfile
+from pathlib import Path
+import index_governor as g
+with tempfile.TemporaryDirectory() as d:
+ p=Path(d)/'stat_index_op1.json'
+ p.write_text(json.dumps({'status':'complete','data':[{'id':'fixture'}],'coverage':{'complete':None,'truncated':False}}))
+ env,notes,truncated=g._read_envelope(p)
+ assert not truncated and any('覆盖范围未知' in n for n in notes)
+ assert not any('达 max_rows 上限' in n for n in notes)
+""")
+
+    def test_28_launch_matches_target_and_missing_price(self):
+        p=self.skill(8)
+        self.raw(p,'online_product',envelope([dict(PRODUCT,asin='WRONG',listingPrice=987654),dict(PRODUCT,asin='TARGET',listingPrice=23)]))
+        self.run_script(p,'listing_launch.py','--search-content','TARGET','--name','fixture','--out','out/matched.md')
+        report=(p/'out/matched.md').read_text()
+        self.assertIn('售价：23',report)
+        self.assertNotIn('售价：987654',report)
+        self.assertNotIn('None',report)
+        self.run_script(p,'listing_launch.py','--search-content','MISSING','--name','fixture','--out','out/missing.md')
+        self.assertIn('精确匹配 0', (p/'out/missing.md').read_text())
+
+    def test_29_voc_snapshot_without_baseline(self):
+        p=self.skill(9)
+        self.raw(p,'online_products',envelope([PRODUCT]))
+        self.run_script(p,'voc_insight.py','--days','7')
+        report=(p/'out/voc-report.md').read_text()
+        self.assertIn('缺少历史基线',report)
+        self.assertIn('B0DEMO00001',report)
+        self.assertNotIn('未发现达标的问题 ASIN',report)
+
+    def test_30_ad_missing_performance_is_not_no_issue(self):
+        self.run_code(self.skill(6),"""from ad_fetch import AdData
+import diagnose
+from optimize import render_report
+x=AdData(campaigns=[{'campaignId':'fixture','name':'Example','state':'paused','budget':'10'}])
+f=diagnose.diagnose(x,{}, {})
+assert f[0].rule=='insufficient_data'
+text=render_report(x,f,None,'',start_date='2026-10-08',end_date='2026-10-14')
+assert '已读取活动 1 条' in text and 'paused 1' in text and 'Example' in text
+""")
+
+    def test_31_weekly_msku_list_is_not_spu(self):
+        self.run_code(self.skill(4),"""import skill_paths
+from compute_metrics import rankings
+cfg=skill_paths.load_skill_config('weekly')
+r=rankings([{'mskuList':['MSKU-A'],'asinList':['ASIN-A'],'spu':'SPU-B','productSales':10}],cfg['profit_report_fields'],5,cfg['rank_identifiers'])['rows'][0]
+assert r['msku']=='MSKU-A' and r['asin']=='ASIN-A'
+""")
+
+    def test_32_weekly_custom_report_still_computes(self):
+        self.run_code(self.skill(4),"""from compute_metrics import aggregate_custom_report
+r=aggregate_custom_report([{'salePrice':100,'adCost':10,'sessions':50,'orderNum':5}],{})
+assert r['status']=='ok' and r['sessions']==50 and r['orders']==5
+""")
+
     def run_code(self,p,code):
         result=subprocess.run([sys.executable,'-c',"import sys;sys.path.insert(0,'scripts');"+code],cwd=p,env=self.env,text=True,capture_output=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

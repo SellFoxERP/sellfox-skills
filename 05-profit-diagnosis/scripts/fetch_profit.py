@@ -409,11 +409,17 @@ def _consume_step(
     if source_tool not in result.sources:  # 双窗口共用同一工具，数据源只记一次
         result.sources.append(source_tool)
     rows: List[Dict[str, Any]] = []
+    from sellfox_offline import detect_date_filter_unreliable
     for env in envs:
         result.mcp_calls += 1
         batch = "" if len(envs) == 1 else f"（批 {env.path.name}）"
         result.coverage.append(_cov_line(env, f"{label}{batch}"))
         result.warnings.extend(_env_issues(env, f"{label}{batch}"))
+        result.warnings.extend(str(w) for w in env.warnings)
+        period = env.obj.get("period") or {}
+        start, end = period.get("start_date"), period.get("end_date")
+        if start and end and detect_date_filter_unreliable(env.data, start, end):
+            result.warnings.append(f"{label}：返回业务日期与请求窗口不符；仅展示返回样本，不能解释为实际期间变化。")
         if env.status == "failed":
             continue  # failed 信封的行不可采信
         for row in env.rows(list_key):

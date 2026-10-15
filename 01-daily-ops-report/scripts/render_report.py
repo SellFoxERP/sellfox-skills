@@ -88,9 +88,12 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append("| 指标 | 昨日 | 币种/口径 |")
     L.append("|---|---|---|")
     L.append(f"| GMV（销售额） | {_fmt(l1.get('gmv'))} | {cur} |")
-    L.append(f"| 订单量 | {_fmt(l1.get('units'), 0)} | — |")
+    L.append(f"| 销量（件） | {_fmt(l1.get('units'), 0)} | — |")
     L.append(f"| 毛利 | {_fmt(l1.get('gross_profit'))} | {cur} |")
     L.append(f"| 毛利率 | {_fmt(l1.get('gross_profit_rate'), 2, '%')} | 利润口径 {analysis.get('config', {}).get('profit_caliber_type','settlement')} |")
+    if l1.get("by_currency"):
+        for currency, values in l1["by_currency"].items():
+            L.append(f"| 销售额 / 毛利（{currency}） | {_fmt(values.get('gmv'))} / {_fmt(values.get('gross_profit'))} | {currency} |")
     L.append(f"| ACOS | {_fmt(l1.get('acos'), 2, '%')} | 报表口径（adCost/adSalePrice） |")
     L.append(f"| CVR | {_fmt(l1.get('cvr'), 2, '%')} | orderNum/sessions |")
     L.append("")
@@ -110,7 +113,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     _step_header("01", "账户 / 订单（覆盖最低，多项需人工）", p0=True)
     s1 = steps.get("01_account") or {}
     L.append(f"- 退款数：{_fmt(s1.get('refund_num'), 0)} ｜ 退款金额：{_fmt(s1.get('refund_amount'))} ｜ 退货数：{_fmt(s1.get('return_num'), 0)}")
-    L.append(f"- 订单异常下钻样本：{_fmt(s1.get('anomaly_orders_sampled'), 0)} 条（抽样，非全量）")
+    L.append(f"- 订单下钻样本：{_fmt(s1.get('anomaly_orders_sampled'), 0)} 条（抽样，非全量）")
     for m in s1.get("manual") or []:
         L.append(f"- {m}")
     L.append("")
@@ -183,7 +186,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     # ---------- L3 附录 ----------
     L.append("## 【L3 附录】")
     L.append("")
-    L.append("### 订单异常样本（已脱敏）")
+    L.append("### 订单下钻样本（已脱敏）")
     L.append("")
     orders = ((bundle.get("data") or {}).get("orders_sample") or {}).get("rows") or []
     if not orders:
@@ -227,7 +230,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append("")
     cfg = analysis.get("config") or {}
     L.append(f"- 利润口径：{cfg.get('profit_caliber_type','settlement')}（结算/发货口径二者结果不同）")
-    L.append(f"- 币种：聚合币种 {cur}（由 currency 参数折算；跨站点原币可能不同）")
+    L.append(f"- 币种：聚合币种 {cur}（以返回行币种核验；请求参数不代表折算已成功）")
     L.append(f"- 业务日边界：{cfg.get('date_mode')}（时区参考 {cfg.get('timezone','—')}）；数据截止 {iso} 23:59")
     L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / get_custom_report_page_list / get_order_page_list / get_sp_campaign_list）")
     L.append("")

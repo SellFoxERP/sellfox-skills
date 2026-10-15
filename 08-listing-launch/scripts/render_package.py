@@ -60,12 +60,15 @@ def _compliance_md(compliance: Optional[Dict[str, Any]], spec_check: Optional[Di
 def _pricing_md(pricing: Optional[Dict[str, Any]]) -> str:
     if not pricing:
         return "⚠️ 未执行定价测算"
+    def display(key, suffix=""):
+        value = pricing.get(key)
+        return "无数据（需人工核查）" if value is None else f"{value}{suffix}"
     lines = [
-        f"- 售价口径币种：**{pricing.get('price_currency')}**；成本口径币种：**{pricing.get('cost_currency')}**",
-        f"- 售价：{pricing.get('selling_price')}",
-        f"- 采购成本（已按 fx.yaml 换算）：{pricing.get('purchase_cost')}",
+        f"- 售价口径币种：**{display('price_currency')}**；成本口径币种：**{display('cost_currency')}**",
+        f"- 售价：{display('selling_price')}",
+        f"- 采购成本（换算是否可用见数据说明）：{display('purchase_cost')}",
         f"- 成本合计：{pricing.get('total_cost') if pricing.get('cost_complete') else '⚠️ 不完整，需人工核查'}",
-        f"- 预估毛利：{pricing.get('estimated_profit')}；预估毛利率：{pricing.get('estimated_margin_pct')}%",
+        f"- 预估毛利：{display('estimated_profit')}；预估毛利率：{display('estimated_margin_pct', '%')}",
     ]
     if pricing.get("suggested_price") is not None:
         lines.append(f"- 目标毛利率 {pricing.get('target_margin_pct')}% 倒推建议售价：**{pricing.get('suggested_price')}**")

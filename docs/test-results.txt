@@ -27,8 +27,18 @@ test_19_daily_unknown_profit_is_not_revenue (test_release.ReleaseTest.test_19_da
 test_20_inventory_gap_and_unknown (test_release.ReleaseTest.test_20_inventory_gap_and_unknown) ... ok
 test_21_governance_add_update_and_missing_id (test_release.ReleaseTest.test_21_governance_add_update_and_missing_id) ... ok
 test_22_marketplace_bundle (test_release.ReleaseTest.test_22_marketplace_bundle) ... ok
+test_23_daily_mixed_currency_and_date (test_release.ReleaseTest.test_23_daily_mixed_currency_and_date) ... ok
+test_24_weekly_requested_currency_not_conversion (test_release.ReleaseTest.test_24_weekly_requested_currency_not_conversion) ... ok
+test_25_listing_warnings_not_truncation (test_release.ReleaseTest.test_25_listing_warnings_not_truncation) ... ok
+test_26_inventory_observation_not_urgent (test_release.ReleaseTest.test_26_inventory_observation_not_urgent) ... ok
+test_27_governance_unknown_coverage_not_limit (test_release.ReleaseTest.test_27_governance_unknown_coverage_not_limit) ... ok
+test_28_launch_matches_target_and_missing_price (test_release.ReleaseTest.test_28_launch_matches_target_and_missing_price) ... ok
+test_29_voc_snapshot_without_baseline (test_release.ReleaseTest.test_29_voc_snapshot_without_baseline) ... ok
+test_30_ad_missing_performance_is_not_no_issue (test_release.ReleaseTest.test_30_ad_missing_performance_is_not_no_issue) ... ok
+test_31_weekly_msku_list_is_not_spu (test_release.ReleaseTest.test_31_weekly_msku_list_is_not_spu) ... ok
+test_32_weekly_custom_report_still_computes (test_release.ReleaseTest.test_32_weekly_custom_report_still_computes) ... ok
 
 ----------------------------------------------------------------------
-Ran 29 tests in 3.032s
+Ran 39 tests in 3.304s
 
 OK

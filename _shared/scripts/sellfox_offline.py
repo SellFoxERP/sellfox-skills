@@ -64,18 +64,25 @@ def detect_date_filter_unreliable(
     只要有任一日期字段值落在 ``[window_start, window_end]``（yyyy-MM-dd 字符串比较）
     之外，即判定不可信。数据无日期字段时返回 False（无法判定）。
     """
-    found_any = False
+    def normalized(value):
+        text = str(value or "")
+        if len(text) == 8 and text.isdigit():
+            return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+        if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+            return text[:10]
+        return None
+
+    start, end = normalized(window_start), normalized(window_end)
+    if not start or not end:
+        return False
     for row in _iter_rows(payload):
         if not isinstance(row, dict):
             continue
         for field in DATE_FIELDS:
-            v = row.get(field)
-            if isinstance(v, str) and len(v) >= 10:
-                day = v[:10]
-                found_any = True
-                if not (window_start <= day <= window_end):
-                    return True
-    return False if found_any else False
+            day = normalized(row.get(field))
+            if day and not (start <= day <= end):
+                return True
+    return False
 
 
 def _iter_rows(payload: Any) -> Iterable[Any]:

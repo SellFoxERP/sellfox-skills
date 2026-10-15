@@ -123,6 +123,7 @@ def render_report(
     out.append(f"   ③ 滞销清理 ({c.get('③ 滞销清理', 0):>2}) │ ④ 低效观察 ({c.get('④ 低效观察', 0):>2})")
     out.append("              低销量")
     out.append("```\n")
+    out.append(f"补货观察：{c.get('① 补货观察', 0)} 项；数据不足：{c.get('⑤ 数据不足', 0)} 项（单独列示，不计入紧急补货或健康）。\n")
 
     # 补货建议单
     out.append("## 补货建议单\n")

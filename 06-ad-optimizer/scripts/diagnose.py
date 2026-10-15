@@ -341,9 +341,9 @@ def diagnose(ad_data: Any, thresholds: Dict[str, Any], opt_cfg: Dict[str, Any]) 
         findings += keyword_findings(ad_data.perf_keyword, ad_data.keywords, thresholds, opt_cfg)
     if not findings:
         findings.append(Finding(
-            rule="no_issue", level="P2", scope="shop", target_id="-", target_name="全店",
+            rule="insufficient_data" if not (ad_data.perf_campaign or ad_data.perf_keyword) else "no_issue", level="P2", scope="shop", target_id="-", target_name="全店",
             metrics={},
-            reason="按当前阈值未发现需优化项（或绩效数据不足，见数据说明）",
+            reason="缺少绩效数据，无法判断 ACOS 或转化表现；以下仅展示活动与关键词结构。" if not (ad_data.perf_campaign or ad_data.perf_keyword) else "已取到的绩效样本未触发配置阈值。",
             auto_executable=False,
         ))
     return findings

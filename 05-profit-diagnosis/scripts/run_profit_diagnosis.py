@@ -179,7 +179,7 @@ def _run(args: argparse.Namespace) -> int:
         "cost_currency": currency.get("cost_currency", "CNY"),
         "top_n": int(out_cfg.get("top_n_loss", 20)),
         "include_deferred_section": bool(out_cfg.get("include_deferred_section", True)),
-        "reimbursement_count": len(result.reimbursement_rows),
+        "reimbursement_count": len(result.reimbursement_rows) if "get_amazon_reimbursement_report" in result.sources else "未取数",
         # v3：脚本零网络，此计数 = 实际消费的 agent 落盘信封数（零落盘 → 0 → 渲染层显式警示）。
         "mcp_calls": result.mcp_calls,
     }

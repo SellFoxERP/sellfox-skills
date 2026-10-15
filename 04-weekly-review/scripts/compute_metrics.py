@@ -116,6 +116,13 @@ def aggregate_profit(rows: List[Dict[str, Any]], fm: Dict[str, str]) -> Dict[str
     """把利润报表行（可能是 店铺×日）聚合成总览指标。"""
     if not rows:
         return {"status": NO_DATA}
+    groups = {}
+    for row in rows:
+        groups.setdefault(str(_unwrap(row.get("currency")) or "未知"), []).append(row)
+    if len(groups) > 1:
+        return {"status": "mixed_currency", "rows": len(rows),
+                "sales_num": _sum(rows, fm["sales_num"]),
+                "by_currency": {key: aggregate_profit(value, fm) for key, value in groups.items()}}
     gmv = _sum(rows, fm["gmv"])
     sales = _sum(rows, fm["sales_num"])
     gp = _sum(rows, fm["gross_profit"])
@@ -123,6 +130,7 @@ def aggregate_profit(rows: List[Dict[str, Any]], fm: Dict[str, str]) -> Dict[str
     ad_cost = abs(ad_cost_raw) if ad_cost_raw is not None else None
     return {
         "status": "ok",
+        "currency": next(iter(groups)),
         "rows": len(rows),
         "gmv": gmv,
         "sales_num": sales,
@@ -193,6 +201,7 @@ def per_shop(rows: List[Dict[str, Any]], fm: Dict[str, str]) -> List[Dict[str, A
     for key, grows in grouped.items():
         agg = aggregate_profit(grows, fm)
         agg["shop"] = key
+        agg["currency"] = "/".join(distinct_currencies(grows)) or "未知"
         out.append(agg)
     out.sort(key=lambda x: (x.get("gmv") or 0), reverse=True)
     return out
@@ -330,6 +339,8 @@ def rankings(rows: List[Dict[str, Any]], fm: Dict[str, str], n: int,
 
 def build_trend(plan: Dict[str, Any], rows: List[Dict[str, Any]], fm: Dict[str, str],
                 char_data: Any, points_max: int) -> Dict[str, Any]:
+    if len(distinct_currencies(rows)) > 1:
+        return {"status": "mixed_currency", "source": "返回行含多种币种", "note": "不拼接不同币种金额为一条趋势线"}
     if char_data:
         return {"status": "ok", "source": "get_product_analyze_detail.charData", "charData": char_data}
     # 退化路径：按 bizDay 从利润报表日粒度聚合
@@ -430,7 +441,7 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
     fm = cfg["profit_report_fields"]
     cfm = cfg.get("custom_report_fields") or {}
     d = data["data"]
-    meta = data["meta"]
+    meta = dict(data["meta"])
     plan = meta["period"]
 
     agg = {
@@ -448,6 +459,8 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
     for key, label in (("prev", "环比(上期)"), ("prev_month_same_period", "对比上月同期"),
                        ("yoy", "同比(去年同期)")):
         base = agg.get(key, {})
+        if base.get("currency") != agg["current"].get("currency"):
+            base = {}
         deltas[key] = {
             "label": label,
             "gmv_pct": _pct_change(agg["current"].get("gmv"), base.get("gmv")),
@@ -461,8 +474,9 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
 
     # 币种校验
     cur_currencies = distinct_currencies(d.get("profit_current") or [])
-    agg_currency_specified = bool(meta.get("currency")) and "原币种" not in meta.get("currency", "")
-    mixed_currency = len(cur_currencies) > 1 and not agg_currency_specified
+    if cur_currencies:
+        meta["currency"] = " / ".join(cur_currencies) + "（返回行币种，未另作折算）"
+    mixed_currency = len(cur_currencies) > 1
 
     ach = achievement(plan, targets, agg["month_to_date"], agg["current"])
 

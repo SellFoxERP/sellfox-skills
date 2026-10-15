@@ -79,6 +79,15 @@ def render_report(
         "## 一、核心结论",
         "",
     ]
+    from collections import Counter
+    states = Counter(str(row.get("state") or "未知") for row in ad_data.campaigns)
+    lines.append(f"- 已读取活动 {len(ad_data.campaigns)} 条、关键词 {len(ad_data.keywords)} 条（仅覆盖已落盘页）。")
+    lines.append("- 活动状态：" + "、".join(f"{key} {count}" for key, count in sorted(states.items())))
+    lines.extend(["", "### 活动样本（前 5 条，非绩效排名）", "", "| 活动 | 状态 | 预算原值 |", "|---|---|---|"])
+    for row in ad_data.campaigns[:5]:
+        budget = row.get("budget")
+        lines.append(f"| {row.get('name') or row.get('campaignId')} | {row.get('state') or '未知'} | {budget if budget is not None else '无数据'} |")
+    lines.append("\n预算币种以账号配置为准；未获取绩效时不判断投放好坏。\n")
     p0 = [f for f in findings if f.level == "P0"]
     p1 = [f for f in findings if f.level == "P1"]
     lines.append(f"- P0（紧急）：{len(p0)} 项 ｜ P1（建议）：{len(p1)} 项 ｜ "

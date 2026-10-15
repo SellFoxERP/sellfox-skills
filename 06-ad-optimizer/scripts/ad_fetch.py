@@ -160,7 +160,8 @@ def _merge_envelopes(
         except Exception as exc:
             sink.warnings.append(f"{source}：落盘文件无法解析（{p.name}：{exc}），该页跳过。")
             continue
-        if env.status == "failed":
+        sink.warnings.extend(f"{source}: {w}" for w in env.warnings)
+        if env.status not in ("complete", "partial"):
             sink.warnings.append(
                 f"{source}：{p.name} status=failed error_code={env.error_code}，该页跳过。"
             )

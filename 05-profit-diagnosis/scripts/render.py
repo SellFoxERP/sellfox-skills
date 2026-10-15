@@ -104,6 +104,11 @@ def render_report(
         )
     lines.append("")
 
+    if report.mskus:
+        lines.extend(["## 已取回样本的毛利对比", "", "| MSKU | 基期毛利 | 本期毛利 | 变化 |", "|---|---|---|---|"])
+        for item in report.mskus[:top_n]:
+            lines.append(f"| {item.msku} | {_fmt(item.baseline_gross_profit)} | {_fmt(item.current_gross_profit)} | {_fmt(item.gross_profit_delta)} |")
+        lines.append("")
     # ---- 异常清单 + 归因 ----
     lines.append("## 异常清单与归因")
     lines.append("")
@@ -243,7 +248,7 @@ def _render_deferred(report: DiagnosisReport, fetch_meta: Dict[str, Any]) -> Lis
         )
         out.append(
             "> 赔偿类可进一步用 `get_amazon_reimbursement_report` 交叉核对是否漏领"
-            f"（本次取回 {fetch_meta.get('reimbursement_count', 0)} 条赔偿记录）。"
+            f"（本次记录数 / 状态：{fetch_meta.get('reimbursement_count', '未取数')}）。"
         )
     else:
         out.append(

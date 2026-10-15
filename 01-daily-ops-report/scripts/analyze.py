@@ -141,6 +141,14 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
     gmv = _sum(store_rows, "productSales")
     gross = _sum(store_rows, "grossProfit")
     units = _sum(store_rows, "salesNum")
+    groups = {}
+    for row in store_rows:
+        groups.setdefault(str(row.get("currency") or "未知"), []).append(row)
+    grouped_money = {key: {"gmv": _sum(rows, "productSales"), "gross_profit": _sum(rows, "grossProfit")}
+                     for key, rows in groups.items()}
+    if len(groups) > 1:
+        gmv = gross = None
+        analysis["degradations"].append("返回多种币种，未统一折算；金额按返回币种分别展示，不计算跨币种总金额。")
     gpr = (gross / gmv * 100.0) if (gmv and gross is not None) else None
 
     ad_cost = _sum(msku_rows, "adCost")
@@ -152,8 +160,8 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
 
     analysis["l1"] = {
         "gmv": gmv, "gross_profit": gross, "gross_profit_rate": gpr,
-        "units": units, "acos": acos, "cvr": cvr,
-        "currency": (bundle.get("config") or {}).get("currency", "USD"),
+        "units": units, "acos": acos, "cvr": cvr, "by_currency": grouped_money if len(groups) > 1 else {},
+        "currency": next(iter(groups)) if len(groups) == 1 else "多币种（分组展示）",
         "store_count": len(store_rows),
     }
 

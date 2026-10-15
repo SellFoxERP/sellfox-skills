@@ -274,7 +274,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("⚠️ 口径降级：未配置 report_id，宽表专属字段不可用 → "
               + "、".join(WIDE_TABLE_ONLY_FIELDS))
     for d in meta["disclosures"]:
-        print(f"⚠️ 截断披露：{d}")
+        print(f"数据说明：{d}")
     for e in meta["errors"]:
         print(f"✗ {e}", file=sys.stderr)
     # 主数据源缺失（无 online 行且存在取数错误）→ 退出码 2，调用方可据此阻断后续诊断

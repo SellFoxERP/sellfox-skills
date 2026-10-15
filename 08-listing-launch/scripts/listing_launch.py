@@ -103,7 +103,14 @@ def run(args: argparse.Namespace) -> int:
         baseline = {"products": [], "analysis": [], "demo_fingerprint": None}
         notes.need_manual(f"基线组装失败（{exc}）：实时字段需人工核查")
 
-    product = (baseline.get("products") or [{}])[0]
+    keys = {"asin": "asin", "parentAsin": "parent_asin", "msku": "msku", "sku": "sku", "title": "title", "fnsku": "fnsku", "commodityName": "commodity_name"}
+    field = keys.get(args.search_type)
+    matches = [p for p in baseline.get("products", []) if field and str(p.get(field) or "") == args.search_content]
+    if len(matches) == 1:
+        product = matches[0]
+    else:
+        product = {}
+        notes.need_manual(f"目标 {args.search_content} 精确匹配 {len(matches)} 个商品；不采用首行价格或属性，请明确唯一商品。")
 
     # 文案：优先用外部传入（AI 助手 生成后落盘），否则用骨架。
     if args.copy_json and Path(args.copy_json).exists():

@@ -108,9 +108,10 @@ def _check_envelope(
     errors: List[str], disclosures: List[str], warnings: List[str],
 ) -> None:
     """单个落盘信封的确定性检查：status / partial / 空数据 / coverage 截断。"""
-    if env.status == "failed":
+    warnings.extend(str(w) for w in env.warnings)
+    if env.status not in ("complete", "partial"):
         errors.append(
-            f"out/raw/{name}.json status=failed error_code={env.error_code} "
+            f"out/raw/{name}.json status={env.status} error_code={env.error_code} "
             f"{env.message or ''}（该源按无数据处理，需人工核查）"
         )
     elif env.partial:
@@ -376,6 +377,7 @@ def run(args: argparse.Namespace) -> int:
             },
         },
         "flagged": flagged,
+        "observed": current,
         "counts": {"current_rows": len(current), "previous_rows": len(previous), "flagged": len(flagged)},
         "warnings": notes_warnings,
         "manual_checks": notes_manual,

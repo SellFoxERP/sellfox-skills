@@ -270,9 +270,13 @@ def compute(
 
         # ---- 双向矩阵 ----
         high_velocity = velocity_month is not None and velocity_month >= high_vel
-        urgent = row.urgency in ("P0", "P1", "P2")
+        urgent = row.urgency in ("P0", "P1")
         if high_velocity and urgent:
             row.quadrant = "① 紧急补货"
+        elif row.urgency == "未知":
+            row.quadrant = "⑤ 数据不足"
+        elif row.urgency == "P2":
+            row.quadrant = "① 补货观察"
         elif high_velocity:
             row.quadrant = "② 健康"
         elif row.dead_stock:

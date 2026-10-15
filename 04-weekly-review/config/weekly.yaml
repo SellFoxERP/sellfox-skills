@@ -48,15 +48,12 @@ rankings:
   min_rows_for_rank: 5         # 榜单可用所需的最小行数，不足则标注覆盖不足
 
 # ---------- 榜单标识列字段映射（get_profit_report_by_msku）----------
-# ⚠️ 06-字段字典中 msku/asin/sku/title 的「出现于」均**不含** get_profit_report_by_msku，
-#    01 对该工具只写「字段结构与利润报表-店铺一致」，未列标识字段名 —— 即未确认。
-#    因此脚本不臆造：只在下面候选里命中时取值，全部落空则标「⚠️ 需人工核查」，
-#    并在报告「数据说明」披露「字段名待核实」。
-#    用一份真实响应核对后：把确认的字段名填到对应候选首位，并将 verified 置 true。
+# 当前 MCP 契约与实际返回均包含 mskuList / asinList；SPU 不能代替 MSKU。
+# 标题只有明确 title 才展示，商品/款名不能伪装为 Listing 标题。
 rank_identifiers:
-  verified: false
-  msku_candidates: [msku, spu]        # 06 确认 get_profit_report_by_msku 有 spu
-  asin_candidates: [asin, parentAsin]
+  verified: true
+  msku_candidates: [mskuList, msku]
+  asin_candidates: [asinList, asin]
   title_candidates: [title]
 
 trend:

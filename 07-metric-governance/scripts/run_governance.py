@@ -233,6 +233,15 @@ def main(argv=None) -> int:
         for d in plan.pending:
             print(f"  - {d.name}（类型 {d.type}；依据字段 {', '.join(d.source_fields) or '—'}）")
 
+    review_lines = ["# 指标治理检查结果", "", f"已读取自定义指标：{len(state.rows)} 行。", "",
+                    *plan.describe_lines(), "", "## 待确认公式"]
+    review_lines.extend(f"- {d.name}：{', '.join(d.source_fields) or '字段待确认'}" for d in plan.pending)
+    review_lines.extend(["", "## 数据说明", *tree_notes, *state.notes])
+    if demo_fp:
+        review_lines.insert(1, "> 演示数据；本次仅生成检查结果，不写入业务系统。")
+    review_path = raw_dir.parent / "governance_report.md"
+    review_path.write_text("\n".join(review_lines) + "\n", encoding="utf-8")
+    print(f"检查报告：{review_path}")
     # 取数可信门：落盘不可信时不生成提案（防误判缺失→重复建指标）。
     if not state.reliable:
         print(
@@ -242,7 +251,7 @@ def main(argv=None) -> int:
         )
         return 2
     if not plan.adds and not plan.updates:
-        print("✅ 无需变更（无新增/更新项）。")
+        print("存在待确认公式，本次未生成变更提案。" if plan.pending else "✅ 无需变更（无新增/更新项）。")
         return 0
 
     # Step 4：提案（dry-run）。

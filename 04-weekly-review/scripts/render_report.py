@@ -85,6 +85,11 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
         L.append("- 本期未触发配置阈值内的异常项。")
     L.append("")
 
+    if cur.get("by_currency"):
+        L.extend(["## 返回样本按币种汇总", "", "| 币种 | 销售额 | 毛利 | 销量 |", "|---|---|---|---|"])
+        for currency, values in cur["by_currency"].items():
+            L.append(f"| {currency} | {values.get('gmv', '无数据')} | {values.get('gross_profit', '无数据')} | {values.get('sales_num', '无数据')} |")
+        L.append("\n请求的聚合币种未在返回行中统一；总金额和金额环比不计算。\n")
     # ---- 目标达成率 ----
     L.append("## 目标达成率")
     ach = computed["achievement"]
@@ -135,7 +140,7 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
              f"{_pctcell(agg['yoy'].get('ad_cost_rate'))} |")
     L.append(f"| 退款率 | {_n(cur.get('refund_rate'))} | {_n(agg['prev'].get('refund_rate'))} | — | "
              f"{_n(agg['prev_month_same_period'].get('refund_rate'))} | — |")
-    L.append(f"| 客单价 | {_n(cur.get('avg_order_value'))} | {_n(agg['prev'].get('avg_order_value'))} | — | "
+    L.append(f"| 件均售价（销售额/销量） | {_n(cur.get('avg_order_value'))} | {_n(agg['prev'].get('avg_order_value'))} | — | "
              f"{_n(agg['prev_month_same_period'].get('avg_order_value'))} | — |")
 
     # ---- 宽表指标（自定义报表，489 字段）：利润报表没有的流量/广告/库存维度 ----
@@ -206,14 +211,14 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
     if not shops:
         L.append("> 无数据。")
     else:
-        L.append("| 店铺 | GMV | 销量 | 毛利 | 毛利率 | 广告成本占比 |")
+        L.append("| 店铺（币种） | GMV | 销量 | 毛利 | 毛利率 | 广告成本占比 |")
         L.append("|---|---:|---:|---:|---:|---:|")
         for s in shops:
             gpr = s.get("gross_profit_rate")
             gpr_s = NA if gpr is None else f"{gpr*100:.1f}%"
             acr = s.get("ad_cost_rate")
             acr_s = NA if acr is None else f"{acr:.1f}%"
-            L.append(f"| {s['shop']} | {_n(s.get('gmv'))} | {_n(s.get('sales_num'))} | "
+            L.append(f"| {s['shop']}（{s.get('currency', '未知')}） | {_n(s.get('gmv'))} | {_n(s.get('sales_num'))} | "
                      f"{_n(s.get('gross_profit'))} | {gpr_s} | {acr_s} |")
     L.append("")
 
