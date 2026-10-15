@@ -441,6 +441,9 @@ class ConfigLoader:
         if not reload and name in self._cache:
             return self._cache[name]
         data = load_yaml_file(self.config_path(name))
+        if name in ('reports', 'reports.yaml', 'reports.yml'):
+            from merchant_setup import overlay_reports
+            data = overlay_reports(data)
         self._cache[name] = data
         return data
 

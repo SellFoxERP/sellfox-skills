@@ -89,16 +89,10 @@ def precheck(report_id: str | None, raw_dir: Path | None = None) -> list[str]:
 
 
 def _print_first_run_guidance() -> None:
-    print("=" * 72)
-    print("⚠️ 未配置 reports.yaml → inventory.id")
-    print("本技能的主数据源 get_custom_report_page_list 需要一个报表 ID。")
-    print("请到赛狐网页端「自定义报表」新建一张库存报表，勾选以下字段后回填：")
-    print("  availableDays / fbmAvailableDays / suggestNumSum / salesVelocityMonth /")
-    print("  inboundWorking / inboundShipped / inboundReceiving / inTransit /")
-    print("  库龄分桶 invAge* / turnoverDaysMonth / isrMonth / 多仓与安全库存字段")
-    print("回填位置：_shared/config/reports.yaml → reports.inventory.id")
-    print("本次将走降级路径（get_online_product_page_list），可售天数为自算口径。")
-    print("=" * 72)
+    from merchant_setup import is_deferred
+    if not is_deferred('inventory'):
+        print('尚未配置增强报表；可以对助手说“配置赛狐报表”或“暂不配置”。')
+    print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
 
 
 def main(argv: list[str] | None = None) -> int:

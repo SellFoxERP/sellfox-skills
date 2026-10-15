@@ -29,6 +29,7 @@ class ReleaseTest(unittest.TestCase):
         cls.env=dict(os.environ)
         cls.env.pop('SELLFOX_SHARED_ROOT',None)
         cls.env['PYTHONIOENCODING']='utf-8'
+        cls.env['SELLFOX_USER_CONFIG_DIR']=str(Path(cls.tmp.name)/'user-config')
         # 通过审计钩子阻断测试子进程网络，避免可选外发被意外开启。
         guard=Path(cls.tmp.name)/'guard';guard.mkdir()
         (guard/'sitecustomize.py').write_text("import sys\ndef guard(event,args):\n    if event in ('socket.connect','socket.getaddrinfo'):\n        raise RuntimeError('offline test: network forbidden')\nsys.addaudithook(guard)\n")

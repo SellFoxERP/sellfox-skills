@@ -111,7 +111,8 @@ def load_reports() -> Dict[str, Any]:
 
 def resolve_report_id(report_key: str) -> Optional[str]:
     """按 report_key（如 daily_ops）解析 report_id；空串视为未配置 → 返回 None。"""
-    section = (load_reports().get(report_key) or {}) if isinstance(load_reports(), dict) else {}
+    cfg = load_reports()
+    section = ((cfg.get("reports") or {}).get(report_key) or {})
     rid = section.get("id")
     return str(rid) if rid not in (None, "") else None
 

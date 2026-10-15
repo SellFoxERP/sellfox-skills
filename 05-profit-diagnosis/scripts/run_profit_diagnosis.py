@@ -76,17 +76,10 @@ def precheck(report_id: str | None, raw_dir: Path = RAW_DIR) -> list[str]:
 
 
 def _print_first_run_guidance() -> None:
-    print("=" * 74)
-    print("⚠️ 未配置 reports.yaml → reports.profit.id")
-    print("利润诊断的第二个数据源 get_custom_report_page_list 需要一个报表 ID。")
-    print("请到赛狐网页端「自定义报表」新建一张利润/成本报表，勾选以下字段后回填：")
-    print("  成本类：purchaseCost / headTripPrice / commodityCost")
-    print("  赔偿类：reimbursementAmount / warehouseLostAmount / missingFromInboundAmount")
-    print("  延期类：deferredAmount")
-    print("  仓储细分：storageFeeAmount / fbaLongTermStorageFeeAmount / fbaOverageFeeAmount")
-    print("回填位置：_shared/config/reports.yaml → reports.profit.id")
-    print("本次将走降级路径（只用 get_profit_report_by_msku），赔偿/成本类归因不可用。")
-    print("=" * 74)
+    from merchant_setup import is_deferred
+    if not is_deferred('profit'):
+        print('尚未配置增强报表；可以对助手说“配置赛狐报表”或“暂不配置”。')
+    print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,6 +1,10 @@
-Validation date: 2026-10-15
-
-Python 3.12 / standard library
+test_concurrent_write_refused (test_onboarding.OnboardingTest.test_concurrent_write_refused) ... ok
+test_corrupt_config_not_overwritten (test_onboarding.OnboardingTest.test_corrupt_config_not_overwritten) ... ok
+test_defer_persists_without_reprompt (test_onboarding.OnboardingTest.test_defer_persists_without_reprompt) ... ok
+test_different_package_copy_reads_same_user_state (test_onboarding.OnboardingTest.test_different_package_copy_reads_same_user_state) ... ok
+test_failed_validation_preserves_previous_state (test_onboarding.OnboardingTest.test_failed_validation_preserves_previous_state) ... ok
+test_save_merge_backup_and_voc (test_onboarding.OnboardingTest.test_save_merge_backup_and_voc) ... ok
+test_status_does_not_create_config (test_onboarding.OnboardingTest.test_status_does_not_create_config) ... ok
 test_01_daily_report (test_release.ReleaseTest.test_01_daily_report) ... ok
 test_02_inventory (test_release.ReleaseTest.test_02_inventory) ... ok
 test_03_listing (test_release.ReleaseTest.test_03_listing) ... ok
@@ -22,36 +26,9 @@ test_18_voc_default_keywords_without_pyyaml (test_release.ReleaseTest.test_18_vo
 test_19_daily_unknown_profit_is_not_revenue (test_release.ReleaseTest.test_19_daily_unknown_profit_is_not_revenue) ... ok
 test_20_inventory_gap_and_unknown (test_release.ReleaseTest.test_20_inventory_gap_and_unknown) ... ok
 test_21_governance_add_update_and_missing_id (test_release.ReleaseTest.test_21_governance_add_update_and_missing_id) ... ok
+test_22_marketplace_bundle (test_release.ReleaseTest.test_22_marketplace_bundle) ... ok
 
 ----------------------------------------------------------------------
-Ran 21 tests in 1.908s
-
-OK
-
-Python 3.12 / PyYAML installed
-test_01_daily_report (test_release.ReleaseTest.test_01_daily_report) ... ok
-test_02_inventory (test_release.ReleaseTest.test_02_inventory) ... ok
-test_03_listing (test_release.ReleaseTest.test_03_listing) ... ok
-test_04_weekly (test_release.ReleaseTest.test_04_weekly) ... ok
-test_05_profit (test_release.ReleaseTest.test_05_profit) ... ok
-test_06_ad (test_release.ReleaseTest.test_06_ad) ... ok
-test_07_governance (test_release.ReleaseTest.test_07_governance) ... ok
-test_08_launch (test_release.ReleaseTest.test_08_launch) ... ok
-test_09_voc (test_release.ReleaseTest.test_09_voc) ... ok
-test_10_bulk_install_and_update (test_release.ReleaseTest.test_10_bulk_install_and_update) ... ok
-test_11_unknown_status_not_consumed (test_release.ReleaseTest.test_11_unknown_status_not_consumed) ... ok
-test_12_governance_incomplete_blocked (test_release.ReleaseTest.test_12_governance_incomplete_blocked) ... ok
-test_13_voc_stops_on_failed_step (test_release.ReleaseTest.test_13_voc_stops_on_failed_step) ... ok
-test_14_voc_independent_evidence (test_release.ReleaseTest.test_14_voc_independent_evidence) ... ok
-test_15_currency_requires_source_and_date (test_release.ReleaseTest.test_15_currency_requires_source_and_date) ... ok
-test_16_unknown_validator_fails (test_release.ReleaseTest.test_16_unknown_validator_fails) ... ok
-test_17_release_archive_excludes_private_files (test_release.ReleaseTest.test_17_release_archive_excludes_private_files) ... ok
-test_18_voc_default_keywords_without_pyyaml (test_release.ReleaseTest.test_18_voc_default_keywords_without_pyyaml) ... ok
-test_19_daily_unknown_profit_is_not_revenue (test_release.ReleaseTest.test_19_daily_unknown_profit_is_not_revenue) ... ok
-test_20_inventory_gap_and_unknown (test_release.ReleaseTest.test_20_inventory_gap_and_unknown) ... ok
-test_21_governance_add_update_and_missing_id (test_release.ReleaseTest.test_21_governance_add_update_and_missing_id) ... ok
-
-----------------------------------------------------------------------
-Ran 21 tests in 1.736s
+Ran 29 tests in 3.032s
 
 OK

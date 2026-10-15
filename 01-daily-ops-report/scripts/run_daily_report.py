@@ -59,8 +59,7 @@ def precheck() -> List[str]:
         if not rid:
             warnings.append(
                 "reports.yaml 的 daily_ops.report_id 为空：L2 明细层将口径降级。"
-                "请登录赛狐网页端「自定义报表」创建报表（字段：库存/流量/广告/评论/退款），"
-                "复制 report_id 回填到 _shared/config/reports.yaml。"
+                "缺少自定义报表支持的指标将在报告中说明。"
             )
     except Exception as exc:  # noqa: BLE001
         warnings.append(f"读取 reports.yaml 失败：{exc}")
