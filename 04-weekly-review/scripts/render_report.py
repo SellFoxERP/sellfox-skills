@@ -76,19 +76,29 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
     L.append("")
 
     # ---- 核心结论 ----
+    # 本期利润取数 failed/缺失 ≠ 无异常：缺数据时绝不输出「未触发异常项」。
+    cur_src = (computed.get("source_status") or {}).get("profit_current") or {}
+    cur_failed = cur_src.get("status") in ("error", "degraded")
+    cur_code = cur_src.get("error_code") or ""
     L.append("## 核心结论")
+    if cur_failed:
+        head = (f"本期利润数据取数失败（error_code：{cur_code}）" if cur_code
+                else "本期利润数据缺失或取数失败")
+        L.append(f"- ⚠️ **{head}**，异常判定不可用——缺数据不能表述为无异常。")
     if computed["anomalies"]:
         for f in computed["anomalies"]:
             icon = {"red": "🔴", "yellow": "🟡", "info": "ℹ️"}.get(f["level"], "•")
             L.append(f"- {icon} **{f['title']}** — {f['detail']}")
-    else:
+    elif not cur_failed:
         L.append("- 本期未触发配置阈值内的异常项。")
     L.append("")
 
     if cur.get("by_currency"):
-        L.extend(["## 返回样本按币种汇总", "", "| 币种 | 销售额 | 毛利 | 销量 |", "|---|---|---|---|"])
+        L.extend(["## 返回样本按币种汇总", "", "| 币种 | 销售额 | 毛利 | 销量 |", "|---|---|---:|---:|"])
         for currency, values in cur["by_currency"].items():
-            L.append(f"| {currency} | {values.get('gmv', '无数据')} | {values.get('gross_profit', '无数据')} | {values.get('sales_num', '无数据')} |")
+            # 金额走 _n（千分位/两位小数），避免裸浮点尾数（15224.099999999999）外露
+            L.append(f"| {currency} | {_n(values.get('gmv'))} | "
+                     f"{_n(values.get('gross_profit'))} | {_n(values.get('sales_num'))} |")
         L.append("\n请求的聚合币种未在返回行中统一；总金额和金额环比不计算。\n")
     # ---- 目标达成率 ----
     L.append("## 目标达成率")
@@ -111,7 +121,13 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
     L.append("| 指标 | 本期 | 上期 | 环比 | 上月同期 | 去年同期 |")
     L.append("|---|---:|---:|---:|---:|---:|")
     d = computed["deltas"]
-    def row(label, key, is_pct=False):
+
+    def cur_cell(s: str) -> str:
+        """本期列：取数 failed/缺失时，「不适用」须升级为「⚠️ 需人工核查」——
+        缺数据是待处理事件，不是口径上的不适用。"""
+        return NEEDS_REVIEW if (cur_failed and s == NA) else s
+
+    def row(label, key, is_pct=False, delta_key=None):
         c = cur.get(key)
         p = agg["prev"].get(key)
         pm = agg["prev_month_same_period"].get(key)
@@ -120,27 +136,34 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
             if v is None:
                 return NA
             return f"{v*100:.1f}%" if is_pct else _n(v)
-        return (f"| {label} | {f(c)} | {f(p)} | {_pct(d['prev'].get(key + '_pct'))} | "
+        # 环比列取 deltas 键：广告花费的环比口径是 ad_cost_rate（占比）而非绝对额
+        delta_pct = d['prev'].get((delta_key or key) + '_pct')
+        return (f"| {label} | {cur_cell(f(c))} | {f(p)} | {_pct(delta_pct)} | "
                 f"{f(pm)} | {f(yy)} |")
     L.append(row("GMV", "gmv"))
     L.append(row("销量", "sales_num"))
     L.append(row("毛利", "gross_profit"))
     def _rate(v):
         return NA if v is None else f"{v*100:.1f}%"
-    L.append(f"| 毛利率 | {_rate(cur.get('gross_profit_rate'))} | "
+    L.append(f"| 毛利率 | {cur_cell(_rate(cur.get('gross_profit_rate')))} | "
              f"{_rate(agg['prev'].get('gross_profit_rate'))} | "
              f"{_pct(d['prev'].get('gross_profit_rate_pct'))} | "
              f"{_rate(agg['prev_month_same_period'].get('gross_profit_rate'))} | "
              f"{_rate(agg['yoy'].get('gross_profit_rate'))} |")
-    L.append(row("广告花费", "ad_cost"))
+    L.append(row("广告花费", "ad_cost", delta_key="ad_cost_rate"))
     def _pctcell(v: Optional[float]) -> str:
         return NA if v is None else f"{v:.1f}%"
-    L.append(f"| 广告成本占比 | {_pctcell(cur.get('ad_cost_rate'))} | {_pctcell(agg['prev'].get('ad_cost_rate'))} | "
-             f"{_pct(d['prev'].get('ad_cost_rate_pct'))} | {_pctcell(agg['prev_month_same_period'].get('ad_cost_rate'))} | "
+    L.append(f"| 广告成本占比 | {cur_cell(_pctcell(cur.get('ad_cost_rate')))} | "
+             f"{_pctcell(agg['prev'].get('ad_cost_rate'))} | "
+             f"{_pct(d['prev'].get('ad_cost_rate_pct'))} | "
+             f"{_pctcell(agg['prev_month_same_period'].get('ad_cost_rate'))} | "
              f"{_pctcell(agg['yoy'].get('ad_cost_rate'))} |")
-    L.append(f"| 退款率 | {_n(cur.get('refund_rate'))} | {_n(agg['prev'].get('refund_rate'))} | — | "
-             f"{_n(agg['prev_month_same_period'].get('refund_rate'))} | — |")
-    L.append(f"| 件均售价（销售额/销量） | {_n(cur.get('avg_order_value'))} | {_n(agg['prev'].get('avg_order_value'))} | — | "
+    # 退款率是字段小数原值（0.031），须换算成百分比并带单位（3.1%），不能裸显 0.03
+    L.append(f"| 退款率 | {cur_cell(_rate(cur.get('refund_rate')))} | "
+             f"{_rate(agg['prev'].get('refund_rate'))} | — | "
+             f"{_rate(agg['prev_month_same_period'].get('refund_rate'))} | — |")
+    L.append(f"| 件均售价（销售额/销量） | {cur_cell(_n(cur.get('avg_order_value')))} | "
+             f"{_n(agg['prev'].get('avg_order_value'))} | — | "
              f"{_n(agg['prev_month_same_period'].get('avg_order_value'))} | — |")
 
     # ---- 宽表指标（自定义报表，489 字段）：利润报表没有的流量/广告/库存维度 ----
@@ -195,13 +218,14 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
                 L.append("> ⚠️ 标识列（MSKU/ASIN/标题）字段名待核实："
                          "get_profit_report_by_msku 的标识字段名未在 01/06 中确认，"
                          "取不到的行标「需人工核查」。")
-            L.append("| MSKU | ASIN | 标题 | GMV | 毛利 | 毛利率 | 广告花费 |")
-            L.append("|---|---|---|---:|---:|---:|---:|")
+            L.append("| MSKU | ASIN | 标题 | 币种 | GMV | 毛利 | 毛利率 | 广告花费 |")
+            L.append("|---|---|---|---|---:|---:|---:|---:|")
             for r in rows:
                 gpr = r.get("gross_profit_rate")
                 gpr_s = NA if gpr is None else f"{gpr*100:.1f}%"
                 L.append(f"| {r.get('msku') or ident_na} | {r.get('asin') or ident_na} | "
-                         f"{(r.get('title') or ident_na)} | {_n(r.get('gmv'))} | {_n(r.get('gross_profit'))} | "
+                         f"{(r.get('title') or ident_na)} | {r.get('currency') or '未知'} | "
+                         f"{_n(r.get('gmv'))} | {_n(r.get('gross_profit'))} | "
                          f"{gpr_s} | {_n(r.get('ad_cost'))} |")
         L.append("")
 

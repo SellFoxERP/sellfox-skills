@@ -107,8 +107,11 @@ def render_report(
                f"｜ ❓ 数据不足：**{c.get('未知', 0)}** 项")
     out.append(f"- 滞销清理：**{c.get('③ 滞销清理', 0)}** 项")
     if fetch_meta.get("degraded"):
+        # 降级横幅按真实原因表述（组装层给的 degrade_reason）：未配置 / 报表发现被拒（带
+        # error_code）/ 主源取数失败（带 error_code）——不硬编码「未配置报表 ID」。
+        reason = fetch_meta.get("degrade_reason") or "未配置报表 ID"
         out.append(
-            "- ⚠️ **口径降级**：未配置报表 ID，改用在线的产品数据（day30SaleNum / inventoryManage）；"
+            f"- ⚠️ **口径降级**：{reason}，改用在线的产品数据（day30SaleNum / inventoryManage）；"
             "可售天数与建议补货量均为**自算口径**（非赛狐 availableDays / suggestNumSum），"
             "缺失字段的行标「需人工核查」。"
         )

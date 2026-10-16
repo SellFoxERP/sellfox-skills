@@ -200,10 +200,15 @@ assert v.match_themes('a neutral comment',compiled)==['other']
         self.raw(p,'shops',envelope([{'id':'SHOP-DEMO-1','name':'演示店'}]))
         bad=dict(PROFIT,productSales=987654321)
         self.raw(p,'profit_shop',envelope([bad],'reportList',status='unknown'))
-        output=self.run_script(p,'run_daily_report.py','--date','2026-10-14',expected=2)
+        # 2026-10-16 修复：缺/不可采信利润不再 exit 2 阻断（最小集可跑），改为降级横幅继续产出；
+        # 但 unknown 信封的数值仍不得泄漏为收入。
+        output=self.run_script(p,'run_daily_report.py','--date','2026-10-14')
         bundle=json.loads((p/'out/bundle.json').read_text())
         self.assertIsNone(bundle['data']['store_profit'])
-        self.assertNotIn('完成。日报',output)
+        report=(p/'out/daily_report.md').read_text()
+        self.assertNotIn('987,654,321',report)
+        self.assertIn('完成。日报',output)
+        self.assertIn('利润步骤缺失',report)
         self.assertIn('不可用',output)
     def test_20_inventory_gap_and_unknown(self):
         code="""from types import SimpleNamespace

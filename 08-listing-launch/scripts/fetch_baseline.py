@@ -16,6 +16,14 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 降级语义（沿袭旧「缺 Key 离线骨架」）：**缺落盘 → 实时字段标「⚠️ 需人工核查」，
 骨架照出**——脚本不因取数缺失而崩溃，仍产出结构完整的上架包。
 
+组装层还做两件事（线上评测 2026-10-16 发现）：
+
+- **analysis 行与目标 ASIN 本地关联**：上游忽略 asin 过滤返回无关行时，按行内
+  ``asinList``（线上实测为列表形；白名单同步保留该键）与目标 ASIN 求交，无交集的
+  行不进区块 1，并在 warnings 披露「已剔除 N 条」。
+- **信封级 warnings 汇总去重**进 notes（渲染层落「数据说明与警示」），
+  遵守 `_shared/SELLFOX_CLIENT.md` §5「报告保留 warnings」。
+
 用法::
 
     # 1) agent 先按 workflow.md 取数计划落盘 out/raw/*.json
@@ -66,7 +74,7 @@ ONLINE_PRODUCT_FIELDS: Sequence[str] = (
 )
 
 PRODUCT_ANALYZE_FIELDS: Sequence[str] = (
-    "spu", "asin", "parentAsin", "sku", "title", "mainImage",
+    "spu", "asin", "asinList", "parentAsin", "sku", "title", "mainImage",
     "categoryNameList", "bsrRank", "openDate", "currency",
     "saleNum", "salePrice", "onlineStatus",
 )
@@ -84,6 +92,21 @@ DEFAULT_RAW_DIR = SKILL_ROOT / "out" / "raw"
 def _trim(row: Dict[str, Any], keep: Sequence[str]) -> Dict[str, Any]:
     """按白名单裁剪一条记录；缺失字段不补 0，直接不出现。"""
     return {k: row[k] for k in keep if k in row}
+
+
+def _row_asins(row: Dict[str, Any]) -> List[str]:
+    """取一条 analysis 行携带的 ASIN 集合。
+
+    线上实测行为 ``asinList`` 列表形（标量 ``asin`` 被裁掉）；离线合成行两者皆有。
+    """
+    out: List[str] = []
+    raw_list = row.get("asinList")
+    if isinstance(raw_list, list):
+        out.extend(str(a) for a in raw_list if a)
+    scalar = unwrap_value(row.get("asin"))
+    if scalar:
+        out.append(str(scalar))
+    return out
 
 
 def _load_step(
@@ -136,6 +159,22 @@ def _load_step(
     return env, env.rows(RAW_STEPS[step])
 
 
+def _merge_env_warnings(envs: Sequence[Optional[RawEnvelope]], notes: Notes) -> None:
+    """把两步信封级 warnings 汇总去重进 notes（渲染层落「数据说明与警示」）。
+
+    同一条 warning 出现在多个信封时合并来源（如「online_product、product_analyze」）；
+    含上游 ``documented_schema_mismatch`` 之类的指示，报告必须保留（SELLFOX_CLIENT.md §5）。
+    """
+    sources: Dict[str, List[str]] = {}
+    for env in envs:
+        if env is None:
+            continue
+        for w in (env.obj.get("warnings") or []):
+            sources.setdefault(str(w), []).append(env.path.stem)
+    for w, steps in sources.items():
+        notes.warn(f"取数信封 warnings（{'、'.join(steps)}）：{w}")
+
+
 def summarize_product(row: Dict[str, Any]) -> Dict[str, Any]:
     """把一条在线产品记录整理成上架包可用的「商品基线」。
 
@@ -171,6 +210,9 @@ def summarize_product(row: Dict[str, Any]) -> Dict[str, Any]:
         "referral_fee": as_float(row.get("referralFee")),
         "fba_fees": as_float(row.get("fbaFees")),
         "variable_closing_fee": as_float(row.get("variableClosingFee")),
+        # 头程：线上实测商品行内返回 headTripCost（成本口径，业务口径未验证），
+        # estimate_pricing 优先消费；缺值再走宽表 headTripPrice / 人工。
+        "headtrip_cost": as_float(row.get("headTripCost")),
         "profit_price": as_float(row.get("profitPrice")),
         "profit_rate": as_float(row.get("profitRate")),
         # 库存
@@ -190,9 +232,13 @@ def build_baseline(
     *,
     raw_dir: Optional[Path] = None,
     notes: Optional[Notes] = None,
+    target_asins: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """校验落盘信封并组装商品基线（零网络）。
 
+    :param target_asins: 目标 ASIN 集合（如 ``--search-type asin`` 的搜索内容）。
+        提供时 analysis 行按行内 ``asinList`` 与之求交，无交集的行不进基线
+        （上游忽略 asin 过滤时的本地兜底），并在 warnings 披露剔除数量。
     :returns: ``{"products": [...], "analysis": [...], "demo_fingerprint": str|None}``
               ——形状与旧 HTTP 取数器完全一致，下游脚本零改动。
     """
@@ -224,9 +270,25 @@ def build_baseline(
     # 2) 商品分析（类目 / BSR / 上架时间）——失败不阻断主流程。
     analyze_env, analyze_rows = _load_step(raw_dir, "product_analyze", notes)
     _scan_demo(analyze_env)
+    analysis_rows = [r for r in analyze_rows if isinstance(r, dict)]
+    # 目标 ASIN 本地关联：products 在 listing_launch 有本地精确匹配兜底，analysis 此前
+    # 没有——上游忽略 asin 过滤返回无关行时照报区块 1。这里按 asinList 求交剔除并披露。
+    if target_asins:
+        wanted = {str(a) for a in target_asins if a}
+        total = len(analysis_rows)
+        analysis_rows = [r for r in analysis_rows if set(_row_asins(r)) & wanted]
+        dropped = total - len(analysis_rows)
+        if dropped:
+            notes.warn(
+                f"analysis 行 {total} 条中 {dropped} 条与目标 ASIN 无关联"
+                f"（上游过滤疑似未生效），已剔除"
+            )
     baseline["analysis"] = [
-        _trim(r, PRODUCT_ANALYZE_FIELDS) for r in analyze_rows if isinstance(r, dict)
+        _trim(r, PRODUCT_ANALYZE_FIELDS) for r in analysis_rows
     ]
+
+    # 信封级 warnings 汇总去重（SELLFOX_CLIENT.md §5：报告保留 warnings）。
+    _merge_env_warnings((online_env, analyze_env), notes)
 
     if demo_fp:
         baseline["demo_fingerprint"] = demo_fp

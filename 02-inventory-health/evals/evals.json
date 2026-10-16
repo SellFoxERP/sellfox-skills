@@ -22,7 +22,7 @@
     {
       "id": 4,
       "prompt": "报表 ID 还没配，先跑一次库存看看。",
-      "expected_output": "触发首轮引导（提示去赛狐创建报表并给出字段清单），走降级路径（get_online_product_page_list 的 inventoryManage），输出顶部标「⚠️ 口径降级：可售天数为自算，非赛狐口径」。",
+      "expected_output": "触发首轮引导（说明报表由助手按 ONBOARDING.md 自动发现并验证，无需商家创建/配置报表；当前先用简版并给出所缺指标口径），走降级路径（get_online_product_page_list 的 inventoryManage），输出顶部标「⚠️ 口径降级：可售天数为自算，非赛狐口径」；自动发现候选不可用（验证读失败）时如实披露 error_code 并继续降级，不要求商家创建报表。",
       "files": []
     },
     {

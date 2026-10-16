@@ -13,7 +13,8 @@
       默认取「最近一个**完整**自然周」，即 anchor 所在周之前的那一周；
       若 anchor 恰为周日且属于完整周，也可用 ``--include-current`` 纳入本周。
 * 月：默认取「最近一个**完整**自然月」。
-* 上月同期：当前窗口整体前移一个自然月（日期同号，超出月份天数则取该月最后一天）。
+* 上月同期：当前窗口整体前移一个自然月（日期同号，超出月份天数则取该月最后一天）；
+  月报下「上期 / 上月同期」即上一完整自然月（上月 1 日 ~ 月末，与本期的月对齐）。
 * 同比：当前窗口整体前移一年（同年闰日问题取 2/28 兜底）。
 
 产物
@@ -41,6 +42,11 @@ def _shift_months(d: Date, months: int) -> Date:
     month += 1
     last = calendar.monthrange(year, month)[1]
     return Date(year, month, min(d.day, last))
+
+
+def _month_end(d: Date) -> Date:
+    """该月最后一天（月对齐用：月报上期须为完整自然月，不能丢月末一日）。"""
+    return Date(d.year, d.month, calendar.monthrange(d.year, d.month)[1])
 
 
 def _shift_years(d: Date, years: int) -> Date:
@@ -112,8 +118,11 @@ def build_plan(
     windows: Dict[str, Any] = {}
     if period == "month":
         cur_start, cur_end = current_month(ref)
+        # 月报上期 = 上一完整自然月（上月 1 日 ~ 上月末 日，与本期的月对齐）。
+        # ⚠️ 不能用 _shift_months(cur_end, -1)：09-30 → 08-30 会把 08-31 钳位丢弃，
+        #    环比基线缺一天；周报的上期是「等长前一周」，走 else 分支不受影响。
         prev_start = _shift_months(cur_start, -1)
-        prev_end = _shift_months(cur_end, -1)
+        prev_end = _month_end(prev_start)
     else:
         cur_start, cur_end = current_week(ref, week_start, include_current)
         prev_start = cur_start - _dt.timedelta(days=(cur_end - cur_start).days + 1)
@@ -122,9 +131,12 @@ def build_plan(
     windows["current"] = {"start": cur_start, "end": cur_end, **_fmt(cur_start, cur_end)}
     windows["prev"] = {"start": prev_start, "end": prev_end, **_fmt(prev_start, prev_end)}
 
-    # 上月同期：整体前移一个自然月
-    pms = _shift_months(cur_start, -1)
-    pme = _shift_months(cur_end, -1)
+    # 上月同期：整体前移一个自然月（周报）；月报下即上一完整自然月（与上期同窗）
+    if period == "month":
+        pms, pme = prev_start, prev_end
+    else:
+        pms = _shift_months(cur_start, -1)
+        pme = _shift_months(cur_end, -1)
     windows["prev_month_same_period"] = {"start": pms, "end": pme, **_fmt(pms, pme)}
 
     if yoy:

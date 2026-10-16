@@ -7,7 +7,9 @@
 # sources:
 #   online  = get_online_product_page_list   （分页类，列表字段 data.rows；79 字段）
 #   custom  = get_custom_report_page_list     （分页类，data.rows；489 字段；需 report_id）
-#   analyze = get_product_analyze_list        （分页类，字段集合取决于 fields 入参，未全量实测）
+#   analyze = get_product_analyze_list        （分页类，字段集合取决于 fields 入参；线上契约 fields
+#             实测含 sessions/pageView/buyBoxPercent/conversionRate/availableDays/fbmAvailableDays/
+#             lowReviewNum/reviewNum/rank/bigBsrRank 等，可作宽表的替代源，以当次契约为准）
 #   label   = get_product_by_label            （分页类，入参页名 page_num）
 # ============================================================================
 
@@ -21,7 +23,7 @@ checks:
   buyBoxPercent:
     field: buyBoxPercent
     source: custom
-    note: 仅 489 字段宽表可得（实测样例 92.5）。online 侧无此字段。
+    note: 首选源为 489 字段宽表（实测样例 92.5）；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）。online 侧无此字段。
 
   buyBoxWinner:
     field: buyBoxWinner
@@ -58,7 +60,7 @@ checks:
   lowReviewNum:
     field: lowReviewNum
     source: custom
-    note: 仅 489 字段宽表可得。
+    note: 首选源为宽表；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）。
 
   bsrRank:
     field: bsrRank
@@ -76,16 +78,17 @@ checks:
   sessions:
     field: sessions
     source: custom
-    note: 仅 489 字段宽表可得（实测样例 12500）。
+    note: 首选源为 489 字段宽表（实测样例 12500）；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）。
 
   pageViews:
     field: pageViews
     source: custom
+    note: 首选源为宽表；analyze 契约 fields 亦含同名口径字段 pageView（单数），可作替代源（以当次契约为准，注意字段名差异）。
 
   conversionRate:
     field: conversionRate
     source: custom
-    note: 仅宽表可得（实测样例 2.8）。
+    note: 首选源为宽表（实测样例 2.8）；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）。
 
   day7SaleNum:
     field: day7SaleNum
@@ -116,7 +119,7 @@ checks:
   availableDays:
     field: availableDays
     source: custom
-    note: 仅宽表可得；online 无可用天数。无报表时断货只能看 quantity。
+    note: 首选源为宽表；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）；online 无可用天数。无报表时断货只能看 quantity。
 
   labels:
     field: labels

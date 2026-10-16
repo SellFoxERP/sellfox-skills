@@ -8,8 +8,11 @@
      所以先把因子收敛成**互相独立、金额可加**的十来条（见 config/diagnosis.yaml → attribution.factors）。
   2. 每条因子只算一个数：**它对毛利跌幅的贡献额**（contribution_to_drop）。贡献额可加，
      因此能回答「毛利少赚的这 8 万，分别是谁吃掉的」—— 这才是归因，而不是罗列。
-  3. 符号按配置显式声明（profit_sign），因为赛狐报表里费用字段符号不统一
-     （msku 侧费用为负、自定义报表侧成本为正，实测）。靠猜必反向。
+  3. 符号按配置显式声明（profit_sign），因为赛狐报表里费用字段的存储符号不统一
+     （msku 侧与自定义报表侧不同；线上实测 msku 侧费用为正数）。靠猜必反向。
+     ⚠️ profit_sign 只是**缺省假设**：归因前对每个费用类因子取基期行的中位数值做
+     运行时符号校准（`storage_sign_calibration`），实测存储符号与假设不符时按实测符号
+     修正贡献方向并在报告披露；收入类因子（收入恒正）不校准。
 
 边界：本模块只做**算术归因**，不做因果推断。因子间相关（如销售额跌会连带佣金跌）会在
 输出里提示，交由人判断。
@@ -47,6 +50,8 @@ class FactorResult:
     available: bool                 # 数据是否可取（字段在两表中都拿不到 → False）
     reason: str = ""                # 不可用 / 需人工核查的原因
     hint: str = ""
+    sign_calibrated: bool = False   # 运行时符号校准触发（实测存储符号与配置假设不符）
+    sign_note: str = ""             # 校准披露文案（进报告归因表脚注）
 
     def to_row(self) -> str:
         cur = "无数据" if self.current is None else f"{self.current:,.2f}"
@@ -111,6 +116,66 @@ def _delta(cur: Optional[float], base: Optional[float]) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
+# 运行时符号校准（评测线上问题 N1：msku 报表费用线上实测为正数存储）
+# ---------------------------------------------------------------------------
+#: 收入类因子的规范字段（值越大对利润越有利、恒为正号存储）——不做符号校准（收入恒正）。
+#: reimbursementAmount 是「应收回的钱」，语义同收入（金额为正、越大越好）。
+REVENUE_LIKE_FIELDS = frozenset({"product_sales", "revenue", "reimbursement_amount"})
+
+
+def _median(values: Sequence[float]) -> Optional[float]:
+    vals = sorted(float(v) for v in values)
+    if not vals:
+        return None
+    mid = len(vals) // 2
+    if len(vals) % 2:
+        return vals[mid]
+    return (vals[mid - 1] + vals[mid]) / 2.0
+
+
+def storage_sign_calibration(
+    msku_rows: Sequence[Dict[str, Any]],
+    custom_rows: Sequence[Dict[str, Any]],
+    factors_cfg: Sequence[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """对每个**费用类因子**做运行时存储符号判定。
+
+    配置 profit_sign 的符号假设（如「msku 报表费用为负数存储」）只是缺省：线上实测
+    ``get_profit_report_by_msku`` 的费用字段全为**正数**（sales − Σ费用 ≈ grossProfit 成立），
+    符号错则费用因子归因整体反号且**不报错**。这里对每个费用类因子取**基期行**（跨全部
+    MSKU）的中位数值判断实际存储符号；费用语义下：正号存储 → 有效 profit_sign = -1、
+    负号存储 → +1。与配置推导的假设不符时返回修正项（含中位值，供披露），归因按实测
+    符号计算并在报告归因表脚注披露。收入类因子（恒正存储）不校准。
+    """
+    base_msku = [r for r in msku_rows if r.get("_window") == "baseline"]
+    base_custom = [r for r in custom_rows if r.get("_window") == "baseline"]
+    out: Dict[str, Dict[str, Any]] = {}
+    for f in factors_cfg:
+        raw = str(f.get("field", ""))
+        canon = canonical_for(raw)
+        if canon in REVENUE_LIKE_FIELDS:
+            continue
+        tool = str(f.get("tool") or source_tool_for(canon))
+        rows = base_msku if tool == "get_profit_report_by_msku" else base_custom
+        vals = [r.get(canon) for r in rows if isinstance(r.get(canon), (int, float))]
+        median = _median(vals)
+        if median is None or median == 0:
+            continue  # 无基期样本 / 中位值恰为 0：无法判定存储符号，保持配置缺省
+        observed = 1 if median > 0 else -1
+        config_sign = float(f.get("profit_sign", 1))
+        assumed = -1 if config_sign > 0 else 1  # 配置 profit_sign 推导的（费用类）存储符号假设
+        if observed == assumed:
+            continue  # 实测与假设一致：无需校准
+        out[canon] = {
+            "median": median,
+            "observed": observed,
+            "config_sign": config_sign,
+            "effective_sign": float(-observed),  # 费用语义：正号存储 → 变大=不利 → -1
+        }
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 归因计算
 # ---------------------------------------------------------------------------
 def attribute_one(
@@ -122,6 +187,7 @@ def attribute_one(
     *,
     factors_cfg: Sequence[Dict[str, Any]],
     attribution_cfg: Dict[str, Any],
+    sign_calibration: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> MskuDiagnosis:
     """对单个 MSKU 做归因。缺失的字段标「需人工核查」，不编造、不当 0。"""
     diag = MskuDiagnosis(
@@ -188,6 +254,17 @@ def attribute_one(
             diag.unavailable_factors.append(result)
         else:
             # 贡献额 = sign × (基期 − 本期)：正 = 该因子把毛利往下拉。
+            cal = (sign_calibration or {}).get(canon)
+            if cal:
+                # 运行时符号校准：实测存储符号与配置假设不符 → 按实测符号归因并披露。
+                sign = float(cal["effective_sign"])
+                storage = "正" if cal["observed"] > 0 else "负"
+                result.sign_calibrated = True
+                result.sign_note = (
+                    f"因子「{result.label}」（`{raw}`）实测为{storage}号存储"
+                    f"（基期中位值 {cal['median']:,.2f}），与配置假设不符，"
+                    f"已按{storage}号口径归因（profit_sign {cal['config_sign']:+.0f} → {sign:+.0f}）。"
+                )
             result.contribution = sign * (base_val - cur_val)
             if diag.gross_profit_drop not in (None, 0):
                 result.share_pct = result.contribution / diag.gross_profit_drop * 100.0
@@ -260,6 +337,10 @@ def diagnose(
     msku_cur, msku_base = _by_window(msku_rows)
     custom_cur, custom_base = _by_window(custom_rows)
 
+    # 运行时符号校准（评测线上问题 N1）：费用类因子按基期行中位值判定实际存储符号，
+    # 与配置 profit_sign 推导的假设不符时修正贡献方向并在报告披露（收入类因子不校准）。
+    sign_calibration = storage_sign_calibration(msku_rows, custom_rows, factors_cfg)
+
     # 以「本期有数据」的 MSKU 为主体；基期缺失也保留（标注需人工核查）
     keys = list(msku_cur.keys()) or list(msku_base.keys())
     if not keys:
@@ -273,6 +354,7 @@ def diagnose(
             custom_cur.get(msku), custom_base.get(msku),
             factors_cfg=factors_cfg,
             attribution_cfg=attribution_cfg,
+            sign_calibration=sign_calibration,
         )
         diag.severe = _is_severe(diag, drop_pct_vs_30d=drop_pct_vs_30d, rate_min=rate_min)
         if min_drop and (diag.gross_profit_drop is None or diag.gross_profit_drop < min_drop):

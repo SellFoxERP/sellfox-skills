@@ -83,9 +83,13 @@ TOOL_SHOPS = "get_shop_page_list"
 # 工具函数
 # ---------------------------------------------------------------------------
 
-def _make_source(status: str, tool: str, note: str = "", truncation: str = "") -> Dict[str, Any]:
-    """与旧版 sources 条目同构：{status, tool, note, truncation}。"""
-    return {"status": status, "tool": tool, "note": note, "truncation": truncation}
+def _make_source(status: str, tool: str, note: str = "", truncation: str = "",
+                 error_code: str = "") -> Dict[str, Any]:
+    """与旧版 sources 条目同构：{status, tool, note, truncation}；failed 时附 error_code。"""
+    out = {"status": status, "tool": tool, "note": note, "truncation": truncation}
+    if error_code:
+        out["error_code"] = error_code
+    return out
 
 
 def _num(value: Any) -> Optional[float]:
@@ -136,8 +140,9 @@ def _consume_envelope(
         status = "error" if "无法解析" in err else "degraded"
         return _make_source(status, tool, f"{err}；{label}对应指标将标「不适用/无数据」"), []
     if env.status == "failed":
-        note = f"status=failed error_code={env.error_code or '未知'} {env.message or ''}".strip()
-        return _make_source("error", tool, note), []
+        code = env.error_code or "未知"
+        note = f"status=failed error_code={code} {env.message or ''}".strip()
+        return _make_source("error", tool, note, error_code=code), []
     notes = _cov_notes(env)
     if is_no_data(env.data):
         return _make_source("no_data", tool, "无数据", notes), []

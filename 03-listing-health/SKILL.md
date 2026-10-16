@@ -55,7 +55,7 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 **本技能不做**：
 1. **不修改任何 Listing**（无接口能力，也不该做）。
 2. **拿不到**：竞品 BuyBox 价、类目平均转化率基准、账户健康/绩效通知/政策合规状态、评论原文。这些一律标 **⚠️ 需人工核查**。
-3. **无 `report_id` 时**，`sessions`/`pageViews`/`conversionRate`/`buyBoxPercent`/`lowReviewNum`/`bigCategoryRanking`/`smallCategoryRanking`/`availableDays` **取不到**（这些字段只在 489 字段宽表里）。技能会**显式降级并列出口径降级说明**，不会用别的字段冒充。
+3. **无 `report_id` 时**，`sessions`/`pageViews`/`conversionRate`/`buyBoxPercent`/`lowReviewNum`/`bigCategoryRanking`/`smallCategoryRanking`/`availableDays` **取不到**。宽表（`get_custom_report_page_list`，489 字段）是这些字段的**首选源**；线上 `get_product_analyze_list` 契约的 `fields` 亦含 sessions/pageView/buyBoxPercent/conversionRate/availableDays/lowReviewNum/reviewNum 等，**可作替代源**（以当次契约为准）。两者都未取到时技能会**显式降级并列出口径降级说明**，不会用别的字段冒充。
 4. **不得把截图、竞品页面、人工观察当作本技能结论**——本技能结论只来自上列接口字段。
 
 ## 执行流程

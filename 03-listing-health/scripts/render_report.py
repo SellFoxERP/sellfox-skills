@@ -59,8 +59,21 @@ def render(result: Dict[str, Any]) -> str:
                  f"{', '.join(meta.get('statuses_scanned') or []) or '未记录'}")
     lines.append(f"- 时间窗口：{_window_text(meta.get('window'))}")
     lines.append("- 数据源：`get_online_product_page_list`（主）；`get_product_analyze_list`（可选）")
-    if meta.get("report_configured"):
-        lines.append("- 数据源：`get_custom_report_page_list`（daily_ops 宽表）已启用")
+    # 宽表状态三态如实（与 data.json 的 meta.wide_table 一致）：
+    # 启用成功 / 取数失败（error_code）/ 未配置或发现失败（含发现被拒错误码）
+    wide = meta.get("wide_table") or {}
+    wide_status = wide.get("status") or ("enabled" if meta.get("report_configured") else "not_configured")
+    wide_codes = "、".join(wide.get("error_codes") or [])
+    if wide_status == "enabled":
+        lines.append(f"- 数据源：`get_custom_report_page_list`（daily_ops 宽表）已启用（{wide.get('rows', 0)} 行）")
+    elif wide_status == "fetch_failed":
+        suffix = f"（error_code：{wide_codes}）" if wide_codes else "（详见取数失败项）"
+        lines.append(f"- ⚠️ **宽表取数失败**{suffix}：sessions / conversionRate / buyBoxPercent / "
+                     "类目排名 / 差评数**不可用**，标「需人工核查」")
+    elif wide_status == "discovery_failed":
+        suffix = f"（error_code：{wide_codes}）" if wide_codes else ""
+        lines.append(f"- ⚠️ **口径降级**：报表发现失败{suffix}，未启用宽表 → sessions / conversionRate / "
+                     "buyBoxPercent / 类目排名 / 差评数**不可用**，标「需人工核查」")
     else:
         lines.append("- ⚠️ **口径降级**：缺少自定义报表（report_id）→ "
                      "sessions / conversionRate / buyBoxPercent / 类目排名 / 差评数**不可用**，标「需人工核查」")
@@ -81,6 +94,28 @@ def render(result: Dict[str, Any]) -> str:
         for e in errs:
             lines.append(f"  - ✗ {e}")
     lines.append("")
+
+    # --- 0.5 标签命中（by_label 组装结果的诚实披露：列出清单，不编造合并）---
+    bl = meta.get("by_label")
+    if bl:
+        lines.append("## 标签命中（get_product_by_label）")
+        lines.append("")
+        hits = bl.get("hits") or []
+        if hits:
+            lines.append(f"- 命中 {bl.get('rows', 0)} 行，覆盖 {len(hits)} 个标签")
+            lines.append(f"- ⚠️ {bl.get('note') or '未并入分诊'}；清单如下，供人工核对")
+            lines.append("")
+            lines.append("| 标签 | 类型 | 数量 | 商品/MSKU 示例 |")
+            lines.append("|---|---|---|---|")
+            for h in hits:
+                lid = h.get("labelId") or "?"
+                samples = "、".join(h.get("samples") or []) or "—"
+                lines.append(f"| {h.get('labelName') or '?'}（{lid}） | {h.get('labelType') or ''} "
+                             f"| {h.get('count', 0)} | {samples} |")
+        else:
+            lines.append(f"- 命中 {bl.get('rows', 0)} 行：**无数据**（status=complete 但 data 为空；不是失败，不写 0）")
+            lines.append(f"- ⚠️ {bl.get('note') or '未并入分诊'}")
+        lines.append("")
 
     # --- 1. 红线清单 ---
     redline = [p for p in problems if p.get("severity") in ("P0", "P1")]

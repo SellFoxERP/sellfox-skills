@@ -49,10 +49,16 @@ attribution:
 #   -1 = 该字段「值越大，对利润越不利」
 # 归因脚本统一计算：contribution_to_drop = profit_sign × (基期值 − 本期值)。
 # 正值 = 该因子把毛利往下拉。之所以显式标注符号，是因为赛狐报表里**费用字段的存储符号不统一**：
-#   * msku 利润报表：费用为【负数】（实测 commission=-768.1、fbaFulfillmentFee=-624.3、cpcCost=-286.5）
-#     → 费用变多 = 值变小 = 不利 → profit_sign = +1
+#   * msku 利润报表（线下合成/旧样例）：费用为【负数】（commission=-768.1 等，负数样例实为
+#     shop 报表口径）→ 费用变多 = 值变小 = 不利 → profit_sign = +1
 #   * 自定义报表：成本为【正数】（实测 purchaseCost=3102.5、headTripPrice=135）
 #     → 成本变多 = 值变大 = 不利 → profit_sign = -1
+#   * msku 利润报表（线上实测 2026-10）：费用为【正数】（commission=537.08、
+#     fbaFulfillmentFee=612.35；sales − Σ费用 ≈ grossProfit 成立）→ 应取 profit_sign = -1
+# ⚠️ **符号假设仅为缺省，运行时按实测符号校准**：diagnose.storage_sign_calibration() 对每个
+#    费用类因子取基期行的中位数值判定实际存储符号，与下表假设不符时按实测符号修正贡献方向，
+#    并在报告归因表脚注披露（如「因子 X 实测为正号存储（中位值 Y），已按正号口径归因」）。
+#    收入类因子（productSales / reimbursementAmount 等，收入恒正）不校准。
 # 用错符号会让归因恰好反向，务必按此表填。
   factors:
     - key: sales
@@ -123,9 +129,7 @@ attribution:
   #   settlement（结算口径，默认） vs shipment（发货口径）。同一时间段结果不同。
   # ⚠️ 输出必须标注本报告用的是哪个口径，否则必然与财务对不上账。
 caliber:
-  default: "settlement"     # settlement / shipment
-  # 如需一期两口径对比，可置 true（会翻倍取数，注意整体 300s 超时）
-  compare_both: false
+  default: "settlement"     # settlement / shipment（一期两口径对比 = 分别以 --caliber 运行两次）
 
 # ---------- 币种（铁律 7：跨币种必须显式处理）----------
 currency:

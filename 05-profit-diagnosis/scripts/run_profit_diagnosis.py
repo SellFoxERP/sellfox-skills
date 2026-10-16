@@ -89,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--shop-ids", default=None, help="逗号分隔店铺 ID（默认读 shops.yaml）")
     ap.add_argument("--report-id", default=None, help="覆盖 reports.yaml 的 reports.profit.id")
     ap.add_argument("--caliber", default=None, help="利润口径 settlement / shipment（默认读配置）")
+    ap.add_argument("--asin", default=None,
+                    help="请求诊断的 ASIN（逗号分隔）。用于核对上游 search_contents 过滤是否生效："
+                         "0 命中会在报告显式披露且不下任何归因结论（不传则用信封 scope 记录的请求值）")
     ap.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     ap.add_argument("--check-only", action="store_true", help="只做前置校验（含落盘检查）")
     ap.add_argument("--out", default=None, help="输出 Markdown 路径（默认打印到 stdout）")
@@ -179,7 +182,16 @@ def _run(args: argparse.Namespace) -> int:
         "cost_currency": currency.get("cost_currency", "CNY"),
         "top_n": int(out_cfg.get("top_n_loss", 20)),
         "include_deferred_section": bool(out_cfg.get("include_deferred_section", True)),
-        "reimbursement_count": len(result.reimbursement_rows) if "get_amazon_reimbursement_report" in result.sources else "未取数",
+        # 修复（评测问题 #1）：计数/状态按真实落盘信封给出（未取数 / 无数据 / 已取数 N 批 M 行 /
+        # 取数失败（error_code：X）），由 fetch_profit.assemble_all 计算后如实渲染。
+        "reimbursement_count": result.reimbursement_status,
+        # 修复（评测问题 #3）：把失败步骤交给渲染层，「取数失败」与「无数据」在核心结论区分。
+        "msku_failed": [s for s in result.failed_steps if s.startswith("MSKU")],
+        # 修复（评测线上问题 N3）：请求侧 ASIN（CLI 显式值优先，缺省用信封 scope 记录的请求值）。
+        "requested_asins": (
+            [a.strip() for a in args.asin.split(",") if a.strip()] if args.asin
+            else result.requested_asins
+        ),
         # v3：脚本零网络，此计数 = 实际消费的 agent 落盘信封数（零落盘 → 0 → 渲染层显式警示）。
         "mcp_calls": result.mcp_calls,
     }

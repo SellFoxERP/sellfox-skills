@@ -72,6 +72,8 @@ DEFAULT_LIMITS: Dict[str, Any] = {
     "max_budget_change_pct": 30.0,
     "max_changes_per_campaign_24h": 2,
     "max_net_change_pct_24h": 30.0,
+    # 净变化累计的回看窗口（小时）：默认 7 天，防止跨天/跨周拆批复利绕过 ±上限
+    "net_change_lookback_hours": 168,
     "max_daily_budget_increment": 5000.0,
     "require_read_back": True,
     "forbid_batch_pause_all": True,
@@ -317,11 +319,17 @@ class AccumulatorGate:
         """
         today = today or time.strftime("%Y-%m-%d")
         history = self._load_since(24)
+        # 净变化累计用更长回看窗（默认 7 天）：跨天分批的小步调整同样受限幅约束
+        lookback_hours = int(self.limits.get("net_change_lookback_hours", 168))
+        history_net = self._load_since(lookback_hours) if lookback_hours > 24 else history
         violations: List[str] = []
 
         per_target: Dict[str, List[Dict[str, Any]]] = {}
         for rec in history:
             per_target.setdefault(str(rec.get("target_id")), []).append(rec)
+        per_target_net: Dict[str, List[Dict[str, Any]]] = {}
+        for rec in history_net:
+            per_target_net.setdefault(str(rec.get("target_id")), []).append(rec)
 
         daily_budget_increment = 0.0
         for rec in history:
@@ -341,14 +349,17 @@ class AccumulatorGate:
             if any(rec.get("ts", "").startswith(today) for rec in hist):
                 violations.append(f"#{it.index} {it.target_id} 今日已变更过，去重拦截。")
 
-            # 净变化：历史首值的 before 到本次 after
-            if hist and it.delta_pct is not None:
+            # 净变化：回看窗内历史首值的 before 到本次 after（防跨天拆批复利）
+            hist_net = per_target_net.get(str(it.target_id)) or []
+            if hist_net and it.delta_pct is not None:
                 try:
-                    base = float(hist[0].get("before"))
+                    base = float(hist_net[0].get("before"))
                     net = (float(it.after) - base) / base * 100.0 if base else 0.0
                     if abs(net) > self.limits["max_net_change_pct_24h"]:
+                        span = (f"{lookback_hours // 24} 天" if lookback_hours % 24 == 0
+                                else f"{lookback_hours} 小时")
                         violations.append(
-                            f"#{it.index} {it.target_id} 24h 净变化 {net:+.1f}%，"
+                            f"#{it.index} {it.target_id} 回看{span}累计净变化 {net:+.1f}%，"
                             f"超过上限 ±{self.limits['max_net_change_pct_24h']:.0f}%。"
                         )
                 except (TypeError, ValueError):

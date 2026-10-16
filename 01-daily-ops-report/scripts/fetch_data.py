@@ -106,17 +106,30 @@ def resolve_report_date(date_arg: Optional[str]) -> Dict[str, str]:
 
 # --- 落盘读取辅助 -----------------------------------------------------------
 def _cov_truncation(env: RawEnvelope, source: str) -> Optional[Dict[str, Any]]:
-    """把网关 coverage 转成 bundle 的截断披露条目（截断必披露）。"""
+    """把网关 coverage 转成 bundle 的截断/覆盖披露条目（覆盖不全必披露）。
+
+    判据（任一命中即披露）：``complete=false`` / ``truncated=true`` /
+    ``fetched_count < total_count``；服务端总数未知时按「总数未知」披露，
+    不因 truncated=false 而静默（实测存在 complete=false 且 truncated=false 的部分覆盖）。
+    """
     cov = env.coverage or {}
-    if not cov.get("truncated"):
+    if not cov:
         return None
+    fetched, total = cov.get("fetched_count"), cov.get("total_count")
+    shortfall = isinstance(fetched, int) and isinstance(total, int) and total > fetched
+    if cov.get("complete") is not False and not cov.get("truncated") and not shortfall:
+        return None
+    if isinstance(fetched, int) and isinstance(total, int):
+        scope = f"本次仅覆盖 {fetched} 行（服务端报告约 {total} 行）"
+    elif isinstance(fetched, int):
+        scope = f"本次仅覆盖 {fetched} 行（服务端总数未知，覆盖是否完整无法确认）"
+    else:
+        scope = "覆盖行数未知（信封未返回 fetched_count）"
+    reason = "已达 max_rows 上限" if cov.get("truncated") else "服务端 coverage 标记 complete=false"
     return {
         "source": source,
         "scope": env.path.stem,
-        "message": (
-            f"⚠️ 本次仅覆盖 {cov.get('fetched_count')} 行"
-            f"（服务端报告约 {cov.get('total_count')} 行），已达 max_rows 上限，其余未纳入统计。"
-        ),
+        "message": f"⚠️ {scope}，{reason}，其余未纳入统计。",
     }
 
 
@@ -170,7 +183,7 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
         "data": {},
     }
 
-    def _scan(obj: Any) -> None:
+    def _scan(obj: Any, label: str = "") -> None:
         nonlocal demo_fingerprint
         if isinstance(obj, dict):
             for warning in obj.get("warnings") or []:
@@ -178,7 +191,16 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
                 if note not in degradations:
                     degradations.append(note)
             if obj.get("status") != "complete":
-                degradations.append(f"数据响应状态 {obj.get('status', '缺失')}，不代表完整成功。")
+                # 降级文案必须带 error_code 与步骤/工具名（workflow.md：数据说明记录 error_code）
+                where = "、".join(
+                    x for x in (label, f"工具 {obj.get('tool_id')}" if obj.get("tool_id") else "") if x
+                )
+                code = f"error_code={obj.get('error_code')}" if obj.get("error_code") else "信封未携带 error_code"
+                head = f"{where}：" if where else ""
+                degradations.append(
+                    f"{head}步骤信封状态 {obj.get('status', '缺失')}（{code}），"
+                    "不代表完整成功，该源按降级处理，相关项「⚠️ 需人工核查」。"
+                )
         if isinstance(obj, dict) and detect_date_filter_unreliable(obj.get("data"), rd["iso"], rd["iso"]):
             note = "返回业务日期不在请求窗口内；以下数值仅展示返回样本，不能解释为该日经营结果。"
             if note not in degradations:
@@ -198,7 +220,7 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     env = _load(raw_dir, "shops")
     if env is None:
         raise SystemExit("❌ 缺少 out/raw/shops.json（取数计划步骤 1）。请先由 agent 落盘。")
-    _scan(env.obj)
+    _scan(env.obj, "步骤 1 店铺清单")
     t = _cov_truncation(env, "get_shop_page_list")
     if t:
         trunc_store.append(t)
@@ -208,12 +230,21 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     else:
         bundle["data"]["shops"] = env.rows("rows")
 
-    shop_ids = [str(r.get("id")) for r in bundle["data"]["shops"] if r.get("id")]
+    # 店铺按唯一 ID 去重计数（上游可能返回重复行，如 5 店 ×4 重复 = 20 行）
+    shop_ids: List[str] = []
+    for sid in (str(r.get("id")) for r in bundle["data"]["shops"] if r.get("id")):
+        if sid not in shop_ids:
+            shop_ids.append(sid)
+    if len(bundle["data"]["shops"]) != len(shop_ids):
+        degradations.append(
+            f"店铺清单上游返回重复行 {len(bundle['data']['shops'])}→{len(shop_ids)}（按唯一店铺 ID 去重后计数）。"
+        )
+    shop_regions = sorted({str(r.get("region")) for r in bundle["data"]["shops"] if r.get("region")})
 
     # 2) 店铺级利润（L1）
     env = _load(raw_dir, "profit_shop")
     if env is not None and not is_no_data(env.data):
-        _scan(env.obj)
+        _scan(env.obj, "步骤 2 店铺级利润")
         t = _cov_truncation(env, "get_profit_report_by_shop")
         bundle["data"]["store_profit"] = {
             "reportList": env.rows("reportList"),
@@ -225,13 +256,14 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     else:
         bundle["data"]["store_profit"] = None
         degradations.append(
-            "店铺级利润缺失或无数据（out/raw/profit_shop.json）：L1 核心指标不可用，需人工核查。"
+            "利润步骤缺失（out/raw/profit_shop.json 未落盘或无数据）："
+            "L1 利润类指标（GMV/毛利/毛利率）不可用，标「⚠️ 需人工核查」；订单/广告等其余步骤照常。"
         )
 
     # 3)（可选）30 天基线切片
     env = _load(raw_dir, "profit_shop_range")
     if env is not None and not is_no_data(env.data):
-        _scan(env.obj)
+        _scan(env.obj, "步骤 2b 30 天基线")
         bundle["data"]["store_profit_range"] = {
             "reportList": env.rows("reportList"),
             "truncated": bool(_cov_truncation(env, "get_profit_report_by_shop(range)")),
@@ -240,6 +272,12 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     # 4) 宽表（每店铺批一文件；无 report_id → 降级）
     report_id = _report_id()
     msku_envs = _merge_pattern(raw_dir, "msku")
+    # 失败/截断披露与 report_id 无关：即使降级，error_code 与覆盖缺口也要可见（不静默丢弃）
+    for env_ in msku_envs:
+        _scan(env_.obj, f"步骤 3 宽表 {env_.path.stem.replace('msku_', '')}")
+        t = _cov_truncation(env_, "get_custom_report_page_list")
+        if t:
+            trunc_store.append(t)
     if not report_id:
         note = str(_cfg("degradation", "no_report_id_note", default="") or "")
         if not note or note.startswith((">", "|")):  # YAML 块标量被朴素解析时的兜底
@@ -249,14 +287,10 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     elif msku_envs:
         rows: List[Dict[str, Any]] = []
         for env_ in msku_envs:
-            _scan(env_.obj)
             sid = env_.path.stem.replace("msku_", "")
             for r in env_.rows("rows"):
                 r.setdefault("shopId", "" if sid == "ALL" else sid)
                 rows.append(r)
-            t = _cov_truncation(env_, "get_custom_report_page_list")
-            if t:
-                trunc_store.append(t)
         bundle["data"]["msku_report"] = {"rows": rows, "report_id": report_id, "batches": len(msku_envs)}
     else:
         bundle["data"]["msku_report"] = None
@@ -265,7 +299,7 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     # 5) 订单异常样本（PII：渲染前脱敏由 render 层负责）
     env = _load(raw_dir, "orders")
     if env is not None and not is_no_data(env.data):
-        _scan(env.obj)
+        _scan(env.obj, "步骤 4 订单样本")
         t = _cov_truncation(env, "get_order_page_list")
         bundle["data"]["orders_sample"] = {
             "rows": env.rows("rows"),
@@ -282,8 +316,11 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     camp_envs = _merge_pattern(raw_dir, "campaigns")
     items: List[Dict[str, Any]] = []
     for env_ in camp_envs:
-        _scan(env_.obj)
         sid = env_.path.stem.replace("campaigns_", "")
+        _scan(env_.obj, f"步骤 5 广告 {sid}")
+        t = _cov_truncation(env_, "get_sp_campaign_list")
+        if t:
+            trunc_store.append(t)
         for it in env_.rows("itemList"):
             it.setdefault("shopId", sid)
             items.append(it)
@@ -295,16 +332,25 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     multi_envs = _merge_pattern(raw_dir, "multiplatform")
     if multi_envs:
         metrics: Dict[str, List[Dict[str, Any]]] = {}
+        multi_row_total = 0
         for env_ in multi_envs:
-            _scan(env_.obj)
             metric = env_.path.stem.replace("multiplatform_", "")
+            _scan(env_.obj, f"步骤 6 跨平台 {metric}")
+            t = _cov_truncation(env_, "get_multiplatform_sale_stats")
+            if t:
+                trunc_store.append(t)
             metrics[metric] = env_.rows("rows")
+            multi_row_total += len(metrics[metric])
         bundle["data"]["multiplatform"] = {"metrics": metrics}
+        if not multi_row_total:
+            degradations.append("跨平台销量缺失（已跳过）：步骤 6 信封无数据或取数失败。")
 
     bundle["demo_fingerprint"] = demo_fingerprint
     bundle["meta"] = {
         "shops_total": len(shop_ids),
         "shops_covered": len(shop_ids),
+        "shop_regions": shop_regions,
+        "profit_step_missing": bundle["data"].get("store_profit") is None,
         "msku_rows": len((bundle["data"].get("msku_report") or {}).get("rows") or []),
         "campaign_rows": len(items),
         "demo_hit": demo_fingerprint,
@@ -336,7 +382,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     for d in bundle.get("degradations", []):
         print(f"⚠️ 口径降级：{d}")
     if bundle["data"].get("store_profit") is None:
-        return 2
+        # 最小集运行（如仅订单下钻）不再硬退：利润缺失走降级（横幅 + 需人工核查），其余步骤照常
+        print("⚠️ 利润步骤缺失：L1 利润类指标不可用（已降级，不阻断）。")
     return 0
 
 

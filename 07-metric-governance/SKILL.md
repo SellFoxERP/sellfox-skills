@@ -202,7 +202,7 @@ agent 按取数计划调 `get_custom_report_index_page_list`，`share_status=0`�
 | `get_custom_report_stat_index_list` | — | `op_type`（1 新增/2 编辑） | 结构未实测，防御性解析 |
 | `get_custom_report_index_page_list` | `page_no`, `page_size` | `share_status`(0/1), `type_list`[], `report_id_list`[], `uid_list`[], `index_name` | `data.rows` |
 | `add_custom_report_index` | `index_formula`, `index_name`, `type` | `index_comment` | — |
-| `update_custom_report_index` | `index_formula`, `index_name`, `type` | `id`, `index_comment` | — |
+| `update_custom_report_index` | `index_formula`, `index_name`, `type`, `id` | `index_comment` | — |
 
 `type` 取值：`0` 其他 / `1` 数量 / `2` 货币 / `3` 百分比。
 

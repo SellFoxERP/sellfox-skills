@@ -10,7 +10,7 @@
     {
       "id": 2,
       "prompt": "report_id 还没配，先给我跑一版今天的日报",
-      "expected_output": "触发首轮引导（提示去赛狐创建自定义报表并给出勾选字段清单），自动降级：用 get_profit_report_by_shop 的 reportList + get_online_product_page_list，并在日报顶部标注「口径降级：缺少自定义报表，部分指标不可用」；不崩、不静默。",
+      "expected_output": "触发首轮引导（提示去赛狐创建自定义报表并给出勾选字段清单；可尝试报表自动发现，验证失败不自动绑定用途、不缓存 ID）；自动降级：跳过宽表步骤（get_custom_report_page_list，缺口在「口径降级」区块披露），仅用 get_profit_report_by_shop 的 reportList 与订单（get_order_page_list）/ 广告（get_sp_campaign_list）等其余步骤，并在日报中标注「口径降级：缺少自定义报表」；不崩、不静默。",
       "files": []
     },
     {

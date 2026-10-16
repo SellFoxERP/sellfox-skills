@@ -15,6 +15,33 @@ class PlanError(ValueError):
     pass
 
 
+# Demo/sample data fingerprints. Kept in sync with DEMO_FINGERPRINTS in
+# _shared/scripts/sellfox_offline.py (single source: the shared module).
+# This skill is deliberately standalone with zero _shared imports, so the
+# list is duplicated here on purpose — update both places together.
+DEMO_FINGERPRINTS = ('MOCK-', 'mock.example.com', 'demo.example.com', 'SHOP-DEMO-', 'B0DEMO', 'DPARENT', '演示')
+
+
+def demo_fingerprints_in(value):
+    """Collect demo fingerprints hit by any recursive string value (canonical order, deduped)."""
+    hit = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for child in node.values():
+                walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+        elif isinstance(node, str):
+            for fingerprint in DEMO_FINGERPRINTS:
+                if fingerprint in node:
+                    hit.add(fingerprint)
+
+    walk(value)
+    return [fingerprint for fingerprint in DEMO_FINGERPRINTS if fingerprint in hit]
+
+
 def read_json(path):
     return json.loads(Path(path).read_text(encoding='utf-8'), parse_float=Decimal)
 
@@ -144,11 +171,19 @@ def validate(plan):
 def load_rows(plan, dataset, base):
     pages, records, issues = [], [], []
     seen_pages = set()
+    dataset_fingerprints = []
     for file in dataset['inputs']:
         page = {'file': file, 'accepted': False}
         pages.append(page)
         try:
-            request, env = unwrap(read_json(base / file))
+            document = read_json(base / file)
+            fingerprints = demo_fingerprints_in(document)
+            if fingerprints:
+                page['demo_fingerprint'] = fingerprints
+                for fingerprint in fingerprints:
+                    if fingerprint not in dataset_fingerprints:
+                        dataset_fingerprints.append(fingerprint)
+            request, env = unwrap(document)
             page.update({k: env.get(k) for k in ('tool_id', 'trace_id', 'status', 'coverage', 'pagination', 'warnings', 'output_validation', 'error_code', 'scope', 'contract_version', 'period', 'currency', 'upstream', 'message', 'field_errors', 'retryable', 'suggested_action')})
             if isinstance(request, dict):
                 page['request_params'] = request.get('params')
@@ -187,6 +222,7 @@ def load_rows(plan, dataset, base):
         issues.append('未指定业务去重键；仅去除完全重复页，不认证跨页无重叠')
     selected, seen, conflicts = [], {}, set()
     excluded = {'filter': 0, 'date': 0, 'missing_key': 0, 'conflict': 0, 'duplicate': 0}
+    out_of_window = []
     for record in records:
         row = record['row']
         if any(at(row, path) not in allowed for path, allowed in plan.get('filters', {}).items()):
@@ -194,12 +230,14 @@ def load_rows(plan, dataset, base):
             continue
         period = dataset.get('period')
         if period:
-            actual = day(at(row, plan['date_field']))
+            raw_date = at(row, plan['date_field'])
+            actual = day(raw_date)
             if actual is None or not day(period['start']) <= actual <= day(period['end']):
                 if plan.get('mode') == 'sample':
                     issues.append(f"{record['sources'][0]['file']}:{record['sources'][0]['row']}: 日期不匹配，仅作返回样本")
                 else:
                     excluded['date'] += 1
+                    out_of_window.append((raw_date, actual))
                     continue
         if not plan['dedupe_by']:
             selected.append(record)
@@ -223,8 +261,27 @@ def load_rows(plan, dataset, base):
         excluded['conflict'] = len(conflicts)
     if any(excluded.values()):
         issues.append('排除/去重计数：' + signature(excluded))
+    excluded_dates = None
+    if excluded['date']:
+        # Out-of-window rows keep their real date values visible instead of a bare count.
+        parsed = sorted({value for _, value in out_of_window if value is not None})
+        samples = []
+        for value, _ in out_of_window:
+            text = '缺失' if value is None else str(value)
+            if text not in samples:
+                samples.append(text)
+            if len(samples) == 3:
+                break
+        excluded_dates = {'field': plan['date_field'], 'count': excluded['date'],
+                          'min': str(parsed[0]) if parsed else None,
+                          'max': str(parsed[-1]) if parsed else None,
+                          'samples': samples}
+        issues.append('有 ' + str(excluded['date']) + ' 行日期（字段 ' + str(plan['date_field'])
+                      + '）落在窗口外：' + (str(parsed[0]) if parsed else '未知')
+                      + '~' + (str(parsed[-1]) if parsed else '未知')
+                      + '，样例 ' + '、'.join(samples) + '。')
     # Full dataset coverage requires contract-specific proof outside this generic processor.
-    return selected, pages, issues, excluded
+    return selected, pages, issues, excluded, excluded_dates, dataset_fingerprints
 
 
 def aggregate(plan, records):
@@ -289,16 +346,20 @@ def compare_groups(plan, datasets):
                              'change_percent': (a - b) / abs(b) * 100 if a is not None and b not in (None, 0) else None,
                              'difference_unit': 'percentage_points' if rule['unit'] == 'percent' else rule['unit']}
         output.append({'dimensions': (current or baseline)['dimensions'], 'metrics': metrics})
-    return {'current': spec['current'], 'baseline': spec['baseline'],
-            'scope': 'observed_rows_only', 'groups': output,
-            'note': '仅对已取有效数据比较；缺基期组或零分母不算增长率，不能据此认定真实业务变化。'}
+    result = {'current': spec['current'], 'baseline': spec['baseline'],
+              'scope': 'observed_rows_only', 'groups': output,
+              'note': '仅对已取有效数据比较；缺基期组或零分母不算增长率，不能据此认定真实业务变化。'}
+    if not (left.get('period') and right.get('period')):
+        # Snapshot compare without verified periods: zero difference is not evidence of no change.
+        result['snapshot_warning'] = '快照对比（无期间信息）：差异为 0 不代表无变化，需核对两窗口是否同源。'
+    return result
 
 
 def process(plan, base):
     validate(plan)
     datasets = {}
     for name, dataset in plan['datasets'].items():
-        records, pages, issues, excluded = load_rows(plan, dataset, base)
+        records, pages, issues, excluded, excluded_dates, fingerprints = load_rows(plan, dataset, base)
         groups = aggregate(plan, records)
         incomplete = any(not p['accepted'] or p.get('status') == 'partial' for p in pages)
         incomplete = incomplete or any(excluded[k] for k in ('date', 'missing_key', 'conflict'))
@@ -307,9 +368,14 @@ def process(plan, base):
         datasets[name] = {'status': state,
                           'period': dataset.get('period'), 'request_match': dataset.get('request_match'),
                           'coverage': 'not_certified', 'pages': pages, 'issues': issues,
-                          'excluded': excluded, 'accepted_rows': len(records), 'records': records, 'groups': groups}
+                          'excluded': excluded, 'excluded_dates': excluded_dates,
+                          'demo_fingerprint': [f for f in DEMO_FINGERPRINTS if f in fingerprints],
+                          'accepted_rows': len(records), 'records': records, 'groups': groups}
+    demo_fingerprint = [f for f in DEMO_FINGERPRINTS
+                        if any(f in ds['demo_fingerprint'] for ds in datasets.values())]
     return {'version': 1, 'mode': plan.get('mode', 'production'), 'tool_id': plan['tool_id'],
             'context': plan.get('context', {}), 'metrics': plan['metrics'], 'datasets': datasets,
+            'demo_fingerprint': demo_fingerprint,
             'comparison': compare_groups(plan, datasets)}
 
 
@@ -325,6 +391,8 @@ def render(result):
     lines = ['# 赛狐业务数据处理结果', '', '范围：仅已读取并通过校验的记录；脚本不认证全量覆盖或业务口径。', '',
              '模式：' + ('返回样本演示，不能作为真实经营结论。' if result['mode'] == 'sample' else '业务数据处理。'), '',
              '工具：' + cell(result['tool_id']), '', '业务上下文：' + cell(result['context'])]
+    if result.get('demo_fingerprint'):
+        lines += ['', '演示/样本数据指纹（' + '、'.join(result['demo_fingerprint']) + '）：结果不作为经营结论。']
     for name, ds in result['datasets'].items():
         lines += ['', '## ' + cell(name), '', f"状态：{cell(ds['status'])}；有效记录：{ds['accepted_rows']}；覆盖：未认证。",
                   '', '请求窗口：' + cell(ds['period']), '', '| 分组 | 指标 | 值 | 单位 | 有效/缺失行 | 状态 |', '|---|---|---|---|---|---|']
@@ -334,9 +402,12 @@ def render(result):
         lines += ['', '已排除/去重：' + cell(ds['excluded']), '', '数据说明：']
         lines += ['- ' + cell(issue) for issue in ds['issues']] or ['- 无额外处理异常；仍需检查上游覆盖信息。']
         for page in ds['pages']:
-            lines += ['- ' + cell({key: page.get(key) for key in ('file','status','trace_id','coverage','pagination','warnings','output_validation','error_code','upstream','message','retryable','field_errors','suggested_action','rejection')})]
+            lines += ['- ' + cell({key: page.get(key) for key in ('file','status','trace_id','coverage','pagination','warnings','output_validation','error_code','upstream','message','retryable','field_errors','suggested_action','demo_fingerprint','rejection')})]
     if result['comparison']:
-        lines += ['', '## 对比（已取记录）', '', result['comparison']['note'], '', '| 分组 | 指标 | 本期 | 基期 | 差值 | 差值单位 | 变化率% |', '|---|---|---|---|---|---|---|']
+        lines += ['', '## 对比（已取记录）', '', result['comparison']['note']]
+        if result['comparison'].get('snapshot_warning'):
+            lines += [result['comparison']['snapshot_warning']]
+        lines += ['', '| 分组 | 指标 | 本期 | 基期 | 差值 | 差值单位 | 变化率% |', '|---|---|---|---|---|---|---|']
         for group in result['comparison']['groups']:
             for name, m in group['metrics'].items():
                 lines.append('| ' + ' | '.join(cell(v) for v in (group['dimensions'],name,m['current'],m['baseline'],m['difference'],m['difference_unit'],m['change_percent'])) + ' |')

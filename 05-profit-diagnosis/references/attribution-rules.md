@@ -46,13 +46,19 @@
 
 | 报表 | 费用/成本符号 | 实测样例 | 推论 | profit_sign |
 |---|---|---|---|---|
-| `get_profit_report_by_msku` | **负数** | `commission=-768.1`、`fbaFulfillmentFee=-624.3`、`cpcCost=-286.5` | 费用变多 = 值**变小** = 不利 | `+1` |
+| `get_profit_report_by_msku`（线下合成/旧样例） | **负数** | `commission=-768.1` 等（负数样例实为 shop 报表口径） | 费用变多 = 值**变小** = 不利 | `+1` |
+| `get_profit_report_by_msku`（线上实测 2026-10） | **正数** | `commission=537.08`、`fbaFulfillmentFee=612.35`（sales − Σ费用 ≈ grossProfit 成立） | 费用变多 = 值**变大** = 不利 | `-1` |
 | `get_custom_report_page_list` | **正数** | `purchaseCost=3102.5`、`headTripPrice=135` | 成本变多 = 值**变大** = 不利 | `-1` |
 
 因此 `config/diagnosis.yaml → attribution.factors[].profit_sign` 是**每个因子必填项**，
 含义为「该字段值越大，对利润越有利（+1）还是越不利（-1）」。
 
-> ⚠️ 新增因子时必须填对符号，否则归因会恰好反向 —— 而且**不会报错**，只会静默给出错误结论。
+> ⚠️ **符号假设仅为缺省，运行时按实测符号校准**：`diagnose.storage_sign_calibration()`
+> 对每个**费用类因子**取基期行（跨全部 MSKU）的**中位数值**判定实际存储符号；与配置
+> profit_sign 推导的假设不符时，按实测符号修正贡献方向（正号存储 → -1、负号存储 → +1），
+> 并在报告归因表脚注披露（如「因子 X 实测为正号存储（中位值 Y），已按正号口径归因」）。
+> **收入类因子不校准**（收入恒正）：productSales、reimbursementAmount 等。
+> 新增因子仍必须填对缺省符号，否则实测样本不足（如基期无数据）时会退回错误缺省；
 > 不确定的因子（如 `deferredAmount`，递延的利弊取决于公司确认口径）应在注释里写明
 > 「需与财务确认后固定此符号」。
 
@@ -101,7 +107,8 @@ msku 报表侧**有同名概念的汇总字段**，但口径不同、不可替�
 
 - 每次调用显式传 `profit_caliber_type`，默认读 `config/diagnosis.yaml → caliber.default`。
 - **报告首部必须标注本报告用的是哪个口径**，否则必然与财务对不上账。
-- 若需一期两口径对比，置 `caliber.compare_both: true`（会翻倍取数，注意 300s 总超时）。
+- 一期两口径对比 = 分别以 `--caliber settlement` / `--caliber shipment` 运行两次
+  （同一落盘窗口分别生成两份报告；脚本不内置自动翻倍取数）。
 
 ## 7. 两条「易漏的钱」专线
 

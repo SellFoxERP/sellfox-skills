@@ -127,5 +127,11 @@ degradation:
       - "高频问题词提取"
       - "基于原文的行动建议归因"
   # 无 report_id（自定义报表）时的行为：连聚合差评信号都拿不全。
-  no_custom_report:
+  # 降级原因三态（fetch_signals 按落盘证据归因，{error_codes} 替换为实测 error_code 列表）；
+  # 关键纪律：上游失败不得写成「先配置 report_id」，把故障误归因为用户没配置。
+  no_custom_report:                # 未配置（无任何发现/验证失败证据）
     banner: "⚠️ 口径降级：缺少自定义报表 report_id，lowReviewNum/reviewNum/reviewRate 不可用；仅能用 online 侧 rating/ratingCount（且无环比基线，需历史快照）。"
+  discovery_failed:                # 报表自动发现本身失败（error_code）
+    banner: "⚠️ 口径降级：自定义报表自动发现失败（error_code：{error_codes}），report_id 不可得；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。发现失败 ≠ 未配置：需人工核对发现链路后重跑，补配置解决不了。"
+  candidate_verification_rejected: # 报表已发现、候选验证读取被上游拒（error_code），report_id 未绑定
+    banner: "⚠️ 口径降级：报表已发现、候选验证读取被上游拒绝（error_code：{error_codes}），report_id 未绑定；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。这是上游读取被拒，不是未配置 report_id：请人工在赛狐网页端核对报表，而非重新配置。"

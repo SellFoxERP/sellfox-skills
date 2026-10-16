@@ -65,24 +65,33 @@ def review(plan, base, topic):
             as_of = data.day(spec['as_of'])
             for record in ds['records']:
                 row = record['row']; launch = data.day(data.at(row,spec['launch_date_field']))
+                future = bool(launch and launch > as_of)
                 age = (as_of-launch).days+1 if launch and launch <= as_of else None
+                note = '已达到的日历观察窗口，不表示数据完整或目标达成；未知/未来上架日期不评阶段。'
+                if future:
+                    note += '上架日期为未来值，未确认。'
                 result['findings'].append({'dataset':name,
                     'product':{key:data.at(row,key) for key in plan['group_by']},
-                    'launch_date':str(launch) if launch else None,'launch_date_raw':data.at(row,spec['launch_date_field']),'age_days':age,
+                    'launch_date':str(launch) if launch and not future else None,'launch_date_raw':data.at(row,spec['launch_date_field']),'age_days':age,
                     'new_product_scope':'unknown' if age is None else 'outside' if max_age is not None and age>max_age else 'within' if max_age is not None else 'not_defined',
                     'max_age_days':max_age,
                     'completed_observation_windows':[n for n in (7,14,30,60) if age is not None and age>=n],
                     'sources':record['sources'],
-                    'note':'已达到的日历观察窗口，不表示数据完整或目标达成；未知/未来上架日期不评阶段。'})
+                    'note':note})
     return result
 
 
 def render(result):
     title = '退款退货损失分析' if result['topic']=='returns' else '新品上市复盘'
     banner = '返回样本演示：不能作为当前经营结论。原因：'+data.cell(result.get('sample_reason')) if result['mode']=='sample' else '生产模式：仍需核验业务范围和覆盖。'
-    lines = ['# '+title,'',banner,'',data.cell(result['scope_note']),'',
-             '仅基于已取得记录，不认证全量覆盖。目标达成、原因判断和行动建议须结合证据另行分析。','',
-             '| 数据集 | 商品 | 观察结果 |','|---|---|---|']
+    lines = ['# '+title,'',banner]
+    fingerprints = result.get('demo_fingerprint') or []
+    if fingerprints:
+        # Demo-fingerprint watermark applies in both sample and production modes.
+        lines += ['','演示/样本数据指纹（'+'、'.join(fingerprints)+'）：结果不作为经营结论']
+    lines += ['',data.cell(result['scope_note']),'',
+              '仅基于已取得记录，不认证全量覆盖。目标达成、原因判断和行动建议须结合证据另行分析。','',
+              '| 数据集 | 商品 | 观察结果 |','|---|---|---|']
     for item in result['findings']:
         detail={k:v for k,v in item.items() if k not in ('dataset','product')}
         lines.append('| '+data.cell(item['dataset'])+' | '+data.cell(item['product'])+' | '+data.cell(detail)+' |')

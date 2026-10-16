@@ -94,6 +94,9 @@ def run(args: argparse.Namespace) -> int:
     fetch_argv: list = []
     if args.days:
         fetch_argv += ["--days", str(args.days)]
+    end_date = getattr(args, "end_date", None)  # 兼容旧调用方手搓的 Namespace
+    if end_date:
+        fetch_argv += ["--end-date", end_date]
     if args.report_id:
         fetch_argv += ["--report-id", args.report_id]
     fetch_argv += ["--out", "out/signals.json"]
@@ -134,6 +137,7 @@ def run(args: argparse.Namespace) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description="评论 VOC 归因（主编排，v3：先落盘检查再计算）")
     p.add_argument("--days", type=int, default=None)
+    p.add_argument("--end-date", default=None, help="窗口结束日 YYYY-MM-DD（默认今天；透传 fetch_signals 固定环比窗口）")
     p.add_argument("--report-id", default=None, help="自定义报表 ID（默认读 _shared/config/reports.yaml）")
     p.add_argument("--reviews-json", default=None, help="外部 MCP 取回的评论原文（已落盘）")
     p.add_argument("--adapter-file", default=None, help="评论源 adapter 声明（md）")

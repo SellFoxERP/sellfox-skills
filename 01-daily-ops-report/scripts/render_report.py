@@ -65,10 +65,16 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append(f"# 📊 每日经营日报 | {iso}")
     L.append("")
 
+    # 利润步骤缺失降级横幅（顶部）：最小集运行（如仅订单下钻）时不阻断，但必须显式披露
+    if (bundle.get("data") or {}).get("store_profit") is None:
+        L.append("> ⚠️ **利润步骤缺失**：店铺级利润（get_profit_report_by_shop）未取到，"
+                 "L1 利润类指标（GMV/毛利/毛利率）不可用 — ⚠️ 需人工核查；订单/广告等其余步骤照常。")
+        L.append("")
+
     # ---------- L1 结论层 ----------
     L.append("## 【L1 结论层】管理层看这里")
     L.append("")
-    L.append("### 🔴 今日红线（≤%d 条，含归因线索）" % len(analysis.get("redlines") or []))
+    L.append("### 🔴 今日红线（≤%d 条，含归因线索）" % analysis.get("redline_max_items", 5))
     L.append("")
     reds = analysis.get("redlines") or []
     if not reds:
@@ -206,7 +212,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
             flag = []
             if str(o.get("isReturnOrder")) in ("1", "true", "True"):
                 flag.append("退货")
-            if o.get("refundStatus"):
+            if str(o.get("refundStatus") or "0") not in ("0", ""):  # 字符串枚举："0"=非退款，非"0"=退款（勿按真值判断）
                 flag.append("退款")
             if str(o.get("isBuyerRequestedCancel")) in ("1", "true", "True"):
                 flag.append("买家请求取消")
@@ -214,7 +220,9 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
                 continue
             line = (f"- {o.get('amazonOrderId')}（{o.get('shopName') or o.get('shopId')}）"
                     f" 标记：{'/'.join(flag)} 金额：{_fmt(o.get('orderTotalAmount'))} {o.get('orderTotalCurrency','')}"
-                    f" buyerEmail: {o.get('buyerEmail','')} buyerName: {o.get('buyerName','')}")
+                    # 两个 PII 字段间用「；」分隔：脱敏正则以 ,;，； 与行尾为值边界，纯空格会让
+                    # buyerEmail 的匹配吞到行尾、buyerName 漏掩（英文姓名泄漏）
+                    f" buyerEmail: {o.get('buyerEmail','')}；buyerName: {o.get('buyerName','')}")
             L.append(_mask(line))
             shown += 1
         if shown == 0:
@@ -222,6 +230,24 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
         L.append("")
         L.append("> 已脱敏：buyerEmail / buyerName 已掩码。")
     L.append("")
+
+    # ---------- 跨平台销量（可选步骤 6；按币种分组，不跨币种合计）----------
+    multi = analysis.get("multiplatform") or {}
+    if multi.get("available"):
+        labels = {"salePrice": "销售额", "orderNum": "订单量", "productNum": "商品数"}
+        L.append("## 【跨平台销量】非亚马逊平台")
+        L.append("")
+        L.append(f"- 覆盖平台：{'、'.join(multi.get('platforms') or ['未知'])}"
+                 f"（来源：get_multiplatform_sale_stats，共 {multi.get('rows', 0)} 行）")
+        L.append("")
+        L.append("| 指标 | 平台 | 币种 | 数值（本币，未折算） | 行数 |")
+        L.append("|---|---|---|---|---|")
+        for g in multi.get("groups") or []:
+            label = labels.get(g.get("metric"), g.get("metric"))
+            L.append(f"| {label} | {g.get('platform')} | {g.get('currency')} | {_fmt(g.get(g.get('metric')))} | {g.get('rows', 0)} |")
+        L.append("")
+        L.append(f"> ⚠️ {multi.get('note')}")
+        L.append("")
 
     # ---------- 数据说明（必填）----------
     L.append("---")
@@ -233,6 +259,12 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append(f"- 币种：聚合币种 {cur}（以返回行币种核验；请求参数不代表折算已成功）")
     L.append(f"- 业务日边界：{cfg.get('date_mode')}（时区参考 {cfg.get('timezone','—')}）；数据截止 {iso} 23:59")
     L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / get_custom_report_page_list / get_order_page_list / get_sp_campaign_list）")
+    meta = bundle.get("meta") or {}
+    if isinstance(meta.get("shops_total"), int):
+        regions = meta.get("shop_regions") or []
+        region_s = "、".join(str(x) for x in regions) if regions else "未知"
+        L.append(f"- 店铺/站点覆盖范围：{meta.get('shops_total')} 家店铺；站点：{region_s}"
+                 f"（覆盖店铺数 {meta.get('shops_covered')}/{meta.get('shops_total')}，按唯一店铺 ID 计）")
     L.append("")
 
     deg = analysis.get("degradations") or []

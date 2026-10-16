@@ -262,13 +262,17 @@ class FetchResult:
     shop_rows: List[Dict[str, Any]] = field(default_factory=list)
     reimbursement_rows: List[Dict[str, Any]] = field(default_factory=list)
     sources: List[str] = field(default_factory=list)
-    coverage: List[str] = field(default_factory=list)     # 截断/无数据披露语句
+    coverage: List[str] = field(default_factory=list)     # 截断/无数据/失败披露语句
     warnings: List[str] = field(default_factory=list)
     demo_fingerprint: Optional[str] = None
     report_id_used: Optional[str] = None
     degraded: bool = False                                # report_id 缺失 → 降级
     caliber: str = "settlement"
     mcp_calls: int = 0                                    # v3：实际消费的落盘信封数（防「零取数却报成功」）
+    # ---- 评测修复（2026-10-16）新增的三态/范围字段 ----
+    reimbursement_status: str = "未取数"                   # 未取数 / 无数据 / 已取数 N 批 M 行 / 取数失败（error_code：X）
+    failed_steps: List[str] = field(default_factory=list) # 取数失败步骤（label+error_code），供渲染层区分「失败」与「无数据」
+    requested_asins: List[str] = field(default_factory=list)  # 请求侧 ASIN 定向值（信封 scope.search_contents），供渲染核对是否命中
 
     def index_by_msku(self, rows: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         out: Dict[str, Dict[str, Any]] = {}
@@ -353,8 +357,14 @@ def _load_step(raw_dir: Path, stem: str) -> Tuple[List[RawEnvelope], List[str]]:
 
 
 def _cov_line(env: RawEnvelope, label: str) -> str:
-    """把信封 coverage / 行数转成一句覆盖披露（与旧版 TruncationInfo.describe() 口径一致）。"""
+    """把信封 coverage / 行数转成一句覆盖披露（与旧版 TruncationInfo.describe() 口径一致）。
+
+    ⚠️ 「取数失败」与「无数据」必须区分（评测问题 #2）：failed 信封的 data 恒为 None，
+    但它是**失败**（带 error_code），不是该期真的没有数据 —— 混同会掩盖需要人工核查的事实。
+    """
     n = len(env.rows())
+    if env.status == "failed":
+        return f"{label}: 取数失败（error_code：{env.error_code or '?'}）"
     if is_no_data(env.data):
         return f"{label}: 无数据"
     cov = env.coverage or {}
@@ -379,6 +389,33 @@ def _env_issues(env: RawEnvelope, label: str) -> List[str]:
     return []
 
 
+def _norm_period_date(value: Any) -> Optional[str]:
+    """信封 ``period`` 日期值 → ``yyyy-MM-dd``（兼容 ``yyyyMMdd`` 与带时分秒形态）。"""
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    return None
+
+
+def _warn_period_mismatch(
+    result: "FetchResult", label: str, env_start: Any, env_end: Any,
+    win_start: date, win_end: date,
+) -> None:
+    """落盘信封 period 与 resolve_windows 口径窗口不一致 → 告警（评测线上问题 N4：差 1 天无告警）。
+
+    v3 信任 agent 取数，但取数窗口跑偏会让环比比较两个不同期间 —— 必须显式告警，不得静默。
+    """
+    env_ws, env_we = _norm_period_date(env_start), _norm_period_date(env_end)
+    exp_ws, exp_we = f"{win_start}", f"{win_end}"
+    if env_ws and env_we and (env_ws, env_we) != (exp_ws, exp_we):
+        result.warnings.append(
+            f"⚠️ {label}：落盘信封请求窗口 {env_ws}~{env_we} 与脚本环比口径窗口 {exp_ws}~{exp_we} 不一致"
+            "（取数必须按 resolve_windows 结果传参），环比可能比较了不同期间，请人工核对落盘参数。"
+        )
+
+
 #: 步骤标签 → FetchResult 行字段（msku / custom / shop）。
 _TARGET_ATTR = {"MSKU 利润报表本期": "msku_rows", "MSKU 利润报表基期": "msku_rows",
                 "自定义报表本期": "custom_rows", "自定义报表基期": "custom_rows",
@@ -396,10 +433,14 @@ def _consume_step(
     list_key: str,
     max_rows: int,
     source_tool: str,
+    win_start: Optional[date] = None,
+    win_end: Optional[date] = None,
 ) -> bool:
     """消费一个双窗口步骤的落盘信封：校验 → 归一化 → 并入 FetchResult。
 
     返回是否消费到了至少一个信封（用于判断该源是否可用）。
+    ``win_start`` / ``win_end`` 是该窗口的脚本口径起止日（resolve_windows 结果），
+    用于校验落盘信封 period 是否与口径窗口一致（不一致 → 告警）。
     """
     envs, warns = _load_step(raw_dir, stem)
     result.warnings.extend(warns)
@@ -420,7 +461,20 @@ def _consume_step(
         start, end = period.get("start_date"), period.get("end_date")
         if start and end and detect_date_filter_unreliable(env.data, start, end):
             result.warnings.append(f"{label}：返回业务日期与请求窗口不符；仅展示返回样本，不能解释为实际期间变化。")
+        if start and end and win_start and win_end:
+            _warn_period_mismatch(result, label, start, end, win_start, win_end)
+        # 请求侧 ASIN 定向值（范围防御，评测线上问题 N3）：上游 asin 过滤可能被忽略，
+        # 把信封 scope 里记录的请求值留给渲染层核对是否 0 命中。
+        scope = env.obj.get("scope") or {}
+        if source_tool == "get_profit_report_by_msku" and scope.get("search_type") == "asin":
+            contents = scope.get("search_contents")
+            contents = contents if isinstance(contents, (list, tuple)) else [contents]
+            for item in contents:
+                scalar = first_scalar(item)
+                if scalar is not None and str(scalar) not in result.requested_asins:
+                    result.requested_asins.append(str(scalar))
         if env.status == "failed":
+            result.failed_steps.append(f"{label}（error_code={env.error_code or '?'}）")
             continue  # failed 信封的行不可采信
         for row in env.rows(list_key):
             if isinstance(row, dict):
@@ -506,6 +560,8 @@ def assemble_all(
         got = _consume_step(
             rd, stem, label, window, normalize_msku_row, result,
             list_key="reportList", max_rows=msku_max, source_tool="get_profit_report_by_msku",
+            win_start=cur_start if window == "current" else base_start,
+            win_end=cur_end if window == "current" else base_end,
         )
         if not got:
             result.warnings.append(
@@ -525,6 +581,8 @@ def assemble_all(
             got = _consume_step(
                 rd, stem, label, window, normalize_custom_row, result,
                 list_key="rows", max_rows=custom_max, source_tool="get_custom_report_page_list",
+                win_start=cur_start if window == "current" else base_start,
+                win_end=cur_end if window == "current" else base_end,
             )
             got_any = got_any or got
             if not got:
@@ -560,6 +618,8 @@ def assemble_all(
         shop_any = _consume_step(
             rd, stem, label, window, normalize_msku_row, result,
             list_key="reportList", max_rows=shop_max, source_tool="get_profit_report_by_shop",
+            win_start=cur_start if window == "current" else base_start,
+            win_end=cur_end if window == "current" else base_end,
         ) or shop_any
     if not shop_any:
         result.warnings.append(
@@ -571,14 +631,36 @@ def assemble_all(
     envs, warns = _load_step(rd, "reimbursement")
     result.warnings.extend(warns)
     if envs:
+        # 修复（评测问题 #1）：该源被消费即注册进 sources —— 数据源清单不得漏
+        # get_amazon_reimbursement_report；「本次记录数 / 状态」按真实落盘信封给出：
+        # 有信封=已取数 N 批（M 行）/ data 空=无数据 / failed=失败（error_code：X）。
+        if "get_amazon_reimbursement_report" not in result.sources:
+            result.sources.append("get_amazon_reimbursement_report")
+        failed_codes: List[str] = []
         for env in envs:
             result.mcp_calls += 1
             batch = "" if len(envs) == 1 else f"（批 {env.path.name}）"
             result.coverage.append(_cov_line(env, f"reimbursement{batch}"))
             result.warnings.extend(_env_issues(env, f"reimbursement{batch}"))
-            if env.status != "failed":
+            if env.status == "failed":
+                code = env.error_code or "?"
+                failed_codes.append(code)
+                result.failed_steps.append(f"reimbursement（error_code={code}）")
+            else:
                 # 只做条数级核对，不臆造字段名（字段结构未在字段清单中固化）。
                 result.reimbursement_rows.extend(env.rows("rows"))
+        codes_text = "、".join(dict.fromkeys(failed_codes))
+        if failed_codes and not result.reimbursement_rows:
+            result.reimbursement_status = f"取数失败（error_code：{codes_text}）"
+        elif failed_codes:
+            result.reimbursement_status = (
+                f"已取数 {len(envs)} 批 / {len(result.reimbursement_rows)} 行"
+                f"（其中 {len(failed_codes)} 批失败：{codes_text}）"
+            )
+        elif not result.reimbursement_rows:
+            result.reimbursement_status = "无数据"
+        else:
+            result.reimbursement_status = f"已取数 {len(envs)} 批 / {len(result.reimbursement_rows)} 行"
     else:
         result.warnings.append(
             "Amazon 赔偿报告落盘缺失（out/raw/reimbursement.json，不影响主流程）："

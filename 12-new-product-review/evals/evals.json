@@ -1,0 +1,52 @@
+{
+  "skill_name": "new-product-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "复盘一下上架 30 天内的新品表现，按上市年龄评价，别自动动我的广告",
+      "expected_tools": ["get_online_product_page_list", "get_product_analyze_list"],
+      "expected_output": "先确认店铺、新品定义（默认按 openDate 观察，改用首单/开售口径须显式声明且不混用）、as_of 与目标；get_online_product_page_list 取上架日与滚动指标，复盘上市首 N 天用 get_product_analyze_list 按商品和确切窗口查询，完整信封落盘 out；助手生成 plan.json（topic.as_of、launch_date_field、按新品定义设 max_age_days）后以 run_review.py 新输出目录执行；result.json 的 findings 给出 age_days 与 completed_observation_windows——7/14/30/60 天是观察窗口不是统一达标线，滚动 7 天销量≠上市首 7 天销量、跨窗口不比总量；report.md 含商品与上架日、上市天数、已达到观察窗口、实际数据窗口、指标、缺口与下一步，助手另附结论与建议复盘日期；全程不自动改广告、价格或库存。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "哪些新品算站稳了？满 14 天的按 14 天窗口比一比",
+      "expected_output": "按同上市年龄+相同观察长度比较：已满 14 天的新品用等龄完整窗口的证据评价，未满 14 天标「观察中」，不得以窗口不足判未达标；new_product_scope 给 within/outside/unknown（未定义新品范围时不设阶段口径），目标达成由助手依等龄完整窗口判断——脚本只计算年龄与证据指标，不从年龄推断成败；商家未给目标时输出表现与待验证问题，不用统一 ROI/销量阈值宣布新品失败；报告披露各商品实际数据窗口与缺口，结论附下一步。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "把新品清单拉出来评一下阶段 [[场景注入：部分 openDate 时区不明/缺失/为未来日期]]",
+      "scenario": "bad_launch_timestamps",
+      "expected_output": "时间戳先确认业务时区，保留原值与转换说明，不截断、不猜测；时区不明/缺失/未来日期的商品 age_days 为空、new_product_scope=unknown——不评阶段、不进表现榜也不判失败；launch_date_raw 保留原始值；可评部分照常按等龄窗口给证据；report.md 披露 unknown 数量与核查路径（回店铺/Listing 源核对上架时间），助手结论注明该部分为数据缺口而非经营结论。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "按上架 60 天内算新品来复盘 [[场景注入：返回列表里混有上架一年以上的老品]]",
+      "scenario": "outside_new_product_scope",
+      "expected_output": "max_age_days=60 来自本次新品定义（正整数）；上架超龄老品 new_product_scope=outside，只作范围外说明——不进新品表现榜、不参与新品排名或均值；报告仍列出被排除商品及其原始上架日期供复核；若本次结果全部 outside，如实写「范围内无新品样本」，建议核对新品定义或调整口径后重跑，不硬造阶段结论；老品数据不被静默丢弃，缺口与排除口径在报告披露。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "这两个新品要不要继续投广告？给我个有依据的说法",
+      "expected_output": "分域取证：get_online_product_page_list（上市年龄/库存）+ get_product_analyze_list（确切窗口销量/转化/广告）+ 利润用 get_profit_report_by_msku 单独分析、不按行号拼接；跨域先核对店铺、MSKU、日期、币种与一对多关系，不声称已自动完成跨域归因；排查方向限流量不足、点击不足、转化不足、广告效率、供货风险且仅有证据才下判断；助手显式列出假设与缺口（样本短、广告归因未成熟、库存缺失须标注）；结论为继续观察/调整/考虑止损并附依据与建议复盘日期；不自动暂停广告或改预算，执行交商家。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "跑一次新品复盘 [[场景注入：销量/转化数据集 failed，广告数据为带演示指纹的样本]]",
+      "scenario": "mixed_failed_and_sample",
+      "expected_output": "failed 数据集不进计算但保留诊断，result.json 状态如实（unavailable/partial），不得表述成「无数据/未配置」；广告演示样本仅在用户明确演示授权下走 sample 模式且必须 topic.sample_reason，report.md 前部强制「返回样本演示：不能作为当前经营结论」警示；其余可用数据集照常计算，退出码仅在全部数据集不可用时为 2；助手结论区分有证据部分与缺口，建议补取失败窗口后重跑，不用样本数据下经营结论。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "新品这段时间广告花费和利润一起看，到底划不划算？我们是多币种店铺",
+      "expected_tools": ["get_product_analyze_list", "get_profit_report_by_msku"],
+      "expected_output": "广告（产品分析域）与利润（get_profit_report_by_msku）分开取数，显式披露各自口径（滚动窗口 vs 确切上市窗口、结算/发货口径）并核对店铺、MSKU、日期、币种与基数后才关联，连接键未核实前不声称跨域归因完成；金额按币种分组不混算，缺币种金额不汇总、缺值不补零；无统一 ROI 阈值宣判成败，产出证据、待验证问题与决策建议（继续观察/调整/考虑止损），广告调整作为建议交商家执行。",
+      "files": []
+    }
+  ]
+}

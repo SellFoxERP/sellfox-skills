@@ -107,19 +107,23 @@ def mask_pii_in_text(text: str) -> str:
     """对已渲染的文本做行级 PII 兜底脱敏（防漏网的 ``buyerEmail`` / ``buyerName``）。
 
     支持 ``buyerEmail: xxx@yyy`` / ``buyerEmail=xxx@yyy`` 形态。
+    邮箱值按非空白 token 捕获（邮箱不含空格）；姓名值捕获到行尾/分隔符为止
+    （含中间空格），避免英文姓名只掩名不掩姓。先掩邮箱再掩姓名。
     """
-    pattern = re.compile(
-        r"(buyerEmail|buyer_email|buyerName|buyer_name)\s*[:=]\s*([^\s,;，；]+)", re.IGNORECASE
+    email_pattern = re.compile(
+        r"(buyerEmail|buyer_email)\s*[:=]\s*([^\s,;，；]+)", re.IGNORECASE
+    )
+    name_pattern = re.compile(
+        r"(buyerName|buyer_name)\s*[:=]\s*([^\n,;，；]+?)(?=\s*$|[,;，；])",
+        re.IGNORECASE | re.MULTILINE,
     )
 
-    def _repl(match: "re.Match[str]") -> str:
-        key = match.group(1)
-        val = match.group(2)
-        if "mail" in key.lower():
-            return f"{key}: {mask_email(val)}"
-        return f"{key}: {mask_name(val)}"
-
-    return pattern.sub(_repl, text)
+    text = email_pattern.sub(
+        lambda m: f"{m.group(1)}: {mask_email(m.group(2))}", text
+    )
+    return name_pattern.sub(
+        lambda m: f"{m.group(1)}: {mask_name(m.group(2).strip())}", text
+    )
 
 
 # ---------------------------------------------------------------------------

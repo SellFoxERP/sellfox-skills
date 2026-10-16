@@ -51,7 +51,7 @@
 |---|---|
 | tool_id / contract_version | 必须匹配信封中的工具 ID；可选 contract_version 可强制版本一致 |
 | rows_path / row_mode | 明确列表路径，如 data.rows / data.reportList / data.itemList；单条对象用 object 模式，不默认猜列表 |
-| group_by | 显式分组字段数组，支持 `inventoryManage.availableQuantity` 这类点分路径；可显式索引如 `mskuList.0`，但须先确认该数组恰有一个目标，不能取第一项代表多个商品，不隐式展开数组 |
+| group_by | 显式分组字段数组，支持 `inventoryManage.availableQuantity` 这类点分路径；可显式索引如 `mskuList.0`，但须先确认该数组恰有一个目标，不能取第一项代表多个商品，不隐式展开数组。嵌套多元素日数组（如 `productSaleDayOpenVo` 含多个日单元）不能整体映射或默认取 `.0`：先按元素内日期字段与请求窗口核对，取唯一匹配的元素并显式索引；无法唯一匹配（多元素同窗或日期缺失）时拒绝该映射并在计划中披露，改由助手分日取数或人工核对，不默认取首元素 |
 | dedupe_by | 显式业务键数组；未知可靠键可传 []，仅去除疑似重复页并标注去重边界 |
 | currency_field | 金额及货币相关比率必须提供；币种自动加入分组，脚本不做汇率转换 |
 | metrics | sum、count、ratio；unit 必填。count 是记录数，不自动等于订单数；ratio 用合计分子/合计分母，不平均行级百分比 |

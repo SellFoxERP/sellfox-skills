@@ -61,7 +61,7 @@
 
 | # | 落盘文件 | 工具 | 关键参数 | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/campaigns_<shopId>.json` | `get_sp_campaign_list` | `shop_id`（string）；游标 `nextToken`（**60s 过期**），多页续落 `campaigns_<shopId>.2.json`、`.3.json`… | `itemList` | 100 | **必需**（缺失则 diagnose 直接报错）；活动结构 |
+| 1 | `out/raw/campaigns_<shopId>.json` | `get_sp_campaign_list` | `shop_id`（string）；翻页请求参数是 **`next_token`**（真实 inputSchema 参数名，传 `nextToken` 会 `INVALID_PARAMS additionalProperties`；`nextToken` 只是**响应**里的游标字段，**60s 过期**），多页续落 `campaigns_<shopId>.2.json`、`.3.json`… | `itemList` | 100 | **必需**（缺失则 diagnose 直接报错）；活动结构 |
 | 2 | `out/raw/keywords_<shopId>.json` | `get_sp_keyword_list` | 同上游标；可带 `campaign_id` 过滤 | `itemList` | 200 | 关键词结构与竞价 |
 | 3 | `out/raw/ad_products_<shopId>.json` | `get_sp_ad_product_list` | 同上游标 | `itemList` | 200 | 广告产品结构（可选维度） |
 | 4 | `out/raw/targetings_<shopId>.json` | `get_sp_product_targeting_list` | 同上游标 | `itemList` | 200 | 商品投放结构（可选维度） |
@@ -86,7 +86,9 @@
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
 - 单次调用 ≤1 页（服务端多强制 20 条/页，`page_size` 不被尊重）；翻页前看
   `totalSize` 是否值得继续，触达 `max_rows` 必须保留 coverage 让脚本披露；
-- 游标类工具（步骤 1~4）：`nextToken` 60 秒过期——**当页取完立即决定是否翻页**，
+- 游标类工具（步骤 1~4）：翻页**请求参数名是 `next_token`**（不是响应字段 `nextToken`，
+  传错名会 `INVALID_PARAMS additionalProperties`）；游标值取上一页**响应**的 `nextToken`
+  （60 秒过期）——当页取完立即决定是否翻页，
   过期就重取第一页，不要拿旧游标硬翻；未尽页会由组装器披露「仅覆盖已落盘页」；
 - `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
@@ -115,8 +117,13 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
   ① 只用**实测确认**的字段与取值（`state` 仅 enabled/paused/archived；`servingStatus`
   的 `BUDGET_CAPPED` 未实测，仅作人工提示）；② 数值缺失标「无数据」不按 0 处理；
   ③ 阈值全部读 `_shared/config/thresholds.yaml`，不硬编码。
-- 也可单独跑共享校验器：
-  `python _shared/scripts/validate_raw.py --dir out/raw --step campaigns_10001:itemList --step download_tasks:rows`
+- 也可单独跑共享校验器。⚠️ **须从仓库根运行**（`_shared/` 在仓库根，技能目录内没有；
+  在技能目录下跑会报 `No such file or directory`），`--dir` 给技能 `out/raw` 的路径：
+
+  ```bash
+  python _shared/scripts/validate_raw.py --dir 06-ad-optimizer/out/raw \
+      --step campaigns_10001:itemList --step download_tasks:rows
+  ```
 
 ---
 
@@ -232,6 +239,8 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 - 回读结果交给 `record`（单条）与 `verify`（整批差异表）——`verify` 支持两种 actual 形态：
   ① agent 落盘的**完整回读信封**（自动按 `campaignId`/`keywordId`/`targetId` 匹配）；
   ② **判定表** `{"items":[{index,target_id,field,actual}]}`；
+- `verify` 只对**实际执行过**的项（`logs/ad_changes.jsonl` 里有 success/failed 记录）做
+  回读比对；未批准/未执行的项标注「未执行（不在本次批准范围）」，**不报不一致**；
 - 没有 read-back，就会报告「已修改 N 个活动」而实际一个都没改。
 
 ---
@@ -243,11 +252,15 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 | 闸门 | 默认 | 配置键（thresholds → approval） |
 |---|---|---|
 | 单 campaign 24h 调整次数 | ≤ 2 | `max_changes_per_campaign_24h` |
-| 单 campaign 24h 净变化 | ≤ ±30% | `max_net_change_pct_24h` |
+| 单 campaign 净变化（回看窗见下） | ≤ ±30% | `max_net_change_pct_24h` |
 | 全局单日预算增量总额 | 5000 | `max_daily_budget_increment` |
 | 同一对象同一天去重 | — | 读日志自然去重 |
 
-例：预算 100，一次 +30% 到 130，再一次 +30% 到 169 —— 两次单次都合规，累计却 +69%。
+净变化累计的回看窗口默认 **7 天（`net_change_lookback_hours: 168`，_shared 默认值，
+可在 thresholds → approval 覆盖）**——跨天/跨周拆批的复利累计同样受限幅约束。
+
+例：预算 100，一次 +30% 到 130，再一次 +30% 到 169 —— 两次单次都合规，累计却 +69%
+（即使第二次在一周后，也落在默认回看窗内被拦）。
 只有 `status="success"` 的记录参与累计，所以 `record` 必须真实、及时。命中累计闸时
 `execute` 拒绝生成执行清单并列出违规（退出码 4）。
 
@@ -276,6 +289,7 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 | 未装 openpyxl | 明确提示 `pip install openpyxl` 或改用 `custom_report` 兜底（`perf_custom_<shopId>.json`） |
 | 仅拿到 MSKU 级绩效 | 活动级/关键词级诊断降级为「人工核查」并标注 |
 | 提案违反强制约束 | 清空自动提案，仅保留人工核查清单（不静默） |
+| 提案混入不支持的写工具（如 Listing 类） | `execute` 拒绝执行整批（fail-closed），指明提案项 #N 与工具名（退出码 5），不生成执行清单 |
 | 写 action 失败 / partial | 该项记 `failed`，**不重放**；人工核实后重新走提案 |
 | 回读不一致 | `record` 防线改记 `failed`；`verify` 输出差异表；不更新本地状态 |
 | 命中累计闸 | `execute` 拒绝生成执行清单，列出违规（记 skipped 的责任在 agent，见 APPROVAL.md） |

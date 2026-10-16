@@ -324,6 +324,8 @@ def rankings(rows: List[Dict[str, Any]], fm: Dict[str, str], n: int,
             "msku": msku,
             "asin": asin,
             "title": title,
+            # `currency` 已在 06 确认；跨币种行混排时靠它标注各行原币种（未折算）。
+            "currency": str(_unwrap(r.get("currency")) or ""),
             "gmv": _num(r.get(fm["gmv"])),
             "sales_num": _num(r.get(fm["sales_num"])),
             "gross_profit": _num(r.get(fm["gross_profit"])),
@@ -340,7 +342,12 @@ def rankings(rows: List[Dict[str, Any]], fm: Dict[str, str], n: int,
 def build_trend(plan: Dict[str, Any], rows: List[Dict[str, Any]], fm: Dict[str, str],
                 char_data: Any, points_max: int) -> Dict[str, Any]:
     if len(distinct_currencies(rows)) > 1:
-        return {"status": "mixed_currency", "source": "返回行含多种币种", "note": "不拼接不同币种金额为一条趋势线"}
+        note = "不拼接不同币种金额为一条趋势线"
+        if char_data:
+            # charData 本身可用（单币种序列），但与本期多币种行不可加总 → 显式披露「已获取、未采用」，
+            # 不静默丢弃取数产出（2-3 次网关调用）。
+            note += "；已获取 charData（单币种序列）但多币种不可加总，未采用"
+        return {"status": "mixed_currency", "source": "返回行含多种币种", "note": note}
     if char_data:
         return {"status": "ok", "source": "get_product_analyze_detail.charData", "charData": char_data}
     # 退化路径：按 bizDay 从利润报表日粒度聚合
@@ -513,6 +520,24 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
         if ident_unresolved:
             note += f"（本期有 {ident_unresolved} 行标识列未取到）"
         disclosures.append(f"rank_identifiers: {note}")
+    # 榜单跨币种未折算：Top/Bottom 把多币种行按原币种混排，必须在数据说明披露
+    rank_currencies = sorted({str(r.get("currency"))
+                              for r in (top_res["rows"] + bottom_res["rows"])
+                              if r.get("currency")})
+    if len(rank_currencies) > 1:
+        disclosures.append(
+            f"rankings: ⚠️ 榜单跨币种未折算（{', '.join(rank_currencies)}），"
+            "各行金额为原币种（见榜单「币种」列），不可跨币种直接比较或相加。")
+    # 多币种时已取得的 charData 被整体弃用 → 数据说明必须披露「已获取、未采用」
+    if trend.get("status") == "mixed_currency" and d.get("char_data"):
+        disclosures.append(
+            "trend: charData 已获取（单币种序列），但本期利润行多币种、不可加总，未采用。")
+
+    # 本期利润取数状态（结构化透传给渲染层：failed ≠ 无数据 ≠ 无异常，
+    # 渲染层据此把本期列标「⚠️ 需人工核查」并在核心结论写明取数失败）
+    cur_src = (data.get("sources") or {}).get("profit_current") or {}
+    source_status = {"profit_current": {"status": cur_src.get("status") or "ok",
+                                        "error_code": cur_src.get("error_code") or ""}}
 
     return {
         "meta": meta,
@@ -527,6 +552,7 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
                      "identifier_unresolved": ident_unresolved},
         "trend": trend,
         "anomalies": flags,
+        "source_status": source_status,
         "coverage": {
             "currencies": cur_currencies,
             "mixed_currency": mixed_currency,

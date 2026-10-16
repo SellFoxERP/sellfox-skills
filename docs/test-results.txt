@@ -1,81 +1,320 @@
-test_comparison_missing_groups_and_zero_baseline (test_business_data.BusinessDataTest.test_comparison_missing_groups_and_zero_baseline) ... ok
-test_currency_groups_and_weighted_ratio (test_business_data.BusinessDataTest.test_currency_groups_and_weighted_ratio) ... ok
-test_date_scope_is_checked_including_integer_dates (test_business_data.BusinessDataTest.test_date_scope_is_checked_including_integer_dates) ... ok
-test_duplicate_rows_and_conflicting_keys (test_business_data.BusinessDataTest.test_duplicate_rows_and_conflicting_keys) ... ok
-test_envelopes_nested_fields_and_request_scope (test_business_data.BusinessDataTest.test_envelopes_nested_fields_and_request_scope) ... ok
-test_failed_and_unknown_pages_are_not_data (test_business_data.BusinessDataTest.test_failed_and_unknown_pages_are_not_data) ... ok
-test_missing_and_invalid_values_do_not_become_zero (test_business_data.BusinessDataTest.test_missing_and_invalid_values_do_not_become_zero) ... ok
-test_missing_currency_cannot_sum_money (test_business_data.BusinessDataTest.test_missing_currency_cannot_sum_money) ... ok
-test_real_failure_shape_preserves_upstream_diagnostics (test_business_data.BusinessDataTest.test_real_failure_shape_preserves_upstream_diagnostics) ... ok
-test_repeated_page_not_double_counted (test_business_data.BusinessDataTest.test_repeated_page_not_double_counted) ... ok
-test_standalone_cli_outputs_and_refuses_overwrite (test_business_data.BusinessDataTest.test_standalone_cli_outputs_and_refuses_overwrite) ... ok
-test_unavailable_cli_writes_diagnostics_and_nonzero (test_business_data.BusinessDataTest.test_unavailable_cli_writes_diagnostics_and_nonzero) ... ok
-test_warning_preservation_and_empty_not_zero (test_business_data.BusinessDataTest.test_warning_preservation_and_empty_not_zero) ... ok
-test_wrong_tool_and_required_money_mapping (test_business_data.BusinessDataTest.test_wrong_tool_and_required_money_mapping) ... ok
-test_concurrent_write_refused (test_onboarding.OnboardingTest.test_concurrent_write_refused) ... ok
-test_corrupt_config_not_overwritten (test_onboarding.OnboardingTest.test_corrupt_config_not_overwritten) ... ok
-test_defer_persists_without_reprompt (test_onboarding.OnboardingTest.test_defer_persists_without_reprompt) ... ok
-test_different_package_copy_reads_same_user_state (test_onboarding.OnboardingTest.test_different_package_copy_reads_same_user_state) ... ok
-test_discovery_deduplicates_without_saving_or_selecting (test_onboarding.OnboardingTest.test_discovery_deduplicates_without_saving_or_selecting) ... ok
-test_discovery_keeps_success_with_failed_page (test_onboarding.OnboardingTest.test_discovery_keeps_success_with_failed_page) ... ok
-test_discovery_missing_links_are_not_report_ids (test_onboarding.OnboardingTest.test_discovery_missing_links_are_not_report_ids) ... ok
-test_discovery_partial_retains_warnings (test_onboarding.OnboardingTest.test_discovery_partial_retains_warnings) ... ok
-test_discovery_rejects_unknown_and_wrong_tool (test_onboarding.OnboardingTest.test_discovery_rejects_unknown_and_wrong_tool) ... ok
-test_failed_validation_preserves_previous_state (test_onboarding.OnboardingTest.test_failed_validation_preserves_previous_state) ... ok
-test_save_merge_backup_and_voc (test_onboarding.OnboardingTest.test_save_merge_backup_and_voc) ... ok
-test_status_does_not_create_config (test_onboarding.OnboardingTest.test_status_does_not_create_config) ... ok
-test_01_daily_report (test_release.ReleaseTest.test_01_daily_report) ... ok
-test_02_inventory (test_release.ReleaseTest.test_02_inventory) ... ok
-test_03_listing (test_release.ReleaseTest.test_03_listing) ... ok
-test_04_weekly (test_release.ReleaseTest.test_04_weekly) ... ok
-test_05_profit (test_release.ReleaseTest.test_05_profit) ... ok
-test_06_ad (test_release.ReleaseTest.test_06_ad) ... ok
-test_07_governance (test_release.ReleaseTest.test_07_governance) ... ok
-test_08_launch (test_release.ReleaseTest.test_08_launch) ... ok
-test_09_voc (test_release.ReleaseTest.test_09_voc) ... ok
-test_10_bulk_install_and_update (test_release.ReleaseTest.test_10_bulk_install_and_update) ... ok
-test_11_unknown_status_not_consumed (test_release.ReleaseTest.test_11_unknown_status_not_consumed) ... ok
-test_12_governance_incomplete_blocked (test_release.ReleaseTest.test_12_governance_incomplete_blocked) ... ok
-test_13_voc_stops_on_failed_step (test_release.ReleaseTest.test_13_voc_stops_on_failed_step) ... ok
-test_14_voc_independent_evidence (test_release.ReleaseTest.test_14_voc_independent_evidence) ... ok
-test_15_currency_requires_source_and_date (test_release.ReleaseTest.test_15_currency_requires_source_and_date) ... ok
-test_16_unknown_validator_fails (test_release.ReleaseTest.test_16_unknown_validator_fails) ... ok
-test_17_release_archive_excludes_private_files (test_release.ReleaseTest.test_17_release_archive_excludes_private_files) ... ok
-test_18_voc_default_keywords_without_pyyaml (test_release.ReleaseTest.test_18_voc_default_keywords_without_pyyaml) ... ok
-test_19_daily_unknown_profit_is_not_revenue (test_release.ReleaseTest.test_19_daily_unknown_profit_is_not_revenue) ... ok
-test_20_inventory_gap_and_unknown (test_release.ReleaseTest.test_20_inventory_gap_and_unknown) ... ok
-test_21_governance_add_update_and_missing_id (test_release.ReleaseTest.test_21_governance_add_update_and_missing_id) ... ok
-test_22_marketplace_bundle (test_release.ReleaseTest.test_22_marketplace_bundle) ... ok
-test_23_daily_mixed_currency_and_date (test_release.ReleaseTest.test_23_daily_mixed_currency_and_date) ... ok
-test_24_weekly_requested_currency_not_conversion (test_release.ReleaseTest.test_24_weekly_requested_currency_not_conversion) ... ok
-test_25_listing_warnings_not_truncation (test_release.ReleaseTest.test_25_listing_warnings_not_truncation) ... ok
-test_26_inventory_observation_not_urgent (test_release.ReleaseTest.test_26_inventory_observation_not_urgent) ... ok
-test_27_governance_unknown_coverage_not_limit (test_release.ReleaseTest.test_27_governance_unknown_coverage_not_limit) ... ok
-test_28_launch_matches_target_and_missing_price (test_release.ReleaseTest.test_28_launch_matches_target_and_missing_price) ... ok
-test_29_voc_snapshot_without_baseline (test_release.ReleaseTest.test_29_voc_snapshot_without_baseline) ... ok
-test_30_ad_missing_performance_is_not_no_issue (test_release.ReleaseTest.test_30_ad_missing_performance_is_not_no_issue) ... ok
-test_31_weekly_msku_list_is_not_spu (test_release.ReleaseTest.test_31_weekly_msku_list_is_not_spu) ... ok
-test_32_weekly_custom_report_still_computes (test_release.ReleaseTest.test_32_weekly_custom_report_still_computes) ... ok
-test_33_upgrade_from_nine_skills (test_release.ReleaseTest.test_33_upgrade_from_nine_skills) ... ok
-test_34_upgrade_preserves_unmanaged_collision (test_release.ReleaseTest.test_34_upgrade_preserves_unmanaged_collision) ... ok
-test_35_general_skill_references_survive_install (test_release.ReleaseTest.test_35_general_skill_references_survive_install) ... ok
-test_array_first_item_and_wrong_mapping_refused (test_topic_reviews.TopicTest.test_array_first_item_and_wrong_mapping_refused) ... ok
-test_failed_response_does_not_become_zero (test_topic_reviews.TopicTest.test_failed_response_does_not_become_zero) ... ok
-test_installed_topic_cli_and_upgrade_from_ten (test_topic_reviews.TopicTest.test_installed_topic_cli_and_upgrade_from_ten) ... ok
-test_launch_age_and_immature_window (test_topic_reviews.TopicTest.test_launch_age_and_immature_window) ... ok
-test_launch_future_and_unparsed_timestamp_unknown (test_topic_reviews.TopicTest.test_launch_future_and_unparsed_timestamp_unknown) ... ok
-test_missing_assumptions_not_zero (test_topic_reviews.TopicTest.test_missing_assumptions_not_zero) ... ok
-test_old_launch_outside_new_product_scope (test_topic_reviews.TopicTest.test_old_launch_outside_new_product_scope) ... ok
-test_pricing_nonpositive_contribution_no_break_even_volume (test_topic_reviews.TopicTest.test_pricing_nonpositive_contribution_no_break_even_volume) ... ok
-test_replenishment_pack_rounding_and_early_shortage (test_topic_reviews.TopicTest.test_replenishment_pack_rounding_and_early_shortage) ... ok
-test_returns_currency_and_missing_amount (test_topic_reviews.TopicTest.test_returns_currency_and_missing_amount) ... ok
-test_returns_preserves_sign_and_separate_events (test_topic_reviews.TopicTest.test_returns_preserves_sign_and_separate_events) ... ok
-test_sales_zero_baseline_and_unequal_periods (test_topic_reviews.TopicTest.test_sales_zero_baseline_and_unequal_periods) ... ok
-test_sample_never_accepts_failed_data (test_topic_reviews.TopicTest.test_sample_never_accepts_failed_data) ... ok
-test_sample_requires_reason_and_preserves_date_mismatch (test_topic_reviews.TopicTest.test_sample_requires_reason_and_preserves_date_mismatch) ... ok
-test_shipment_closed_and_future (test_topic_reviews.TopicTest.test_shipment_closed_and_future) ... ok
+test_comparison_missing_groups_and_zero_baseline (test_business_data.BusinessDataTest) ... ok
+test_currency_groups_and_weighted_ratio (test_business_data.BusinessDataTest) ... ok
+test_date_scope_is_checked_including_integer_dates (test_business_data.BusinessDataTest) ... ok
+test_duplicate_rows_and_conflicting_keys (test_business_data.BusinessDataTest) ... ok
+test_envelopes_nested_fields_and_request_scope (test_business_data.BusinessDataTest) ... ok
+test_failed_and_unknown_pages_are_not_data (test_business_data.BusinessDataTest) ... ok
+test_missing_and_invalid_values_do_not_become_zero (test_business_data.BusinessDataTest) ... ok
+test_missing_currency_cannot_sum_money (test_business_data.BusinessDataTest) ... ok
+test_real_failure_shape_preserves_upstream_diagnostics (test_business_data.BusinessDataTest) ... ok
+test_repeated_page_not_double_counted (test_business_data.BusinessDataTest) ... ok
+test_standalone_cli_outputs_and_refuses_overwrite (test_business_data.BusinessDataTest) ... ok
+test_unavailable_cli_writes_diagnostics_and_nonzero (test_business_data.BusinessDataTest) ... ok
+test_warning_preservation_and_empty_not_zero (test_business_data.BusinessDataTest) ... ok
+test_wrong_tool_and_required_money_mapping (test_business_data.BusinessDataTest) ... ok
+test_failed_envelope_discloses_error_code_and_step (test_fix_01.FetchBundleTest) ... ok
+test_missing_profit_continues_with_degradation (test_fix_01.FetchBundleTest) ... ok
+test_orders_coverage_incomplete_becomes_truncation (test_fix_01.FetchBundleTest) ... ok
+test_shop_rows_deduped_for_meta (test_fix_01.FetchBundleTest) ... ok
+test_analyze_and_render_tolerate_empty_profit (test_fix_01.MissingProfitPipelineTest) ... ok
+test_absent_multiplatform_renders_no_section (test_fix_01.MultiplatformTest) ... ok
+test_flat_rows_grouped_by_currency (test_fix_01.MultiplatformTest) ... ok
+test_nested_live_shape_supported (test_fix_01.MultiplatformTest) ... ok
+test_redline_title_uses_configured_max_items (test_fix_01.RedlineAndCoverageRenderTest) ... ok
+test_shop_and_site_coverage_line (test_fix_01.RedlineAndCoverageRenderTest) ... ok
+test_nonzero_string_flagged_as_refund (test_fix_01.RefundStatusTest) ... ok
+test_plain_order_omitted_from_sample (test_fix_01.RefundStatusTest) ... ok
+test_zero_string_not_flagged_as_refund (test_fix_01.RefundStatusTest) ... ok
+test_complete_and_full_coverage_silent (test_fix_01.TruncationCriteriaTest) ... ok
+test_fetched_less_than_total_disclosed (test_fix_01.TruncationCriteriaTest) ... ok
+test_incomplete_without_truncated_flag_disclosed (test_fix_01.TruncationCriteriaTest) ... ok
+test_truncated_flag_disclosed (test_fix_01.TruncationCriteriaTest) ... ok
+test_unknown_total_disclosed_as_unknown (test_fix_01.TruncationCriteriaTest) ... ok
+test_degrade_reason_main_source_failed_with_report_id (test_fix_02.AssembleTestCase) ... ok
+test_degrade_reason_unconfigured (test_fix_02.AssembleTestCase) ... ok
+test_failed_msku_envelope_visible_without_report_id (test_fix_02.AssembleTestCase) ... ok
+test_fallback_dedup_cross_batch (test_fix_02.AssembleTestCase)
+三个批次返回同一目录（shop_id_list 过滤失效）→ 每个 MSKU 只计一次。 ... ok
+test_fallback_keeps_rows_without_msku_or_sku (test_fix_02.AssembleTestCase)
+无法识别 MSKU 的行不去重（不能因去重丢「数据不足」行）。 ... ok
+test_shops_duplicate_disclosure (test_fix_02.AssembleTestCase) ... ok
+test_shops_no_duplicate_no_disclosure (test_fix_02.AssembleTestCase) ... ok
+test_sources_exclude_fba_awd_when_not_fetched (test_fix_02.AssembleTestCase) ... ok
+test_sources_include_fba_awd_tools (test_fix_02.AssembleTestCase) ... ok
+test_supplement_merge_still_dedupes (test_fix_02.AssembleTestCase)
+主源成功时的补充路径合并去重行为保持不变。 ... ok
+test_banner_reports_discovery_rejected (test_fix_02.RenderBannerTestCase) ... ok
+test_banner_reports_main_source_failure (test_fix_02.RenderBannerTestCase) ... ok
+test_banner_unconfigured_without_reason_falls_back (test_fix_02.RenderBannerTestCase) ... ok
+test_first_run_writes_snapshot_second_run_matches_baseline (test_fix_03.BaselineSnapshotTest) ... ok
+test_second_run_bsr_deterioration_rule_reachable (test_fix_03.BaselineSnapshotTest) ... ok
+test_snapshot_rebuilt_stale_records_removed (test_fix_03.BaselineSnapshotTest) ... ok
+test_configured_no_row_vs_not_configured (test_fix_03.DiagnoseWordingTest) ... ok
+test_no_data_disclosed (test_fix_03.EmptyDataDisclosureTest) ... ok
+test_hits_listed_with_join_key_note (test_fix_03.LabelHitsDisclosureTest) ... ok
+test_matching_scope_no_noise (test_fix_03.ShopScopeCheckTest) ... ok
+test_mismatch_disclosed_data_kept (test_fix_03.ShopScopeCheckTest) ... ok
+test_deleted_and_unsellable_skipped (test_fix_03.StockoutExcludesP0Test) ... ok
+test_discovery_failed_envelope_is_read_and_disclosed (test_fix_03.WideTableThreeStateTest) ... ok
+test_enabled (test_fix_03.WideTableThreeStateTest) ... ok
+test_fetch_failed_disclosed_not_enabled (test_fix_03.WideTableThreeStateTest) ... ok
+test_core_conclusion_and_cells (test_fix_04.FailedSemanticsTest) ... ok
+test_failed_source_carries_error_code (test_fix_04.FailedSemanticsTest) ... ok
+test_fetch_exit2_but_writes_weekly_data (test_fix_04.FailedSemanticsTest) ... ok
+test_ad_cost_delta_uses_ad_cost_rate_pct (test_fix_04.HealthyWeekRenderTest) ... ok
+test_healthy_report_keeps_no_anomaly_line (test_fix_04.HealthyWeekRenderTest) ... ok
+test_refund_rate_shown_as_percent (test_fix_04.HealthyWeekRenderTest) ... ok
+test_december_prev_crosses_year (test_fix_04.MonthPrevWindowTest) ... ok
+test_leap_february_prev_keeps_january_end (test_fix_04.MonthPrevWindowTest) ... ok
+test_month_prev_month_same_period_equals_prev (test_fix_04.MonthPrevWindowTest) ... ok
+test_september_prev_is_full_august (test_fix_04.MonthPrevWindowTest) ... ok
+test_week_prev_unchanged_equal_length (test_fix_04.MonthPrevWindowTest) ... ok
+test_chardata_discarded_with_disclosure (test_fix_04.MultiCurrencyRenderTest) ... ok
+test_currency_summary_amounts_formatted (test_fix_04.MultiCurrencyRenderTest) ... ok
+test_mixed_currency_still_no_cross_sum (test_fix_04.MultiCurrencyRenderTest) ... ok
+test_ranking_has_currency_column_and_disclosure (test_fix_04.MultiCurrencyRenderTest) ... ok
+test_rows_carry_currency (test_fix_04.RankingsUnitTest) ... ok
+test_cli_end_to_end (test_fix_05.AsinMissDisclosureTest)
+run_profit_diagnosis --asin 0 命中：报告显式披露且不下归因结论；赔偿计数如实。 ... ok
+test_non_asin_search_ignored (test_fix_05.AsinMissDisclosureTest) ... ok
+test_render_discloses_and_withholds_attribution (test_fix_05.AsinMissDisclosureTest) ... ok
+test_render_hit_keeps_attribution (test_fix_05.AsinMissDisclosureTest) ... ok
+test_scope_search_contents_extracted (test_fix_05.AsinMissDisclosureTest) ... ok
+test_failed_wording (test_fix_05.CoreConclusionFailureTextTest) ... ok
+test_no_data_wording_preserved (test_fix_05.CoreConclusionFailureTextTest) ... ok
+test_compare_both_removed_from_config (test_fix_05.DeadConfigCleanupTest) ... ok
+test_compare_both_removed_from_docs (test_fix_05.DeadConfigCleanupTest) ... ok
+test_third_reason_listed (test_fix_05.DeferredEmptyReasonsTest) ... ok
+test_failed_msku_coverage_line_distinguished (test_fix_05.FailedVsNoDataTest) ... ok
+test_failed_status_with_error_code (test_fix_05.ReimbursementDisclosureTest) ... ok
+test_missing_file_stays_unfetched (test_fix_05.ReimbursementDisclosureTest) ... ok
+test_no_data_status (test_fix_05.ReimbursementDisclosureTest) ... ok
+test_rendered_footnote_shows_real_status (test_fix_05.ReimbursementDisclosureTest) ... ok
+test_three_rows_registered_and_counted (test_fix_05.ReimbursementDisclosureTest) ... ok
+test_calibration_skips_zero_median (test_fix_05.RuntimeSignCalibrationTest)
+基期中位值恰为 0（无法判定存储符号）→ 保持配置缺省，不校准。 ... ok
+test_disclosure_rendered_under_attribution_table (test_fix_05.RuntimeSignCalibrationTest) ... ok
+test_positive_fee_contribution_corrected (test_fix_05.RuntimeSignCalibrationTest)
+线上口径（费用正数）：广告 900→1250 须判为拉住毛利 +350（不校准则整体反号 -350）。 ... ok
+test_revenue_like_factors_never_calibrated (test_fix_05.RuntimeSignCalibrationTest)
+收入类因子（productSales / reimbursementAmount）恒正存储，不做符号校准。 ... ok
+test_iso_period_mismatch_warned_and_match_silent (test_fix_05.WindowConsistencyTest) ... ok
+test_matching_windows_silent (test_fix_05.WindowConsistencyTest) ... ok
+test_off_by_one_day_warned (test_fix_05.WindowConsistencyTest) ... ok
+test_config_has_no_stale_lookback_key (test_fix_06.AccumulatorGateLookbackTest) ... ok
+test_history_outside_lookback_not_blocked (test_fix_06.AccumulatorGateLookbackTest) ... ok
+test_last_week_plus30_then_today_plus30_blocked (test_fix_06.AccumulatorGateLookbackTest) ... ok
+test_section_absent_when_no_data (test_fix_06.ProductTargetingDisclosureTest) ... ok
+test_section_present_when_data (test_fix_06.ProductTargetingDisclosureTest) ... ok
+test_archived_chinese_failed_envelope_warns (test_fix_06.ReplayCase5bTest) ... ok
+test_cli_ad_fetch_reports_failed_state (test_fix_06.ReplayCase5bTest) ... ok
+test_report_discloses_targeting_dimension (test_fix_06.ReplayCase6Test) ... ok
+test_cli_verify_exit_2_with_clean_table (test_fix_06.ReplayCase9VerifyTest) ... ok
+test_verdict_shape_and_unexecuted_semantics (test_fix_06.ReplayCase9VerifyTest) ... ok
+test_chinese_failed_state_triggers_warning (test_fix_06.ReportStateClassTest) ... ok
+test_english_failed_and_no_false_positive (test_fix_06.ReportStateClassTest) ... ok
+test_mapping_cn_and_en (test_fix_06.ReportStateClassTest) ... ok
+test_envelope_shapes (test_fix_06.RowsFromActualShapeTest) ... ok
+test_verdict_table_without_data_key (test_fix_06.RowsFromActualShapeTest) ... ok
+test_selftest_green_with_upgraded_assertions (test_fix_06.SelftestRunTest) ... ok
+test_execute_clean_error_exit_5_no_traceback_no_checklist (test_fix_06.UnsupportedToolFailClosedTest) ... ok
+test_write_args_still_raises (test_fix_06.UnsupportedToolFailClosedTest) ... ok
+test_all_unexecuted_and_pair_fallback (test_fix_06.VerifyExecutedSemanticsTest) ... ok
+test_envelope_branch_still_compares (test_fix_06.VerifyExecutedSemanticsTest) ... ok
+test_executed_from_log (test_fix_06.VerifyExecutedSemanticsTest) ... ok
+test_unexecuted_item_missing_from_actual_is_not_mismatch (test_fix_06.VerifyExecutedSemanticsTest) ... ok
+test_unexecuted_items_marked_not_reported_as_mismatch (test_fix_06.VerifyExecutedSemanticsTest) ... ok
+test_verdict_branch_reachable_and_backfills_actual (test_fix_06.VerifyExecutedSemanticsTest) ... ok
+test_needs_human_pending_reason (test_fix_07.PendingReasonTest) ... ok
+test_replay_case5_noid_distinguishes_reason_text (test_fix_07.PendingReasonTest) ... ok
+test_verified_but_missing_id_pending_reason (test_fix_07.PendingReasonTest) ... ok
+test_flat_forms_parse_defensively (test_fix_07.RecursiveTreeTest) ... ok
+test_normalize_tree_keeps_children (test_fix_07.RecursiveTreeTest) ... ok
+test_replay_live_case4_full_tree_persisted (test_fix_07.RecursiveTreeTest) ... ok
+test_tree_stats_counts_all_levels (test_fix_07.RecursiveTreeTest) ... ok
+test_tree_summary_and_deep_nodes (test_fix_07.RecursiveTreeTest) ... ok
+test_manifest_params_always_carry_id_for_update (test_fix_07.SkillDocRequiredIdTest) ... ok
+test_update_row_marks_id_required (test_fix_07.SkillDocRequiredIdTest) ... ok
+test_cli_verify_appends_amend_and_discloses (test_fix_07.VerifyAmendRecordTest)
+复放 live case5 变体 B（record 落 success 后回读 mismatch，模拟静默失败）。 ... ok
+test_gate_counts_only_original_success_not_amend (test_fix_07.VerifyAmendRecordTest) ... ok
+test_match_or_unknown_field_no_amend (test_fix_07.VerifyAmendRecordTest) ... ok
+test_mismatch_after_failed_no_amend (test_fix_07.VerifyAmendRecordTest) ... ok
+test_mismatch_after_success_appends_amend_only (test_fix_07.VerifyAmendRecordTest) ... ok
+test_replay_case2_verify_match_and_json_written (test_fix_07.VerifyNoNameErrorTest) ... ok
+test_replay_case5_unknown_field_variant (test_fix_07.VerifyNoNameErrorTest) ... ok
+test_replay_case7_verify_mismatch_exit_2_no_amend_for_failed (test_fix_07.VerifyNoNameErrorTest) ... ok
+test_source_has_no_undefined_resolve_call (test_fix_07.VerifyNoNameErrorTest) ... ok
+test_live_shape_row_without_scalar_asin_matches_via_list (test_fix_08.TestAnalysisAsinAssociation) ... ok
+test_no_target_keeps_all_rows (test_fix_08.TestAnalysisAsinAssociation) ... ok
+test_unrelated_rows_dropped_and_disclosed (test_fix_08.TestAnalysisAsinAssociation) ... ok
+test_aplus_prompt_uses_real_marketplace (test_fix_08.TestAplusPromptInterpolation) ... ok
+test_english_words_still_hit (test_fix_08.TestChineseBannedWords) ... ok
+test_user_phrase_hits_banned_words (test_fix_08.TestChineseBannedWords) ... ok
+test_yaml_keeps_both_languages (test_fix_08.TestChineseBannedWords) ... ok
+test_headtrip_docs_prefer_product_row (test_fix_08.TestDocsAligned) ... ok
+test_template_no_stale_headtrip_claim (test_fix_08.TestDocsAligned) ... ok
+test_workflow_degradation_wording_matches_render (test_fix_08.TestDocsAligned) ... ok
+test_workflow_fetch_plan_has_anyof_requirement (test_fix_08.TestDocsAligned) ... ok
+test_merged_deduped_with_step_sources (test_fix_08.TestEnvelopeWarningsMerged) ... ok
+test_rendered_into_data_notes_section (test_fix_08.TestEnvelopeWarningsMerged) ... ok
+test_missing_asof_message (test_fix_08.TestFxMessageSplit) ... ok
+test_missing_source_message (test_fix_08.TestFxMessageSplit) ... ok
+test_nonpositive_rate_message (test_fix_08.TestFxMessageSplit) ... ok
+test_valid_fx_converts_headtrip_from_product_row (test_fix_08.TestFxMessageSplit) ... ok
+test_honest_boundary_mentions_product_row_first (test_fix_08.TestHeadtripRenderAndSummarize) ... ok
+test_pricing_block_shows_headtrip_source (test_fix_08.TestHeadtripRenderAndSummarize) ... ok
+test_summarize_product_maps_headtrip (test_fix_08.TestHeadtripRenderAndSummarize) ... ok
+test_block1_has_no_appendix_reference (test_fix_08.TestNoDanglingAppendixRef) ... ok
+test_missing_headtrip_blocks_total (test_fix_08.TestTotalCostCriterion) ... ok
+test_missing_purchase_cost_blocks_total (test_fix_08.TestTotalCostCriterion) ... ok
+test_profit_computed_despite_unrelated_manual_checks (test_fix_08.TestTotalCostCriterion) ... ok
+test_corrupt_reports_corrupt_not_missing (test_fix_09.TestCorruptVsMissing) ... ok
+test_missing_reports_missing (test_fix_09.TestCorruptVsMissing) ... ok
+test_online_corrupt_vs_missing (test_fix_09.TestCorruptVsMissing) ... ok
+test_explicit_adapter_file_overrides_enabled_false (test_fix_09.TestCostGate) ... ok
+test_flagged_zero_skips_confirmation (test_fix_09.TestCostGate) ... ok
+test_local_replay_no_gate_but_annotated (test_fix_09.TestCostGate) ... ok
+test_no_intent_still_hold_with_enabled_reason (test_fix_09.TestCostGate) ... ok
+test_banner_rendered_in_header_even_with_other_warnings (test_fix_09.TestDegradationReason) ... ok
+test_candidate_verification_rejected (test_fix_09.TestDegradationReason) ... ok
+test_discovery_failed (test_fix_09.TestDegradationReason) ... ok
+test_unconfigured_keeps_current_banner (test_fix_09.TestDegradationReason) ... ok
+test_verification_takes_priority_over_discovery (test_fix_09.TestDegradationReason) ... ok
+test_parser_and_run_forward_end_date (test_fix_09.TestEndDatePassthrough) ... ok
+test_error_details_rendered_with_step_tool_code_retryable (test_fix_09.TestErrorsRenderedInHeader) ... ok
+test_legacy_errors_strings_still_visible (test_fix_09.TestErrorsRenderedInHeader) ... ok
+test_retryable_true_false_words (test_fix_09.TestErrorsRenderedInHeader) ... ok
+test_exact_duplicate_items_collapsed (test_fix_09.TestManualSectionDedup) ... ok
+test_no_double_prefix (test_fix_09.TestManualSectionDedup) ... ok
+test_no_duplicate_low_review_item (test_fix_09.TestManualSectionDedup) ... ok
+test_upstream_failure_reason_gets_no_configure_hint (test_fix_09.TestManualSectionDedup) ... ok
+test_large_sample_flagged (test_fix_09.TestReviewRateDropSmallSample) ... ok
+test_small_sample_not_flagged (test_fix_09.TestReviewRateDropSmallSample) ... ok
+test_validate_raw_command_has_repo_root_prerequisite (test_fix_09.TestSkillDocCommand) ... ok
+test_no_baseline_with_observed_keeps_intro_and_table (test_fix_09.TestSnapshotIntroOnlyWhenObserved) ... ok
+test_demo_fingerprint_recorded_and_reported_in_production (test_fix_10_12.FixTest) ... ok
+test_excluded_dates_visible_with_min_max_and_samples (test_fix_10_12.FixTest) ... ok
+test_fingerprint_scan_hits_nested_values_only (test_fix_10_12.FixTest) ... ok
+test_future_launch_date_null_with_raw_preserved (test_fix_10_12.FixTest) ... ok
+test_skill_scripts_parse_under_python_39_grammar (test_fix_10_12.FixTest) ... ok
+test_snapshot_compare_without_periods_warns (test_fix_10_12.FixTest) ... ok
+test_topic_report_carries_demo_watermark_in_both_modes (test_fix_10_12.FixTest) ... ok
+test_concurrent_write_refused (test_onboarding.OnboardingTest) ... ok
+test_corrupt_config_not_overwritten (test_onboarding.OnboardingTest) ... ok
+test_defer_persists_without_reprompt (test_onboarding.OnboardingTest) ... ok
+test_different_package_copy_reads_same_user_state (test_onboarding.OnboardingTest) ... ok
+test_discovery_deduplicates_without_saving_or_selecting (test_onboarding.OnboardingTest) ... ok
+test_discovery_keeps_success_with_failed_page (test_onboarding.OnboardingTest) ... ok
+test_discovery_missing_links_are_not_report_ids (test_onboarding.OnboardingTest) ... ok
+test_discovery_partial_retains_warnings (test_onboarding.OnboardingTest) ... ok
+test_discovery_rejects_unknown_and_wrong_tool (test_onboarding.OnboardingTest) ... ok
+test_failed_validation_preserves_previous_state (test_onboarding.OnboardingTest) ... ok
+test_save_merge_backup_and_voc (test_onboarding.OnboardingTest) ... ok
+test_status_does_not_create_config (test_onboarding.OnboardingTest) ... ok
+test_01_daily_report (test_release.ReleaseTest) ... ok
+test_02_inventory (test_release.ReleaseTest) ... ok
+test_03_listing (test_release.ReleaseTest) ... ok
+test_04_weekly (test_release.ReleaseTest) ... ok
+test_05_profit (test_release.ReleaseTest) ... ok
+test_06_ad (test_release.ReleaseTest) ... ok
+test_07_governance (test_release.ReleaseTest) ... ok
+test_08_launch (test_release.ReleaseTest) ... ok
+test_09_voc (test_release.ReleaseTest) ... ok
+test_10_bulk_install_and_update (test_release.ReleaseTest) ... ok
+test_11_unknown_status_not_consumed (test_release.ReleaseTest) ... ok
+test_12_governance_incomplete_blocked (test_release.ReleaseTest) ... ok
+test_13_voc_stops_on_failed_step (test_release.ReleaseTest) ... ok
+test_14_voc_independent_evidence (test_release.ReleaseTest) ... ok
+test_15_currency_requires_source_and_date (test_release.ReleaseTest) ... ok
+test_16_unknown_validator_fails (test_release.ReleaseTest) ... ok
+test_17_release_archive_excludes_private_files (test_release.ReleaseTest) ... ok
+test_18_voc_default_keywords_without_pyyaml (test_release.ReleaseTest) ... ok
+test_19_daily_unknown_profit_is_not_revenue (test_release.ReleaseTest) ... ok
+test_20_inventory_gap_and_unknown (test_release.ReleaseTest) ... ok
+test_21_governance_add_update_and_missing_id (test_release.ReleaseTest) ... ok
+test_22_marketplace_bundle (test_release.ReleaseTest) ... ok
+test_23_daily_mixed_currency_and_date (test_release.ReleaseTest) ... ok
+test_24_weekly_requested_currency_not_conversion (test_release.ReleaseTest) ... ok
+test_25_listing_warnings_not_truncation (test_release.ReleaseTest) ... ok
+test_26_inventory_observation_not_urgent (test_release.ReleaseTest) ... ok
+test_27_governance_unknown_coverage_not_limit (test_release.ReleaseTest) ... ok
+test_28_launch_matches_target_and_missing_price (test_release.ReleaseTest) ... ok
+test_29_voc_snapshot_without_baseline (test_release.ReleaseTest) ... ok
+test_30_ad_missing_performance_is_not_no_issue (test_release.ReleaseTest) ... ok
+test_31_weekly_msku_list_is_not_spu (test_release.ReleaseTest) ... ok
+test_32_weekly_custom_report_still_computes (test_release.ReleaseTest) ... ok
+test_33_upgrade_from_nine_skills (test_release.ReleaseTest) ... ok
+test_34_upgrade_preserves_unmanaged_collision (test_release.ReleaseTest) ... ok
+test_35_general_skill_references_survive_install (test_release.ReleaseTest) ... ok
+test_array_first_item_and_wrong_mapping_refused (test_topic_reviews.TopicTest) ... ok
+test_failed_response_does_not_become_zero (test_topic_reviews.TopicTest) ... ok
+test_installed_topic_cli_and_upgrade_from_ten (test_topic_reviews.TopicTest) ... ok
+test_launch_age_and_immature_window (test_topic_reviews.TopicTest) ... ok
+test_launch_future_and_unparsed_timestamp_unknown (test_topic_reviews.TopicTest) ... ok
+test_missing_assumptions_not_zero (test_topic_reviews.TopicTest) ... ok
+test_old_launch_outside_new_product_scope (test_topic_reviews.TopicTest) ... ok
+test_pricing_nonpositive_contribution_no_break_even_volume (test_topic_reviews.TopicTest) ... ok
+test_replenishment_pack_rounding_and_early_shortage (test_topic_reviews.TopicTest) ... ok
+test_returns_currency_and_missing_amount (test_topic_reviews.TopicTest) ... ok
+test_returns_preserves_sign_and_separate_events (test_topic_reviews.TopicTest) ... ok
+test_sales_zero_baseline_and_unequal_periods (test_topic_reviews.TopicTest) ... ok
+test_sample_never_accepts_failed_data (test_topic_reviews.TopicTest) ... ok
+test_sample_requires_reason_and_preserves_date_mismatch (test_topic_reviews.TopicTest) ... ok
+test_shipment_closed_and_future (test_topic_reviews.TopicTest) ... ok
 
 ----------------------------------------------------------------------
-Ran 76 tests in 4.347s
+Ran 256 tests in 8.858s
 
 OK
+✅ 数据包已写出：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp_99mjwan/bundle.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp_99mjwan/raw）
+⚠️ 口径降级：利润步骤缺失（out/raw/profit_shop.json 未落盘或无数据）：L1 利润类指标（GMV/毛利/毛利率）不可用，标「⚠️ 需人工核查」；订单/广告等其余步骤照常。
+⚠️ 口径降级：缺少自定义报表 report_id：L2 明细层口径降级。跳过宽表步骤（get_custom_report_page_list，缺口在「口径降级」区块披露），仅使用店铺级利润报表（get_profit_report_by_shop）与订单 / 广告等其余步骤可得指标； 流量（sessions/转化率）、广告点击、库龄分桶、补货建议等宽表字段不可用，标注「需人工核查」。
+⚠️ 口径降级：广告活动结构落盘缺失（out/raw/campaigns_*.json）：STEP 03 降级。
+⚠️ 利润步骤缺失：L1 利润类指标不可用（已降级，不阻断）。
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）
+  ⚠️ 口径降级：报表已发现、候选验证读取被上游拒绝（error_code：RESULT_BUD_EXCEEDED），report_id 未绑定；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。这是上游读取被拒，不是未配置 report_id：请人工在赛狐网页端核对报表，而非重新配置。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp5oo8528o/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp5oo8528o/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）
+  ⚠️ 口径降级：报表已发现、候选验证读取被上游拒绝（error_code：RESULT_BUDGET_EXCEEDED），report_id 未绑定；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。这是上游读取被拒，不是未配置 report_id：请人工在赛狐网页端核对报表，而非重新配置。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp4sxsakw4/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp4sxsakw4/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）
+  ⚠️ 口径降级：自定义报表自动发现失败（error_code：PERMISSION_DENIED），report_id 不可得；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。发现失败 ≠ 未配置：需人工核对发现链路后重跑，补配置解决不了。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp_ddjb23b/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmp_ddjb23b/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）
+  ⚠️ 口径降级：缺少自定义报表 report_id，lowReviewNum/reviewNum/reviewRate 不可用；仅能用 online 侧 rating/ratingCount（且无环比基线，需历史快照）。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpprlgp2mj/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpprlgp2mj/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）
+  ⚠️ 口径降级：报表已发现、候选验证读取被上游拒绝（error_code：RESULT_BUDGET_EXCEEDED），report_id 未绑定；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。这是上游读取被拒，不是未配置 report_id：请人工在赛狐网页端核对报表，而非重新配置。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpn4na_sot/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpn4na_sot/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现；但取数有 2 个错误，见 errors）
+  响应状态 failed 不可采信，需人工核查
+  ⬜ out/raw/custom_current.json 无数据（status=failed）：该源为空，标「无数据」，不写 0。
+  响应状态 failed 不可采信，需人工核查
+  ⬜ out/raw/custom_previous.json 无数据（status=failed）：该源为空，标「无数据」，不写 0。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpb05geljr/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpb05geljr/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现；但取数有 2 个错误，见 errors）
+  响应状态 failed 不可采信，需人工核查
+  ⬜ out/raw/custom_current.json 无数据（status=failed）：该源为空，标「无数据」，不写 0。
+  响应状态 failed 不可采信，需人工核查
+  ⬜ out/raw/custom_previous.json 无数据（status=failed）：该源为空，标「无数据」，不写 0。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpml6dzvn4/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmpml6dzvn4/raw）
+问题 ASIN：0 个（窗口近 7 天，基线为前一窗口）
+  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）
+  ⚠️ 口径降级：缺少自定义报表 report_id，lowReviewNum/reviewNum/reviewRate 不可用；仅能用 online 侧 rating/ratingCount（且无环比基线，需历史快照）。
+
+已写出 /var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmplfqx9h02/signals.json（来源：/var/folders/wx/tdk6mx9d6h5gzy72dhqrf09r0000gn/T/tmplfqx9h02/raw）

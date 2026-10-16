@@ -50,7 +50,7 @@ def _prompt_for(role: str, product_name: str, marketplace: str, style: str) -> s
         "场景图": f"{product_name} 的真实使用场景，自然光与暖色调，"
                   "突出卖点与尺寸感，构图整洁，留白适中，生活方式摄影风格",
         "A+模块图": f"{product_name} 的功能特写/细节图，展示材质与工艺，"
-                    "可配合图标化信息排版，风格统一，适配 {marketplace} 站点审美",
+                    f"可配合图标化信息排版，风格统一，适配 {marketplace} 站点审美",
         "信息图": f"{product_name} 的卖点信息图，图文排版清晰，突出核心参数，避免绝对化用语",
         "生活方式图": f"人物在真实生活场景中使用 {product_name}，情绪自然，"
                       "不出现可识别人脸与品牌 logo",

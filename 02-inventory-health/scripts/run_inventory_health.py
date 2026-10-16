@@ -87,11 +87,17 @@ def precheck(report_id: str | None, raw_dir: Path | None = None) -> list[str]:
     return warnings
 
 
-def _print_first_run_guidance() -> None:
+def _print_first_run_guidance(loader: ConfigLoader) -> None:
+    """首轮引导：与现行 ONBOARDING 自动发现口径一致 —— 不要求商家创建报表。"""
     from merchant_setup import is_deferred
     if not is_deferred('inventory'):
-        print('尚未取得适用增强报表；由助手自动发现，当前先用简版。')
-    print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
+        print('尚未取得适用增强报表；由助手按 ONBOARDING.md 自动发现并验证（无需商家创建/配置报表），当前先用简版。')
+    # 输出实际所缺指标口径（reports.yaml → inventory.fields_hint），不凭记忆编造清单
+    hint = ((loader.load('reports').get('reports') or {}).get('inventory') or {}).get('fields_hint')
+    if hint:
+        print(f'本次使用简版，缺少的自定义报表指标（{hint}）将以自算口径或「需人工核查」在报告中说明。')
+    else:
+        print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -135,7 +141,7 @@ def _run(args: argparse.Namespace) -> int:
         print("❌ 无取数落盘，无法组装数据。请先由 agent 按 workflow.md 取数计划落盘。", file=sys.stderr)
         return 2
     if not report_id:
-        _print_first_run_guidance()
+        _print_first_run_guidance(loader)
 
     # 校验 + 组装（零网络）：读取 agent 落盘的 out/raw/*.json
     try:
@@ -181,6 +187,7 @@ def _run(args: argparse.Namespace) -> int:
         "warnings": result.warnings,
         "demo_fingerprint": result.demo_fingerprint,
         "degraded": result.degraded,
+        "degrade_reason": result.degrade_reason,
         "window_days": int(skill_cfg.get("report_window_days", 30)),
         "sales_currency": currency.get("sales_currency", "USD"),
         "cost_currency": currency.get("cost_currency", "CNY"),

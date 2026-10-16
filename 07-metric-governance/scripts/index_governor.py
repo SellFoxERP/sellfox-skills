@@ -333,7 +333,12 @@ def load_official_trees(raw_dir: Path) -> Tuple[Dict[str, List[Dict[str, Any]]],
 
 
 def normalize_tree(data: Any) -> List[Dict[str, Any]]:
-    """防御性把官方目录 data 规范成节点列表（结构未实测）。"""
+    """防御性把官方目录 data 规范成**顶级**节点列表（结构未实测）。
+
+    返回的节点 dict 原样保留 ``children``（嵌套子树不在此展开）；
+    全层级遍历/计数/落盘用 :func:`iter_tree_nodes` / :func:`tree_stats` /
+    :func:`tree_summary`（children 不再静默丢弃）。
+    """
     if isinstance(data, list):
         return [x for x in data if isinstance(x, dict)]
     if isinstance(data, dict):
@@ -370,6 +375,77 @@ def index_id_of(row: Dict[str, Any]) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# 官方目录树：递归全层级（线上实测为嵌套树，children 多层）
+# ---------------------------------------------------------------------------
+
+#: 节点里子树列表的候选字段名（线上实测为 ``children``；防御性兼容其它命名）。
+_CHILDREN_KEYS: Tuple[str, ...] = ("children", "childList")
+
+
+def _node_children(node: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """防御性取一个节点的子节点列表（候选键逐一探测；取不到返回空，不臆造）。"""
+    for key in _CHILDREN_KEYS:
+        value = node.get(key)
+        if isinstance(value, list):
+            return [c for c in value if isinstance(c, dict)]
+    return []
+
+
+def iter_tree_nodes(nodes: Sequence[Dict[str, Any]], depth: int = 1):
+    """递归遍历官方目录树**全部层级**（yield ``(层级, 节点)``，children 不再丢弃）。"""
+    for node in nodes:
+        yield depth, node
+        kids = _node_children(node)
+        if kids:
+            yield from iter_tree_nodes(kids, depth + 1)
+
+
+def tree_stats(nodes: Sequence[Dict[str, Any]]) -> Tuple[int, Dict[int, int]]:
+    """统计总节点数与各层级节点数。
+
+    :returns: ``(总节点数, {层级: 节点数})``。线上真实目录 = 10 一级 × 3 层 = 30 节点。
+    """
+    levels: Dict[int, int] = {}
+    total = 0
+    for depth, _node in iter_tree_nodes(nodes):
+        levels[depth] = levels.get(depth, 0) + 1
+        total += 1
+    return total, levels
+
+
+def compact_tree(nodes: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """把官方目录规范成紧凑全量树（id/name/mappedIndex/层级/children 递归）。"""
+    out: List[Dict[str, Any]] = []
+    for node in nodes:
+        kids = _node_children(node)
+        out.append(
+            {
+                "id": node.get("id"),
+                "name": _pick(node, ("name", "indexName")),
+                "mapped_index": _pick(node, ("mappedIndex", "indexEnName")),
+                "level": node.get("level") or str(len(_as_id_list(node.get("parentId"))) + 1),
+                "children": compact_tree(kids) if kids else [],
+            }
+        )
+    return out
+
+
+def _as_id_list(value: Any) -> List[Any]:
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def tree_summary(nodes: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """官方目录全量摘要：顶级数 / 总节点数 / 分层计数 / 紧凑全量树（供 agent 作答）。"""
+    total, levels = tree_stats(nodes)
+    return {
+        "top_level": len(nodes),
+        "total_nodes": total,
+        "nodes_by_level": {str(k): v for k, v in sorted(levels.items())},
+        "tree": compact_tree(nodes),
+    }
+
+
+# ---------------------------------------------------------------------------
 # 差异比对（纯离线）
 # ---------------------------------------------------------------------------
 
@@ -384,6 +460,14 @@ class Plan:
     updates: List[Tuple[DesiredIndex, Dict[str, Any], str]] = dc_field(default_factory=list)
     aligned: List[str] = dc_field(default_factory=list)
     pending: List[DesiredIndex] = dc_field(default_factory=list)
+    #: pending 中因「现有行缺真实 indexId」而待确认的指标名（其余为公式未人工确认 needs_human）。
+    pending_missing_id: List[str] = dc_field(default_factory=list)
+
+    def pending_reason(self, d: DesiredIndex) -> str:
+        """区分两种待确认原因：缺真实 ID（待补 indexId）/ 公式未确认（needs_human）。"""
+        if d.name in self.pending_missing_id:
+            return "missing_id"
+        return "needs_human"
 
     def describe_lines(self) -> List[str]:
         return [
@@ -414,7 +498,8 @@ def build_plan(existing: Sequence[Dict[str, Any]], desired: Sequence[DesiredInde
         old_formula = index_formula_of(current) or ""
         if _norm_formula(old_formula) != _norm_formula(d.formula):
             if index_id_of(current) is None:
-                plan.pending.append(d)  # 需重新查询真实 ID，不能用名称充当 ID。
+                plan.pending.append(d)  # 公式已确认，但现有行缺真实 indexId → 待补 ID，不能用名称充当 ID。
+                plan.pending_missing_id.append(d.name)
             else:
                 plan.updates.append((d, current, old_formula))
         else:
@@ -759,6 +844,103 @@ def verify_against_rows(
             )
         )
     return results
+
+
+# ---------------------------------------------------------------------------
+# verify 补偿记录：record 先于 verify 的顺序张力（mismatch 时追加 amend，不改写历史）
+# ---------------------------------------------------------------------------
+
+
+def _read_change_log(log_path: str) -> List[Dict[str, Any]]:
+    """读取变更日志全部记录（文件缺失/损坏行跳过，不抛错）。"""
+    path = Path(log_path)
+    if not path.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def append_verify_amends(
+    manifest: Dict[str, Any],
+    results: Sequence[Dict[str, Any]],
+    *,
+    operator: str,
+    log_path: str,
+) -> List[Dict[str, Any]]:
+    """verify 检出 ``mismatch`` 且原记录为 success 时，向变更日志**追加**补偿记录。
+
+    背景（record-then-verify 顺序张力）：协议要求每条执行后即 record（可能已落
+    ``success``），若 action 被 isError=false 误报成功而回读实为 mismatch，原记录
+    无法撤回。本函数不改写历史（原 success 保持原值），而是**追加**一条
+    ``type=amend`` 的独立记录指向原记录，并带 ``status_note="verify mismatch"``。
+
+    累计闸（``_shared approval.AccumulatorGate``）只统计 ``status=success``：
+    amend 记录 status 置 ``"amend"`` 不再额外计数；**原始 success 仍会被计数**，
+    该风险由 status_note 披露（verify 输出同步说明）。
+    """
+    bad = [r for r in results if r.get("verdict") == "mismatch"]
+    if not bad:
+        return []
+    items = {int(m.get("index") or 0): m for m in manifest.get("items") or []}
+    last_by_key: Dict[Any, Dict[str, Any]] = {}
+    for rec in _read_change_log(log_path):
+        last_by_key[(rec.get("index"), str(rec.get("target_id") or ""))] = rec
+    ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+    amends: List[Dict[str, Any]] = []
+    for r in bad:
+        m = items.get(int(r.get("index") or 0))
+        if m is None:
+            continue
+        orig = last_by_key.get((m.get("index"), str(m.get("target_id") or "")))
+        if not orig or orig.get("status") != "success":
+            continue  # 原记录非 success（本就按失败处理）→ 无「误报成功」需要补偿。
+        amends.append(
+            {
+                "type": "amend",
+                "tool": m.get("tool_id"),
+                "target_type": str(m.get("target_type") or "index"),
+                "target_id": str(m.get("target_id") or ""),
+                "field": "index_formula",
+                "before": m.get("expected_formula"),  # 期望（原记录 after）
+                "after": r.get("actual"),             # 回读实值
+                "reason": "verify mismatch 补偿：回读与期望不一致，原 success 记录存疑"
+                          "（不重放、需人工核查）",
+                "action": "verify_amend",
+                "risk": str(m.get("risk") or "L2"),
+                "extra": {
+                    "index_name": m.get("index_name"),
+                    "amend_for": {
+                        "index": m.get("index"),
+                        "target_id": str(m.get("target_id") or ""),
+                        "original_status": orig.get("status"),
+                        "original_ts": orig.get("ts"),
+                    },
+                    "status_note": "verify mismatch",
+                },
+                "index": m.get("index"),
+                "operator": operator,
+                "status": "amend",  # 非 success：不被累计闸计数；原始 success 计数风险见 status_note
+                "status_note": "verify mismatch（补偿记录：不改写历史；累计闸仍按原始 success 计数）",
+                "ts": ts,
+            }
+        )
+    if amends:
+        path = Path(log_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            for rec in amends:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return amends
 
 
 # ---------------------------------------------------------------------------

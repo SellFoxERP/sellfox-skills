@@ -68,17 +68,24 @@ inputSchema 为准（⚠️ 标注处为实测差异）。多状态/多店铺批
 ## 2. 计算面流水线（脚本执行）
 
 ```bash
-# 取数落盘完成后（agent 责任已尽），一键跑计算面：
+# 取数落盘完成后（agent 责任已尽），一键跑计算面（在技能根目录运行）：
 python scripts/fetch_listing_data.py --shop-ids 10001 --out data.json   # 校验+组装
 python scripts/diagnose.py --in data.json --out problems.json            # 分诊
 python scripts/render_report.py --in problems.json --out report.md       # 渲染
-# 也可单独跑共享校验器：
-python _shared/scripts/validate_raw.py --dir out/raw --step online_active:rows
+# 也可单独跑共享校验器（⚠️ 运行前置：_shared 在仓库根/安装根，不在技能目录内，
+# 须从仓库根运行并写清相对路径；批量安装布局下从安装根运行）：
+python _shared/scripts/validate_raw.py --dir 03-listing-health/out/raw --step online_active:rows
 ```
 
 `fetch_listing_data.py`（v3 改造）：校验 `out/raw/`（存在性/status/空数据/演示指纹/
 coverage 截断），组装出与旧版相同形状的 `data.json` —— diagnose/render 零改动；
 `coverage.truncated` 自动转披露；report_id 缺失时显式列出「宽表专属字段不可用」清单。
+
+> **BSR/评分环比基线 = 本地快照自持**：每次成功组装后，组装层把当前各记录的
+> `bsrRank`/`rating` 按记录 ID 全量重建落盘 `out/baseline-snapshot.json`（含
+> `captured_at`；已消失的记录不保留，避免陈旧基线）。下次运行读入快照生成
+> `meta.baseline` 供「BSR 恶化/评分下滑」环比。**首次运行无环比**（照旧标
+> 「需历史快照」），**第二次起生效**。
 
 ## 3. 降级路径
 

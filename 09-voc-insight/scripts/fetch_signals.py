@@ -80,15 +80,21 @@ def _window(end: _dt.date, days: int, offset: int) -> Tuple[_dt.date, _dt.date]:
 
 # --- 落盘读取与校验 ---------------------------------------------------------
 
-def _load_raw(raw_dir: Path, name: str) -> Optional[RawEnvelope]:
-    """读取一个落盘信封；不存在/损坏返回 None（损坏另记 errors 由调用方处理）。"""
+def _load_raw(raw_dir: Path, name: str) -> Tuple[Optional[RawEnvelope], Optional[str]]:
+    """读取一个落盘信封。返回 ``(信封, 问题)``：正常 = ``(env, None)``。
+
+    拿不到信封的两种原因**必须区分**（排查方向相反）：
+    - ``"missing"``：文件不存在 → agent 未按取数计划落盘；
+    - ``"corrupt（…）"``：文件存在但解析失败（损坏，如截断/半写/非法 JSON）
+      → 先查文件完整性，不要当成「没取数」盲目重取。
+    """
     p = raw_dir / (name if name.endswith(".json") else f"{name}.json")
     if not p.exists():
-        return None
+        return None, "missing"
     try:
-        return load_envelope(p)
-    except Exception:
-        return None
+        return load_envelope(p), None
+    except Exception as exc:
+        return None, f"corrupt（{exc}）"
 
 
 def _cov_truncation(env: RawEnvelope, name: str) -> Optional[str]:
@@ -103,17 +109,40 @@ def _cov_truncation(env: RawEnvelope, name: str) -> Optional[str]:
     )
 
 
+#: 落盘步骤 → 网关工具（error_details 里逐条标注，报告数据说明直接消费）。
+_STEP_TOOLS = {
+    "custom_current": "get_custom_report_page_list",
+    "custom_previous": "get_custom_report_page_list",
+    "online_products": "get_online_product_page_list",
+}
+
+
 def _check_envelope(
     env: RawEnvelope, name: str,
     errors: List[str], disclosures: List[str], warnings: List[str],
+    error_details: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
-    """单个落盘信封的确定性检查：status / partial / 空数据 / coverage 截断。"""
+    """单个落盘信封的确定性检查：status / partial / 空数据 / coverage 截断。
+
+    failed 时除了人类可读的 errors 字符串，还记结构化 ``error_details``
+    （步骤/工具/error_code/是否可重试），供 render_report 在「数据说明」逐条渲染 ——
+    error_code 不允许只存在于此处而报告不可见。
+    """
     warnings.extend(str(w) for w in env.warnings)
     if env.status not in ("complete", "partial"):
         errors.append(
             f"out/raw/{name}.json status={env.status} error_code={env.error_code} "
             f"{env.message or ''}（该源按无数据处理，需人工核查）"
         )
+        if error_details is not None:
+            error_details.append({
+                "step": f"out/raw/{name}.json",
+                "tool": _STEP_TOOLS.get(name, "未知"),
+                "status": env.status,
+                "error_code": env.error_code,
+                "message": env.message,
+                "retryable": env.obj.get("retryable"),
+            })
     elif env.partial:
         disclosures.append(f"⚠️ out/raw/{name}.json status=partial：部分成功，可采信但必须在数据说明披露。")
     if is_no_data(env.data):
@@ -194,9 +223,9 @@ def build_signals(
                         "threshold": f"环比下降≥{threshold_rating}",
                     })
 
-        # 信号 3：好评率下滑
+        # 信号 3：好评率下滑（小样本不判 —— 与 rating_drop 对称，复用同一 min_rating_count 下界）
         if "review_rate_drop" in signals_enabled and rr_now is not None and rr_prev is not None:
-            if (rr_prev - rr_now) > 0:
+            if rc_now is not None and rc_now >= min_rating_count and (rr_prev - rr_now) > 0:
                 flags.append({
                     "signal": "review_rate_drop",
                     "field": "reviewRate",
@@ -233,6 +262,55 @@ def build_signals(
     return out
 
 
+#: 无 report_id 降级时的人工核查文案（三态，与 config/voc.yaml → degradation 的 banner 对应）。
+#: 关键纪律：上游失败（发现失败 / 候选验证被拒）不得写成「先配置 report_id」。
+_NO_REPORT_MANUAL = {
+    "not_configured": (
+        "lowReviewNum / reviewNum / reviewRate 需自定义报表；当前仅有 online 侧 rating/ratingCount，"
+        "且无上一窗口基线（online 无历史），无法做环比 → 需人工核查或先配置 report_id。"
+    ),
+    "discovery_failed": (
+        "自定义报表自动发现失败（error_code：{error_codes}）：lowReviewNum / reviewNum / reviewRate 不可用。"
+        "这不是「未配置 report_id」—— 需人工核对发现链路（报表目录接口）后重跑发现，补配置解决不了。"
+    ),
+    "candidate_verification_rejected": (
+        "报表候选已发现，但候选验证读取被上游拒绝（error_code：{error_codes}），report_id 未绑定："
+        "需人工在赛狐网页端核对报表可用性 —— 不是未配置 report_id，重新配置无法解决。"
+    ),
+}
+
+
+def _probe_no_report_reason(raw_dir: Path) -> Tuple[str, List[str]]:
+    """无 report_id 时的降级原因归因（**只认落盘证据**，不臆测）。
+
+    三态（与 ``config/voc.yaml → degradation`` 文案一一对应）：
+    - ``candidate_verification_rejected``：发现已完成，custom_* / report_validate* 等
+      宽表信封 status=failed 且带 error_code → 候选验证读取被上游拒，report_id 因此未绑定；
+    - ``discovery_failed``：*index* 信封 status=failed → 报表自动发现本身失败；
+    - ``not_configured``：无任何失败证据 → 真·未配置（现行文案）。
+    """
+    verify_codes: List[str] = []
+    discovery_codes: List[str] = []
+    for p in sorted(raw_dir.glob("*.json")):
+        if p.name == "online_products.json":
+            continue
+        try:
+            env = load_envelope(p)
+        except Exception:
+            continue  # 损坏文件不构成失败证据（主路径另有 corrupt 拦截）
+        if env.status in ("complete", "partial") or not env.error_code:
+            continue
+        if "index" in p.name.lower():
+            discovery_codes.append(str(env.error_code))
+        else:
+            verify_codes.append(str(env.error_code))
+    if verify_codes:
+        return "candidate_verification_rejected", verify_codes
+    if discovery_codes:
+        return "discovery_failed", discovery_codes
+    return "not_configured", []
+
+
 def run(args: argparse.Namespace) -> int:
     voc_cfg = vc.load_skill_config("voc")
     disc_cfg = voc_cfg.get("discovery") or {}
@@ -266,6 +344,10 @@ def run(args: argparse.Namespace) -> int:
     notes_manual: List[str] = []
     disclosures: List[str] = []
     errors: List[str] = []
+    error_details: List[Dict[str, Any]] = []
+    degraded_reason: str = "none"
+    degraded_error_codes: List[str] = []
+    degraded_banner: Optional[str] = None
 
     report_id = args.report_id or vc.resolve_report_id(report_key)
     degraded = "none"
@@ -293,42 +375,66 @@ def run(args: argparse.Namespace) -> int:
 
     if report_id:
         # 主路径：宽表两窗口环比（取数计划步骤 1/2）
-        cur_env = _load_raw(raw_dir, "custom_current")
-        prev_env = _load_raw(raw_dir, "custom_previous")
-        missing = [n for n, e in (("custom_current", cur_env), ("custom_previous", prev_env)) if e is None]
+        cur_env, cur_problem = _load_raw(raw_dir, "custom_current")
+        prev_env, prev_problem = _load_raw(raw_dir, "custom_previous")
+        problems = (("custom_current", cur_problem), ("custom_previous", prev_problem))
+        missing = [n for n, pr in problems if pr == "missing"]
+        corrupt = [n for n, pr in problems if pr is not None and pr.startswith("corrupt")]
         if missing:
             raise SystemExit(
                 f"❌ 缺少取数计划落盘：{', '.join(f'out/raw/{m}.json' for m in missing)}（步骤 1/2，"
                 f"get_custom_report_page_list 两窗口）。report_id 已配置（{report_id}），"
                 "请由 agent 按取数计划落盘后重跑本脚本。"
             )
+        if corrupt:
+            # 与「文件缺失」区分：文件在但读不了 → 先查完整性，不是重走取数计划就能解决
+            raise SystemExit(
+                f"❌ 落盘文件存在但解析失败（损坏）：{', '.join(f'out/raw/{m}.json' for m in corrupt)} —— "
+                + "；".join(pr for _, pr in problems if pr and pr.startswith("corrupt")) + "。\n"
+                "   这不是「未落盘」：请先检查文件完整性（是否被截断/半写/非法 JSON），\n"
+                "   修复或由 agent 重新完整落盘后重跑；不要盲目按「缺步骤」重取数。"
+            )
         for name, env in (("custom_current", cur_env), ("custom_previous", prev_env)):
-            _check_envelope(env, name, errors, disclosures, notes_warnings)
+            _check_envelope(env, name, errors, disclosures, notes_warnings, error_details)
         _scan_demo([cur_env, prev_env])
         current = _trim(cur_env.rows("rows"))
         previous = _trim(prev_env.rows("rows"))
     else:
         # 降级路径：无 report_id → 只用 online 侧 rating/ratingCount（取数计划步骤 3）
-        online_env = _load_raw(raw_dir, "online_products")
-        if online_env is None:
+        online_env, online_problem = _load_raw(raw_dir, "online_products")
+        if online_problem == "missing":
             raise SystemExit(
                 "❌ report_id 未配置，且缺少 out/raw/online_products.json（取数计划步骤 3，"
                 "get_online_product_page_list）。请由 agent 按取数计划落盘后重跑本脚本，"
                 "或由助手自动发现并验证适用报表后，再落盘宽表两窗口。"
             )
-        _check_envelope(online_env, "online_products", errors, disclosures, notes_warnings)
+        if online_problem is not None:
+            raise SystemExit(
+                f"❌ out/raw/online_products.json 存在但解析失败（损坏）—— {online_problem}。\n"
+                "   这不是「未落盘」：请先检查文件完整性（是否被截断/半写/非法 JSON），\n"
+                "   修复或由 agent 重新完整落盘后重跑。"
+            )
+        _check_envelope(online_env, "online_products", errors, disclosures, notes_warnings, error_details)
         _scan_demo([online_env])
         current = _trim(online_env.rows("rows"), keep=_KEEP_ONLINE)
         previous = []
         degraded = "no_custom_report"
-        notes_warnings.append(
-            (voc_cfg.get("degradation") or {}).get("no_custom_report", {}).get(
-                "banner", "⚠️ 口径降级：缺少自定义报表 report_id。"
-            )
-        )
+        # 降级原因三态归因（只认落盘证据）：「未配置」/「发现失败」/「候选验证被拒」文案不同，
+        # 不能把上游故障误归因为用户没配置 report_id（见 config/voc.yaml → degradation）。
+        degraded_reason, degraded_error_codes = _probe_no_report_reason(raw_dir)
+        degraded_error_codes = list(dict.fromkeys(degraded_error_codes))  # 同码去重，保序
+        deg_cfg = voc_cfg.get("degradation") or {}
+        reason_key = {"not_configured": "no_custom_report"}.get(degraded_reason, degraded_reason)
+        codes_text = "、".join(dict.fromkeys(degraded_error_codes)) or "未知"
+        degraded_banner = str(
+            (deg_cfg.get(reason_key) or {}).get("banner")
+            or deg_cfg.get("no_custom_report", {}).get("banner")
+            or "⚠️ 口径降级：缺少自定义报表 report_id。"
+        ).replace("{error_codes}", codes_text)
+        notes_warnings.append(degraded_banner)
         notes_manual.append(
-            "lowReviewNum / reviewNum / reviewRate 需自定义报表；当前仅有 online 侧 rating/ratingCount，"
-            "且无上一窗口基线（online 无历史），无法做环比 → 需人工核查或先配置 report_id。"
+            _NO_REPORT_MANUAL.get(degraded_reason, _NO_REPORT_MANUAL["not_configured"])
+            .replace("{error_codes}", codes_text)
         )
 
     flagged = build_signals(
@@ -358,6 +464,10 @@ def run(args: argparse.Namespace) -> int:
             "report_id": report_id,
             "report_key": report_key,
             "degraded": degraded,
+            # 降级原因三态（degraded=no_custom_report 时有效）：渲染层据此给如实文案
+            "degraded_reason": degraded_reason,
+            "degraded_error_codes": degraded_error_codes,
+            "degraded_banner": degraded_banner,
             "fields": {
                 "lowReviewNum": "get_custom_report_page_list",
                 "reviewNum": "get_custom_report_page_list",
@@ -383,6 +493,8 @@ def run(args: argparse.Namespace) -> int:
         "manual_checks": notes_manual,
         "disclosures": disclosures,
         "errors": errors,
+        # 结构化取数失败（步骤/工具/error_code/是否可重试），render_report 在「数据说明」逐条渲染
+        "error_details": error_details,
         "demo_fingerprint": demo_fp,
     }
 

@@ -248,6 +248,7 @@ class FetchResult:
     demo_fingerprint: Optional[str] = None
     report_id_used: Optional[str] = None
     degraded: bool = False
+    degrade_reason: Optional[str] = None  # 口径降级的真实原因（未配置/发现被拒/主源失败），渲染层横幅用
     shipments: List[Dict[str, Any]] = field(default_factory=list)
     awd: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -312,6 +313,12 @@ def _rows_from_env(env: RawEnvelope, *, label: str, max_rows: int, result: Fetch
     return rows
 
 
+def _row_identity(rec: Dict[str, Any]) -> Any:
+    """记录的 MSKU 身份：msku 退化到 sku（与计算层 replenishment.compute 的口径一致，
+    降级源 get_online_product_page_list 常只有 sku）。None = 无法识别，不参与去重。"""
+    return rec.get("msku") or rec.get("sku")
+
+
 # ---------------------------------------------------------------------------
 # 主流程：校验 out/raw/ 并组装 FetchResult（形状与旧版 fetch_all 一致）
 # ---------------------------------------------------------------------------
@@ -352,11 +359,30 @@ def assemble_all(
         )
     else:
         _scan(env.obj)
-        _rows_from_env(env, label="shops", max_rows=int(limits.get("shops", 40)), result=result)
+        shop_rows = _rows_from_env(
+            env, label="shops", max_rows=int(limits.get("shops", 40)), result=result
+        )
+        # 重复行防御：店铺清单是分批依据（shop_batch_size），上游重复（线上实测同 ID ×4）
+        # 会放大批次数、放大重复取数 —— 去重（首个出现为准）并在覆盖范围披露。
+        if shop_rows:
+            seen_shop_ids: set = set()
+            unique_shops = []
+            for row in shop_rows:
+                sid = pick(row, "id", "shopId", "shop_id")
+                if sid in seen_shop_ids:
+                    continue
+                seen_shop_ids.add(sid)
+                unique_shops.append(row)
+            if len(unique_shops) < len(shop_rows):
+                result.coverage.append(
+                    f"shops: 落盘 {len(shop_rows)} 行含重复店铺（唯一 {len(unique_shops)} 个，"
+                    "首个出现为准去重）；分批请按去重后的唯一店铺清单，避免重复批次。"
+                )
 
     # 1) 宽表主源（每店铺批一文件；无 report_id → 整步跳过走降级）
     msku_envs = _merge_pattern(raw_dir, "msku")
     custom_records: List[Dict[str, Any]] = []
+    custom_failed_codes: List[str] = []  # 主源 failed 的 error_code（降级原因/失败可见性用）
     max_cr = int(limits.get("custom_report", 200))
     if report_id and msku_envs:
         result.report_id_used = report_id
@@ -365,6 +391,8 @@ def assemble_all(
         for env_ in msku_envs:
             _scan(env_.obj)
             batch = env_.path.stem  # msku_<shopId>
+            if env_.status == "failed" and env_.error_code and env_.error_code not in custom_failed_codes:
+                custom_failed_codes.append(env_.error_code)
             rows = _rows_from_env(
                 env_, label=f"custom_report({batch})", max_rows=max_cr, result=result
             )
@@ -388,7 +416,22 @@ def assemble_all(
             "宽表落盘缺失（out/raw/msku_*.json）：L2 明细层降级，改用在线产品降级源组装。"
         )
     elif not report_id and msku_envs:
-        # report_id 为空时按取数计划不应调用宽表；即便有落盘也整步跳过，显式说明
+        # report_id 为空时按取数计划不应调用宽表；即便有落盘也整步跳过，显式说明。
+        # 失败可见性：已落盘的 failed 宽表信封（如发现验证读 RESULT_BUDGET_EXCEEDED）绝不静默 ——
+        # error_code + 工具名进警告/数据说明（涉及工具），再走降级。
+        any_failed = False
+        for env_ in msku_envs:
+            _scan(env_.obj)
+            if env_.status == "failed":
+                any_failed = True
+                if env_.error_code and env_.error_code not in custom_failed_codes:
+                    custom_failed_codes.append(env_.error_code)
+                result.warnings.append(
+                    f"custom_report({env_.path.stem}) status=failed（error_code={env_.error_code}）："
+                    "get_custom_report_page_list 取数失败，report_id 未保存，该步未纳入统计，走降级路径。"
+                )
+        if any_failed:
+            result.sources.append("get_custom_report_page_list(失败未采信)")
         result.warnings.append(
             "reports.yaml → inventory.id 为空：忽略已落盘的 msku_*.json，整步跳过走降级路径。"
         )
@@ -405,6 +448,24 @@ def assemble_all(
         )
         for row in rows:
             fallback.append(_normalize_online_product(row))
+    # 去重防御：上游 shop_id_list 过滤失效时（线上实测）不同批次会返回同一目录，
+    # 同一 MSKU 按批次数重复计入会让建议单/核心结论成倍虚增 —— 按 MSKU
+    # （msku 退化到 sku，与计算层口径一致）去重，首个出现为准（对齐补充路径做法），去重时披露。
+    seen_msku: set = set()
+    deduped_fallback: List[Dict[str, Any]] = []
+    for rec in fallback:
+        key = _row_identity(rec)
+        if key is not None and key in seen_msku:
+            continue
+        if key is not None:
+            seen_msku.add(key)
+        deduped_fallback.append(rec)
+    if len(deduped_fallback) < len(fallback):
+        result.warnings.append(
+            f"⚠️ 在线产品降级源跨批次重复 {len(fallback) - len(deduped_fallback)} 行"
+            "（同一 MSKU，首个出现为准去重）：疑似上游 shop_id_list 过滤失效，建议核对店铺分批参数。"
+        )
+    fallback = deduped_fallback
     if len(fallback) > max_op:
         result.warnings.append(
             f"⚠️ 在线产品合并 {len(fallback)} 行，触达 max_rows={max_op} 上限，其余未纳入统计。"
@@ -414,9 +475,16 @@ def assemble_all(
     if not report_id:
         # report_id 为空 → 宽表整步跳过；存在 online_products_*.json 则组装降级数据
         result.degraded = True
+        if custom_failed_codes:
+            result.degrade_reason = (
+                "报表发现验证失败（get_custom_report_page_list，error_code="
+                + "/".join(custom_failed_codes) + "），report_id 未保存"
+            )
+        else:
+            result.degrade_reason = "未配置报表 ID（reports.yaml → inventory.id 为空，尚未发现适用报表）"
         result.sources.append("get_online_product_page_list(降级)")
         result.warnings.append(
-            "⚠️ 口径降级：未配置 reports.yaml → inventory.id，改用在线产品 inventoryManage "
+            f"⚠️ 口径降级：{result.degrade_reason}，改用在线产品 inventoryManage "
             "子对象；可售天数为自算口径，与赛狐 availableDays 不一致，尚未取得适用报表时先展示当前自算结果。"
         )
         result.records = fallback
@@ -425,16 +493,26 @@ def assemble_all(
                 "降级源落盘缺失（out/raw/online_products_*.json）：无法组装任何 MSKU 记录。"
             )
     elif custom_records:
-        # 主源有数据：在线产品仅作补充（按 msku 去重合并），口径仍以宽表为准
+        # 主源有数据：在线产品仅作补充（按 MSKU 去重合并，身份键与计算层一致），
+        # 口径仍以宽表为准
         if fallback:
             result.sources.append("get_online_product_page_list(补充)")
-        existing = {r.get("msku") for r in custom_records}
+        existing = {_row_identity(r) for r in custom_records if _row_identity(r) is not None}
         result.records = custom_records + [
-            r for r in fallback if r.get("msku") not in existing
+            r for r in fallback if _row_identity(r) not in existing
         ]
     elif fallback:
         # 主源整批缺失（落盘缺失/failed/无数据）→ 实际口径已是降级源，显式标注
         result.degraded = True
+        if custom_failed_codes:
+            result.degrade_reason = (
+                "主源取数失败（get_custom_report_page_list，error_code="
+                + "/".join(custom_failed_codes) + "）"
+            )
+        elif not msku_envs:
+            result.degrade_reason = "宽表落盘缺失（out/raw/msku_*.json）"
+        else:
+            result.degrade_reason = "主源整批无数据（custom_report 未取回任何行）"
         result.sources.append("get_online_product_page_list(降级)")
         result.records = fallback
     else:
@@ -448,6 +526,8 @@ def assemble_all(
         )
     else:
         _scan(env.obj)
+        # 涉及工具与 coverage 区一致：该步真实调用过（含 failed/无数据）即列入
+        result.sources.append("get_fba_shipment_page_list")
         result.shipments = _rows_from_env(
             env, label="fba_shipment", max_rows=int(limits.get("fba_shipment", 100)), result=result
         )
@@ -459,6 +539,7 @@ def assemble_all(
         )
     else:
         _scan(env.obj)
+        result.sources.append("get_awd_inventory_page_list")
         result.awd = _rows_from_env(
             env, label="awd_inventory", max_rows=int(limits.get("awd_inventory", 100)), result=result
         )
@@ -495,6 +576,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "raw_dir": str(raw_dir),
         "report_id_used": result.report_id_used,
         "degraded": result.degraded,
+        "degrade_reason": result.degrade_reason,
         "records": len(result.records),
         "shipments": len(result.shipments),
         "awd": len(result.awd),

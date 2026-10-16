@@ -97,8 +97,10 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # 1) fetch_baseline：校验落盘 + 组装基线（零网络；缺落盘时降级，不崩）。
+    #    asin 检索时把目标 ASIN 传下去做 analysis 行本地关联（上游过滤未生效的兜底）。
+    target_asins = [args.search_content] if args.search_type == "asin" else None
     try:
-        baseline = build_baseline(raw_dir=raw_dir, notes=notes)
+        baseline = build_baseline(raw_dir=raw_dir, notes=notes, target_asins=target_asins)
     except Exception as exc:
         baseline = {"products": [], "analysis": [], "demo_fingerprint": None}
         notes.need_manual(f"基线组装失败（{exc}）：实时字段需人工核查")

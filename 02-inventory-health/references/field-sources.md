@@ -13,6 +13,11 @@
 
 > 分页类列表字段统一是 `data.rows`。利润报表才是 `data.reportList`，广告类是 `data.itemList + nextToken` ——
 > 本技能不涉及后两者，但若扩展时务必按工具区分，不要统一按 `rows` 解析。
+>
+> ⚠️ `get_fba_shipment_page_list` 的 `shop_ids` 契约为 **integer 数组**（`items: integer`），与店铺清单
+> （`get_shop_page_list`）返回的字符串 ID（如 `"AD-10001"`）**不兼容**：按文档把店铺清单 ID 直接传入会被
+> `INVALID_PARAMS` 拒（field_errors 指向 `shop_ids.0`，线上实测）。需从报表行取数字店铺 ID（如
+> `shopId=10001`）传入；取不到数字 ID 时省略该参数（契约 default `[]`，即全店铺）。
 
 ## 字段 → 工具归属（已核对）
 

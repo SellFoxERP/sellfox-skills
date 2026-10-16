@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -41,6 +42,24 @@ def _fmt(v: Any) -> str:
     return f"{f:g}"
 
 
+_ERROR_CODE_RE = re.compile(r"error_code=([A-Za-z0-9_]+)")
+
+
+def _error_codes(signals: Dict[str, Any]) -> List[str]:
+    """提取取数失败的 error_code 列表（结构化 error_details 优先，兼容旧版 errors 字符串）。"""
+    codes: List[str] = []
+    for e in (signals.get("error_details") or []):
+        code = (e or {}).get("error_code")
+        if code and str(code) not in codes:
+            codes.append(str(code))
+    if not codes:
+        for e in (signals.get("errors") or []):
+            m = _ERROR_CODE_RE.search(str(e))
+            if m and m.group(1) not in codes:
+                codes.append(m.group(1))
+    return codes
+
+
 def _header(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
     win = signals.get("window") or {}
     src = signals.get("source") or {}
@@ -54,8 +73,11 @@ def _header(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
     if fp:
         lines.append(f"> ⚠️ **演示数据，非真实经营数据**（命中指纹：{fp}）。")
     degraded = src.get("degraded")
-    if degraded == "no_custom_report":
-        banner = (signals.get("warnings") or [""])[0] or "⚠️ 口径降级：缺少自定义报表 report_id。"
+    if degraded and degraded != "none":
+        # 降级横幅：优先用 fetch_signals 按三态归因记录的 degraded_banner
+        # （未配置 / 发现失败 / 候选验证被拒，文案如实），旧版 signals 退回第一条 warning。
+        banner = src.get("degraded_banner") or (signals.get("warnings") or [""])[0] \
+            or "⚠️ 口径降级：缺少自定义报表 report_id。"
         lines.append(f"> {banner}")
     banner = analysis.get("banner")
     if banner:
@@ -70,6 +92,25 @@ def _header(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
                  f"（489 宽表，report_id={'已配置' if src.get('report_id') else '⚠️ 未配置'}）")
     lines.append("  - `rating` / `ratingCount` — `get_custom_report_page_list`、`get_online_product_page_list`")
     lines.append(f"  - 评论原文 — 外部评论 MCP（{'已接入' if not analysis.get('degraded') else '⚠️ 未接入 / 无数据'}）")
+    # 取数失败逐条披露（workflow.md §7：数据说明必须记录 error_code；该源已按无数据处理）
+    err_details = signals.get("error_details") or []
+    errs = signals.get("errors") or []
+    if err_details:
+        lines.append("- 取数失败（该源已按无数据处理，需人工核查）：")
+        for e in err_details:
+            retry = (e or {}).get("retryable")
+            retry_text = {True: "是", False: "否"}.get(retry, "未知")
+            msg = (e or {}).get("message") or ""
+            lines.append(
+                f"  - 步骤 {(e or {}).get('step')}（工具 {(e or {}).get('tool')}）："
+                f"error_code={(e or {}).get('error_code') or '未知'}；是否可重试：{retry_text}"
+                + (f"；message：{msg}" if msg else "")
+            )
+    elif errs:
+        # 旧版 signals（无 error_details）：原文兜底渲染，保证 error_code 全文可见
+        lines.append("- 取数失败（该源已按无数据处理，需人工核查）：")
+        for e in errs:
+            lines.append(f"  - {e}")
     # 截断披露：按语义识别，不能匹配「截断」二字 ——
     # TruncationInfo.describe() 的真实文案是「已达 max_rows=N 上限，其余未纳入统计。」
     # （不含「截断」），而「未截断」的文案反而含该词，按字面匹配会把真截断报成「未触发」。
@@ -92,12 +133,21 @@ def _flagged_section(signals: Dict[str, Any]) -> str:
     flagged = signals.get("flagged") or []
     lines = ["## 1. 问题 ASIN（来自赛狐聚合指标，零外部依赖）", ""]
     if not flagged:
-        if not (signals.get("counts") or {}).get("previous_rows"):
-            lines.append("缺少历史基线，无法判断评分是否下降；不代表没有问题。以下展示已取到的评分快照。")
+        # 空结果的三种真实原因各说各话：取数失败 ≠ 缺历史基线 ≠ 未触发阈值
+        codes = _error_codes(signals)
+        snapshot_intro = ""
+        if codes:
+            lines.append(f"取数失败（error_code：{'、'.join(codes)}），原因见「0. 数据说明」；"
+                         "无法定位问题 ASIN，不代表没有问题。")
+        elif not (signals.get("counts") or {}).get("previous_rows"):
+            lines.append("缺少历史基线，无法判断评分是否下降；不代表没有问题。")
+            snapshot_intro = "以下展示已取到的评分快照。"
         else:
             lines.append("本次可比较样本未触发配置阈值。")
         observed = signals.get("observed") or []
         if observed:
+            if snapshot_intro:
+                lines.append(snapshot_intro)
             lines.extend(["", "| ASIN | 评分 | 评分数 |", "|---|---|---|"])
             for row in observed:
                 lines.append(f"| {vc.key_of(row.get('asin')) or '无数据'} | {_fmt(row.get('rating'))} | {_fmt(row.get('ratingCount'))} |")
@@ -193,20 +243,38 @@ def _actions_section(analysis: Dict[str, Any], optimization: Optional[Dict[str, 
     return "\n".join(lines)
 
 
+_MARK_PREFIX_RE = re.compile(r"^(?:⚠️|⬜|✅|❌|⏸)\s*")
+
+
+def _item_key(text: str) -> str:
+    """人工核查条目的去重键：去装饰前缀 + 去全部空白（措辞略异也能命中）。"""
+    return "".join(_MARK_PREFIX_RE.sub("", text or "").split())
+
+
 def _manual_section(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
     items: List[str] = []
     items += list(signals.get("manual_checks") or [])
     for w in (signals.get("warnings") or []):
         if "演示" in w or "降级" in w:
-            items.append(w)
+            # 统一由本节补「- ⚠️ 」前缀，先剥掉 warning 自带的标记，避免「⚠️ ⚠️」双前缀
+            items.append(_MARK_PREFIX_RE.sub("", w))
     if analysis.get("degraded"):
         items.append("评论原文与主题归因：需人工核查（未接入外部评论源）。")
     if not signals.get("source", {}).get("report_id"):
-        items.append("lowReviewNum / reviewNum / reviewRate：需自定义报表 report_id。")
+        # 降级原因属上游失败（发现失败/候选验证被拒）时，manual_checks 已带如实文案，
+        # 再补「需配置 report_id」会把上游故障误导成用户没配置 → 只在真·未配置时补
+        reason = (signals.get("source") or {}).get("degraded_reason") or "not_configured"
+        if reason == "not_configured" and not any("lowReviewNum" in it for it in items):
+            items.append("lowReviewNum / reviewNum / reviewRate：需自定义报表 report_id。")
     items.append("评论原文的完整性与代表性（外部源抽样可能偏倚）：需人工判断。")
     items.append("外部评论源的合规性（ToS/授权/法律）：需人工确认。")
     lines = ["## 4. 需人工核查清单", ""]
-    for it in dict.fromkeys(items):
+    seen = set()
+    for it in items:
+        key = _item_key(it)
+        if key in seen:
+            continue
+        seen.add(key)
         lines.append(f"- ⚠️ {it}")
     lines.append("")
     return "\n".join(lines)

@@ -70,6 +70,11 @@ def _pricing_md(pricing: Optional[Dict[str, Any]]) -> str:
         f"- 成本合计：{pricing.get('total_cost') if pricing.get('cost_complete') else '⚠️ 不完整，需人工核查'}",
         f"- 预估毛利：{display('estimated_profit')}；预估毛利率：{display('estimated_margin_pct', '%')}",
     ]
+    headtrip_src = pricing.get("headtrip_source")
+    if headtrip_src:
+        headtrip = (pricing.get("cost_breakdown") or {}).get("headtrip")
+        headtrip_s = "无数据（需人工核查）" if headtrip is None else str(headtrip)
+        lines.append(f"- 头程：{headtrip_s}（来源：{headtrip_src}）")
     if pricing.get("suggested_price") is not None:
         lines.append(f"- 目标毛利率 {pricing.get('target_margin_pct')}% 倒推建议售价：**{pricing.get('suggested_price')}**")
     return "\n".join(lines)
@@ -107,7 +112,7 @@ def render_package(
     blocks.append("## 1. 市场与竞品调研")
     analysis = (baseline or {}).get("analysis") or []
     if analysis:
-        blocks.append(f"- 赛狐商品分析记录：{len(analysis)} 条（类目/BSR/上架时间见附录）")
+        blocks.append(f"- 赛狐商品分析记录：{len(analysis)} 条（含类目/BSR/上架时间）")
     else:
         blocks.append("- ⚠️ 需人工核查：竞品/关键词情报需外部 MCP（Tavily/Sorftime/Keepa）或人工调研补充")
     blocks.append("")
@@ -162,7 +167,7 @@ def render_package(
     blocks.append("- **字符/字节限制**：亚马逊各品类确切限制本次未验证，须按目标站点最新官方要求核对。")
     blocks.append("- **商标/专利/资质**：本技能无相关数据库访问能力，仅提示、不下结论。")
     blocks.append("- **评论原文**：赛狐仅有聚合指标（rating/ratingCount），无评论内容。")
-    blocks.append("- **头程成本**：headTripPrice 仅存在于 get_custom_report_page_list；未接自定义报表时需人工核查。")
+    blocks.append("- **头程成本**：优先取商品行 `headTripCost`（get_online_product_page_list，实测返回）；缺值时需接自定义报表宽表（`headTripPrice`）或人工核查。")
     if notes.warnings:
         blocks.append("\n### 数据说明与警示")
         blocks.extend(f"- {w}" for w in notes.warnings)

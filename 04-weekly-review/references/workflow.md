@@ -85,7 +85,7 @@ python scripts/period.py --period week --anchor 2026-10-12
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=本期`（`yyyyMMdd`）；`profit_caliber_type` 显式（settlement/shipment）；`page_no/page_size` 为 **integer** | `reportList` | 40 | 本期核心指标、店铺明细；**缺失 → 脚本退出码 2** |
+| 1 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=本期`（`yyyyMMdd`）；`profit_caliber_type` 显式（settlement/shipment）；`page_no/page_size` 为 **integer** | `reportList` | 40 | 本期核心指标、店铺明细；**缺失/failed → 退出码 2（信号非中断，产物照写，报告可继续生成）** |
 | 2 | `out/raw/profit_shop_prev.json` | 同上 | `start/end=上期`（`yyyyMMdd`） | `reportList` | 40 | 环比基线 |
 | 3 | `out/raw/profit_shop_prev_month.json` | 同上 | `start/end=上月同期`（`yyyyMMdd`） | `reportList` | 40 | 对比上月同期 |
 | 4 | `out/raw/profit_shop_prev_year.json` | 同上（同比开启时） | `start/end=去年同期`；⚠️ 超出「按日限最近 6 个月」的窗口可能被拒/夹取 → 按当次契约描述改**按月 `yyyyMM`**（该月整月口径，报告标注） | `reportList` | 40 | 同比基线；`compare.yoy=false` 时跳过 |
@@ -93,7 +93,7 @@ python scripts/period.py --period week --anchor 2026-10-12
 | 6 | `out/raw/profit_msku.json` | `get_profit_report_by_msku` | 类型规则同店铺利润报表（分页 **integer**、日期 `yyyyMMdd`、`profit_caliber_type` 显式）；`currency`（跨币种聚合时） | `reportList` | 20 | Top/Bottom 榜单源，**单文件双榜单**（组装层本地按销售额降序/毛利升序排）；行数需 ≥ top.n+bottom.n，不足则披露覆盖不足 |
 | 7 | `out/raw/custom_current.json` | `get_custom_report_page_list` | `report_id`；`start/end=本期`（`yyyy-MM-dd`）；`product_dim=msku`；分页参数按当次契约 | `rows` | 80 | 489 字段宽表（本期）；**依赖 report_id，缺 → 跳过整步（降级）** |
 | 8 | `out/raw/custom_prev*.json`（可选） | 同上 | 同上，历史窗口（`custom_prev.json` / `custom_prev_month.json` 等） | `rows` | 80 | 计算面当前只消费 `custom_current`；历史窗口备用 |
-| 9 | `out/raw/trend.json`（可选，`trend.enabled` 时） | `get_product_analyze_detail`（先 `get_product_analyze_list` 取 `groupByStr`） | `dim_type=1`；本期窗口；`stat_time_type`（周报=1 按日 / 月报=4 按月） | — | — | 落盘 `data.charData` 所在信封；缺失时计算层自动降级为利润报表 `bizDay` 日粒度 |
+| 9 | `out/raw/trend.json`（可选，`trend.enabled` 时） | `get_product_analyze_detail`（先 `get_product_analyze_list` 取 `groupByStr`） | `dim_type=1`；本期窗口；`stat_time_type`（周报=1 按日 / 月报=4 按月）；⚠️ `get_product_analyze_list` 契约顶层 `anyOf` 要求 **`fields` / `field_modules` 至少一项非空**（实测缺失即 `INVALID_PARAMS rule:anyOf`），如 `fields=["asin","title","sevenSaleNum","profitPrice","profitRate"]` | — | — | 落盘 `data.charData` 所在信封；缺失时计算层自动降级为利润报表 `bizDay` 日粒度 |
 | 10 | `out/raw/shops.json`（可选） | `get_shop_page_list` | `page_no/page_size` 为 **string** | `rows` | 40 | 本技能计算面不依赖；仅告警路由/展示备用 |
 
 **落盘纪律**（详见 `_shared/SELLFOX_CLIENT.md` §7）：
@@ -123,7 +123,9 @@ python scripts/test_regression.py   # 改动计算层后先跑回归护栏
 
 - `fetch_weekly_data.py`（v3 改造）：校验 `out/raw/`（存在性/status/空数据/演示指纹/
   coverage 截断），组装出与旧版相同形状的 `weekly_data.json` —— compute/render/push 零改动；
-  本期窗口缺失或失败 → 退出码 2，先补齐落盘再重跑；
+  本期窗口缺失或失败 → **退出码 2 = 信号（有步骤失败需注意），非中断**：中间产物
+  `weekly_data.json` 照写，compute/render 可继续产出降级报告（本期列「⚠️ 需人工核查」，
+  核心结论标注取数失败、异常判定不可用）；补齐落盘后重跑可获完整报告；
 - 也可单独跑共享校验器：
   `python _shared/scripts/validate_raw.py --dir out/raw --step profit_shop_current:reportList --step profit_msku:reportList --window 2026-10-05:2026-10-11`
   （窗口 = 本期 `start_iso:end_iso`，用于「演示环境日期过滤不可信」检测）。
@@ -169,7 +171,7 @@ python scripts/push_feishu.py --markdown weekly_report.md --computed computed.js
 | 缺失项 | 影响 | 降级做法 | 必须标注 |
 |---|---|---|---|
 | `out/raw/` 为空 | 无法组装 | `fetch_weekly_data.py` 直接退出并提示按取数计划落盘 | — |
-| `profit_shop_current.json` 缺失/failed/损坏 | 本期核心指标不可用 | 脚本退出码 2；补齐落盘后重跑 | — |
+| `profit_shop_current.json` 缺失/failed/损坏 | 本期核心指标不可用 | 退出码 2 = **信号而非中断**：`weekly_data.json` 照写，compute/render 继续产出降级报告（本期列「⚠️ 需人工核查」、核心结论标注取数失败）；补齐后重跑获完整报告 | 数据说明记录失败步骤与 error_code |
 | 某历史窗口文件缺失（prev/prev_month/prev_year/mtd） | 对应环比/同比列「不适用」、达成率不可用 | 继续组装，`sources` 标 degraded | 数据说明记录缺失步骤 |
 | `reports.daily_ops.id` 为空 | 宽表指标（流量/广告/退款/可售天数）不可用 | 取数计划第 7/8 步整步跳过 | 「口径降级：未配置 custom report_id」 |
 | `custom_current.json` 缺失/失败 | 同上 | 宽表步骤标 degraded，其余照常 | 数据说明记录 |

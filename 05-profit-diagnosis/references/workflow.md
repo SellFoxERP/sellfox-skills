@@ -75,7 +75,7 @@
 | 4 | `out/raw/custom_base.json` | 同上 | 同上，但日期=基期 | `rows` | 200 | 主源 B（基期） |
 | 5 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | 同步骤 1（`yyyyMMdd` + `date_type=2` + `profit_caliber_type`；分页 **integer**） | `reportList` | 60 | 背景源：判断整体恶化 vs 个别 MSKU（本期） |
 | 6 | `out/raw/profit_shop_base.json` | 同上 | 同上，但日期=基期 | `reportList` | 60 | 背景源（基期） |
-| 7 | `out/raw/reimbursement.json` | `get_amazon_reimbursement_report` | `start_time`=基期起点、`end_time`=本期终点（`yyyy-MM-dd`，范围 ≤1 年） | `rows` | 100 | 交叉核对赔偿漏领。**可能返回 `data:{}`** → 落盘原样保留，标「无数据」，不重试 |
+| 7 | `out/raw/reimbursement.json` | `get_amazon_reimbursement_report` | `start_time`=基期起点、`end_time`=本期终点（**`yyyy-MM-dd HH:mm:ss`**，按契约；范围 ≤1 年） | `rows` | 100 | 交叉核对赔偿漏领。**可能返回 `data:{}`** → 落盘原样保留，标「无数据」，不重试 |
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §7）：
 
@@ -145,10 +145,12 @@ agent 落盘的是完整信封（行字段原样），`fetch_profit.py` 的 `MSK
 | 字段 | 实测样例 |
 |---|---|
 | `msku` / `sku` / `spu` | `["MSKU-DEMO-001"]` |
-| `asin` / `parentAsin` / `fnsku` / `shopId` / `marketplaceId` / `title` | `[{"key": "B0DEMO0001"}]` |
+| `asin` / `asinList`（线上契约实测） | `["B0DEMO1001"]` —— 线上为**纯字符串数组**；亦兼容 `[{"key": "B0DEMO0001"}]` 形态 |
+| `parentAsin` / `fnsku` / `shopId` / `marketplaceId` / `title` | `[{"key": "B0DEMO0001"}]` |
 
 直接把 `msku` 当字符串用会得到 `"['MSKU-DEMO-001']"` 或报错。
-统一走 `fetch_profit.first_scalar()` / `pick()` 归一化（列表 → 取第一个非空；dict → 取 `key`/`value`/`name`）。
+统一走 `fetch_profit.first_scalar()` / `pick()` 归一化（列表 → 取第一个非空；dict → 取 `key`/`value`/`name`，
+纯字符串数组 → 原样取标量）——两种形态都被归一化吸收，无功能差异。
 
 ## 8. 空数据与截断的披露
 

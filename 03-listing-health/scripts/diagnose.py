@@ -144,7 +144,17 @@ def diagnose(data: Dict[str, Any]) -> Dict[str, Any]:
             elif sessions is None:
                 manual.append(f"ASIN {lc.key_of(rec.get('asin')) or '?'}：sessions 无数据")
         else:
-            manual.append(f"ASIN {lc.key_of(rec.get('asin')) or '?'}：无流量检查不可用（缺 report_id）")
+            # 如实归因：区分「未配置」「已配置但取数失败」「已启用但无该记录行」，
+            # 不再把已配置 report_id 的情况误写成「缺 report_id」。
+            wide = meta.get("wide_table") or {}
+            if not report_configured:
+                reason = "缺 report_id"
+            elif wide.get("status") == "fetch_failed":
+                codes = "、".join(wide.get("error_codes") or [])
+                reason = f"宽表取数失败{f'（error_code：{codes}）' if codes else ''}"
+            else:
+                reason = "宽表已启用但无该 ASIN 匹配行"
+            manual.append(f"ASIN {lc.key_of(rec.get('asin')) or '?'}：无流量检查不可用（{reason}）")
 
         # --- P2：有流量无转化 ---
         if report_configured and t is not None:
@@ -235,6 +245,11 @@ def diagnose(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # --- 断货提示（退化路径提示，不进入补货逻辑）---
     for rec in online_rows:
+        # P0 已删除/不可售的商品不再给「断货拖累排名」建议（商品本身已下架，补货提示是噪声）
+        status_raw = lc.key_of(rec.get("onlineStatus"))
+        status = (status_raw or "").strip().lower()
+        if status and status != "active":
+            continue
         qty = lc.to_float(rec.get("quantity"))
         if qty == 0:
             t = _traffic_for(rec, traffic_index)
@@ -268,6 +283,8 @@ def diagnose(data: Dict[str, Any]) -> Dict[str, Any]:
             "generated_at": meta.get("generated_at"),
             "report_configured": report_configured,
             "degraded": not report_configured,
+            "wide_table": meta.get("wide_table"),
+            "by_label": meta.get("by_label"),
             "demo_fingerprint": meta.get("demo_fingerprint"),
             "window": meta.get("window"),
             "statuses_scanned": meta.get("statuses_scanned"),

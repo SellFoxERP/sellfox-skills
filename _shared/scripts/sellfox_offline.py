@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import calendar
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -61,8 +62,9 @@ def detect_date_filter_unreliable(
     """检测「演示环境日期过滤失效」：返回数据的日期字段不在请求窗口内。
 
     演示/沙箱后端会忽略日期过滤（实测请求 2026-10-14 返回 2024-01 数据）。
-    只要有任一日期字段值落在 ``[window_start, window_end]``（yyyy-MM-dd 字符串比较）
-    之外，即判定不可信。数据无日期字段时返回 False（无法判定）。
+    只要有任一日期字段值落在 ``[window_start, window_end]``（yyyy-MM-dd 字符串比较）之外，
+    即判定不可信。窗口也支持月粒度（``yyyyMM`` / ``yyyy-MM``，自动扩展为当月首末日）。
+    数据无日期字段时返回 False（无法判定）。
     """
     def normalized(value):
         text = str(value or "")
@@ -73,6 +75,10 @@ def detect_date_filter_unreliable(
         return None
 
     start, end = normalized(window_start), normalized(window_end)
+    if start is None:
+        start = _month_bounds(window_start)[0]
+    if end is None:
+        end = _month_bounds(window_end)[1]
     if not start or not end:
         return False
     for row in _iter_rows(payload):
@@ -83,6 +89,23 @@ def detect_date_filter_unreliable(
             if day and not (start <= day <= end):
                 return True
     return False
+
+
+def _month_bounds(value: Any) -> Tuple[Optional[str], Optional[str]]:
+    """月粒度窗口（``yyyyMM`` / ``yyyy-MM``）扩展为当月首末日，供日值比较。
+
+    返回 ``(首日, 末日)``（yyyy-MM-dd）；非月格式或非法月份返回 ``(None, None)``。
+    """
+    text = str(value or "").strip()
+    year = month = None
+    if len(text) == 6 and text.isdigit():
+        year, month = int(text[:4]), int(text[4:6])
+    elif len(text) == 7 and text[4] == "-":
+        year, month = int(text[:4]), int(text[5:7])
+    if year is None or month is None or not (1 <= month <= 12):
+        return None, None
+    last_day = calendar.monthrange(year, month)[1]
+    return f"{year:04d}-{month:02d}-01", f"{year:04d}-{month:02d}-{last_day:02d}"
 
 
 def _iter_rows(payload: Any) -> Iterable[Any]:

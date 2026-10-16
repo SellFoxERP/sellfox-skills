@@ -223,6 +223,26 @@ def _classify_perf_xlsx(raw: Path) -> Dict[str, List[Path]]:
     return out
 
 
+def _report_state_class(state: Any) -> str:
+    """把 reportState 归一化为 success / failed / unknown（中英文都认）。
+
+    实测 reportState 取值为中文（已生成 / 生成失败 / 生成中…），旧判定只认
+    英文 FAIL/ERROR 子串，中文失败态漏报告警（评测 2026-10-16 #5）。口径：
+      * failed ：含「失败」，或含 FAIL/ERROR 子串（生成失败、失败、FAILED…）；
+      * success：已生成 / 生成完成，或 SUCCESS/COMPLETED/GENERATED 整词；
+      * 其余（生成中、排队中…）= unknown：不是失败，也不算就绪。
+    """
+    s = str(state or "").strip()
+    if not s:
+        return "unknown"
+    up = s.upper()
+    if "失败" in s or "FAIL" in up or "ERROR" in up:
+        return "failed"
+    if "已生成" in s or "生成完成" in s or up in ("SUCCESS", "SUCCESSFUL", "COMPLETED", "GENERATED"):
+        return "success"
+    return "unknown"
+
+
 def _load_download_tasks(raw: Path, sink: "AdData") -> None:
     """读取 download_tasks.json（get_ad_download_task_page_list 信封），记录任务态摘要。"""
     sink.download_tasks = {"exists": False, "status": "", "states": {}}
@@ -246,8 +266,11 @@ def _load_download_tasks(raw: Path, sink: "AdData") -> None:
             key = str(row.get("reportState") or "unknown")
             states[key] = states.get(key, 0) + 1
     sink.download_tasks["states"] = states
-    if any("FAIL" in k.upper() or "ERROR" in k.upper() for k in states):
-        sink.warnings.append(f"下载任务存在失败态：{states}，对应绩效文件不可信。")
+    failed_states = {k: n for k, n in states.items() if _report_state_class(k) == "failed"}
+    if failed_states:
+        sink.warnings.append(
+            f"下载任务存在失败态：{failed_states}，对应绩效文件不可信（成功态为「已生成」）。"
+        )
 
 
 # ---------------------------------------------------------------------------

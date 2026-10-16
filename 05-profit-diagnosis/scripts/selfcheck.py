@@ -167,6 +167,10 @@ def main() -> int:
                    f"指纹={result.demo_fingerprint}"))
     checks.append(("数据源去重（get_profit_report_by_msku 只记一次）",
                    result.sources.count("get_profit_report_by_msku") == 1, f"sources={result.sources}"))
+    checks.append(("赔偿 data:{} → 注册进数据源清单且状态「无数据」（修复#1）",
+                   "get_amazon_reimbursement_report" in result.sources
+                   and result.reimbursement_status == "无数据",
+                   f"状态={result.reimbursement_status}"))
 
     # --- 归因（双源齐全）---
     # 本期毛利 800，基期 2000 → 跌 1200。制造 3 个诱因：销售额跌、采购成本涨、广告涨。
@@ -240,6 +244,9 @@ def main() -> int:
     # --- v3 边界：空落盘 / 零信封 / 截断披露 / 自定义报表两窗口缺失 ---
     checks.extend(_check_edges(cfg))
 
+    # --- 评测修复（2026-10-16）：赔偿三态计数 / 正号费用符号校准 ---
+    checks.extend(_check_fixes(cfg))
+
     # --- 环比窗口夹取：合法且等长 + 披露 ---
     checks.extend(_check_windows())
 
@@ -308,6 +315,95 @@ def _check_edges(cfg) -> list[tuple[str, bool, str]]:
         checks.append(("custom 两窗口未落盘 → 四类归因不可用显式披露",
                        any("不可用" in w and "custom_current" in w for w in res_n.warnings),
                        f"warnings={[w[:40] for w in res_n.warnings]}"))
+
+    return checks
+
+
+def _check_fixes(cfg) -> list[tuple[str, bool, str]]:
+    """评测修复（2026-10-16）回归：
+
+    * 修复#1 —— 赔偿源注册进 sources + 计数/状态按真实落盘信封（已取数 N 批 M 行 /
+      无数据 / 取数失败带 error_code），不再恒「未取数」；
+    * 修复#2 —— msku 报表费用为**正数**存储（线上实测口径）时，费用因子贡献方向按
+      实测符号修正并在报告披露（收入类因子不校准）。
+    """
+    checks: list[tuple[str, bool, str]] = []
+
+    def _msku_pair(raw_dir: Path, *, cur: dict, base: dict) -> None:
+        _write(raw_dir, "profit_msku_current.json", _envelope([_mk_msku_row(**cur)]))
+        _write(raw_dir, "profit_msku_base.json", _envelope([_mk_msku_row(**base)]))
+
+    with tempfile.TemporaryDirectory(prefix="profit_fix_") as td:
+        # 1) 赔偿信封含 3 行 → 「已取数 1 批 / 3 行」且数据源清单注册该工具。
+        raw3 = Path(td) / "reimb3"
+        _msku_pair(raw3,
+                   cur=dict(sales=7000, gross=800, commission=-700, fba=-600, cpc=-560,
+                            storage=-40, refund_sales=-100),
+                   base=dict(sales=9000, gross=2000, commission=-900, fba=-600, cpc=-300,
+                             storage=-40, refund_sales=-100))
+        _write(raw3, "reimbursement.json", _envelope(
+            [{"caseId": f"R-FIX{i}", "msku": "MSKU-DEMO-1", "amount": 10.0 * i} for i in (1, 2, 3)],
+            list_key="rows"))
+        res3 = assemble_all(report_id=None, shop_ids=[], skill_cfg=cfg, raw_dir=raw3, **WINDOWS)
+        checks.append(("赔偿 3 行 → 已取数 1 批 / 3 行 且注册进数据源（修复#1）",
+                       res3.reimbursement_status == "已取数 1 批 / 3 行"
+                       and len(res3.reimbursement_rows) == 3
+                       and "get_amazon_reimbursement_report" in res3.sources,
+                       f"状态={res3.reimbursement_status}"))
+
+        # 2) 赔偿信封 failed → 状态/coverage 行区分「取数失败（error_code）」与「无数据」。
+        rawf = Path(td) / "reimb_failed"
+        _msku_pair(rawf,
+                   cur=dict(sales=7000, gross=800, commission=-700, fba=-600, cpc=-560,
+                            storage=-40, refund_sales=-100),
+                   base=dict(sales=9000, gross=2000, commission=-900, fba=-600, cpc=-300,
+                             storage=-40, refund_sales=-100))
+        _write(rawf, "reimbursement.json", {
+            "status": "failed", "error_code": "UPSTREAM_TIMEOUT",
+            "message": "演示注入：赔偿取数失败", "data": None,
+            "coverage": {}, "pagination": {}, "trace_id": "fix-reimb-failed",
+        })
+        resf = assemble_all(report_id=None, shop_ids=[], skill_cfg=cfg, raw_dir=rawf, **WINDOWS)
+        checks.append(("赔偿 failed → 状态/coverage 带 error_code 的「取数失败」（修复#1/#3）",
+                       resf.reimbursement_status == "取数失败（error_code：UPSTREAM_TIMEOUT）"
+                       and any("reimbursement: 取数失败（error_code：UPSTREAM_TIMEOUT）" in c
+                               for c in resf.coverage)
+                       and not any(c.startswith("reimbursement: 无数据") for c in resf.coverage)
+                       and "get_amazon_reimbursement_report" in resf.sources,
+                       f"状态={resf.reimbursement_status}"))
+
+        # 3) 正号费用（线上 msku 报表实测口径）：广告 900→1250 贡献须修正为 +350（不校准则 -350），
+        #    销售额（收入类）不校准仍 +2000；并在报告披露「实测为正号存储」。
+        rawp = Path(td) / "positive_fee"
+        _msku_pair(rawp,
+                   cur=dict(sales=7000, gross=1200, commission=950, fba=1380, cpc=1250,
+                            storage=200, refund_sales=260),
+                   base=dict(sales=9000, gross=3000, commission=900, fba=1200, cpc=900,
+                             storage=200, refund_sales=180))
+        resp = assemble_all(report_id=None, shop_ids=[], skill_cfg=cfg, raw_dir=rawp, **WINDOWS)
+        rep = diagnose(msku_rows=resp.msku_rows, custom_rows=resp.custom_rows, skill_cfg=cfg)
+        dp = next(m for m in rep.mskus if m.msku == "MSKU-DEMO-1")
+        pk = {f.key: f for f in dp.factors}
+        checks.append(("正号费用：广告涨 900→1250 贡献修正为 +350 且 sign_calibrated（修复#2）",
+                       pk["ad_cost"].sign_calibrated and round(pk["ad_cost"].contribution) == 350
+                       and round(pk["sales"].contribution) == 2000
+                       and not pk["sales"].sign_calibrated,
+                       f"ad={pk['ad_cost'].contribution} sales={pk['sales'].contribution}"))
+        md_p = render_report(
+            rep,
+            fetch_meta={
+                "sources": resp.sources, "coverage": resp.coverage, "warnings": resp.warnings,
+                "demo_fingerprint": resp.demo_fingerprint, "degraded": resp.degraded,
+                "caliber": resp.caliber, "report_currency": "USD", "cost_currency": "CNY",
+                "top_n": 20, "include_deferred_section": True,
+                "reimbursement_count": resp.reimbursement_status, "mcp_calls": resp.mcp_calls,
+            },
+            **WINDOWS,
+        )
+        checks.append(("正号费用：报告披露「实测为正号存储」符号校准（修复#2）",
+                       "符号校准披露" in md_p and "实测为正号存储" in md_p
+                       and "已按正号口径归因" in md_p,
+                       ""))
 
     return checks
 

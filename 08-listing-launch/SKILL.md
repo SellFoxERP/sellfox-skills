@@ -54,7 +54,7 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 | `references/listing-package-template.md` | 渲染上架包时（严格照此结构） |
 | `adapters/README.md` | 接入/更换生图生视频 MCP 时 |
 | `_shared/SELLFOX_CLIENT.md` | **必读**：MCP 调用约定（contract_version、参数类型按契约、错误语义、并发、落盘纪律） |
-| `_shared/config/reports.yaml` | 需要头程成本（`headTripPrice`）时——它只在自定义报表宽表里 |
+| `_shared/config/reports.yaml` | 商品行 `headTripCost` 缺值、需要宽表头程（`headTripPrice`）时——宽表是补充源 |
 
 > `_shared/` 是 9 个技能共用底座，**不是技能**。脚本通过本技能 `config/paths.yaml`
 > 定位它；优先使用包内 `_shared/`，源码布局回退到同级共享目录。
@@ -148,10 +148,10 @@ python3 scripts/fetch_baseline.py --raw-dir out/raw
 | 佣金 | `referralFee` | get_online_product_page_list | 售价口径 |
 | FBA | `fbaFees` | get_online_product_page_list | 售价口径 |
 | 变动结算费 | `variableClosingFee` | get_online_product_page_list | 售价口径 |
-| 头程 | `headTripPrice` | **仅 get_custom_report_page_list** | 成本口径 |
+| 头程 | `headTripCost`（商品行，首选）/ `headTripPrice`（宽表补充） | get_online_product_page_list / get_custom_report_page_list | 成本口径 |
 
 - 跨币种必须经 `config/fx.yaml` 换算，并标注**汇率来源 + 日期**；未配置 → 「需人工核查」。
-- 头程在本技能用的工具里**取不到** → 固定标「需人工核查」。
+- 头程优先取商品行 `headTripCost`（来源标注「商品行」）；缺值再走宽表/人工，标「需人工核查」。
 - 费用不完整时**不给**「精确」利润，只标「估算、仅供参考」。
 
 ### 阶段 8：渲染与交付
@@ -204,7 +204,7 @@ python3 scripts/listing_launch.py ... --confirm-assets
 - **字符/字节限制未验证** —— 按目标站点最新官方要求核对，未配置则标「需人工核查」。
 - **商标/专利/资质** —— 本技能无相关数据源，仅提示、不下结论。
 - **评论原文** —— 赛狐仅有聚合指标（`rating`/`ratingCount`），无评论内容。
-- **头程成本** —— `headTripPrice` 仅存在于 `get_custom_report_page_list`，需接自定义报表。
+- **头程成本** —— 优先取商品行 `headTripCost`；缺值时需接自定义报表宽表（`headTripPrice`）或人工核查。
 - **竞品/关键词情报** —— 需外部 MCP（Tavily/Sorftime/Keepa）或人工调研，否则标「需人工核查」。
 - 空数据（`data:{}`）标「无数据」，**不写 0**；演示环境数据必须警示。
 

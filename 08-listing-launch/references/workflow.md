@@ -70,7 +70,7 @@
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/online_product.json` | `get_online_product_page_list` | `search_type`/`search_content`（asin/parentAsin/msku/sku/title/fnsku/commodityName）；`marketplace_id_list=[站点]`；`shop_id_list`（每批 ≤20 行）；分页参数类型按当次契约 | `rows` | 20 | Listing 属性 + 成本/费用/价格 + FBA 库存 → 商品基线 `products` |
-| 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `search_type`；`search_mode=exact`；`search_contents`；`dim_type="1"`（asin 维度）；`marketplace_id_list` / `shop_id_list` 同上 | `rows` | 20 | 类目 / BSR / 上架时间 → 基线 `analysis`；失败不阻断主流程（标需人工核查） |
+| 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `search_type`；`search_mode=exact`；`search_contents`；`dim_type="1"`（asin 维度）；`fields` / `field_modules` **至少一项非空**（契约顶层 anyOf 必填——线上实测缺省被拒 `INVALID_PARAMS field_errors=[{path:"",rule:"anyOf"}]`，补 `fields` 可恢复）；`marketplace_id_list` / `shop_id_list` 同上 | `rows` | 20 | 类目 / BSR / 上架时间 → 基线 `analysis`；失败不阻断主流程（标需人工核查） |
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §7）：
 
@@ -165,10 +165,10 @@ A+ 模块图 ×5~7
 | 佣金 | `referralFee` | get_online_product_page_list | 售价口径 |
 | FBA | `fbaFees` | get_online_product_page_list | 售价口径 |
 | 变动结算费 | `variableClosingFee` | get_online_product_page_list | 售价口径 |
-| 头程 | `headTripPrice` | **仅 get_custom_report_page_list** | 成本口径 |
+| 头程 | `headTripCost`（商品行，首选）/ `headTripPrice`（宽表补充） | get_online_product_page_list / get_custom_report_page_list | 成本口径 |
 
 - 跨币种必须经 `config/fx.yaml` 换算，并标注**汇率来源 + 日期**；未配置 → 标「需人工核查」。
-- 头程在本技能用的工具里取不到 → 固定标「需人工核查」。
+- 头程优先取商品行 `headTripCost`（来源标注「商品行」）；缺值再走宽表/人工，标「需人工核查」。
 - 费用不完整时**不给**「精确」利润，只标「估算、仅供参考」。
 
 ---
@@ -217,5 +217,5 @@ A+ 模块图 ×5~7
 | `data` 为空（status=complete） | 该品无数据 | 标「**无数据**」，不写 0，不重试；提示确认 ASIN/MSKU/站点是否正确 | 「无数据」 |
 | `coverage.truncated=true` | 只覆盖 Top N | 写入 warnings，渲染层披露「仅覆盖 N 行，其余未纳入」 | 「截断披露」 |
 | 命中演示指纹 | 数据非真实 | 包顶加「⚠️ 演示数据」水印，默认阻断写飞书 | 水印 |
-| `product_analyze` 缺失/失败 | 类目/BSR/上架时间缺 | 上架包其余部分（文案/需求单/合规/测算）照常产出并披露该降级 | 「商品分析缺失（已降级）」 |
+| `product_analyze` 缺失/失败 | 类目/BSR/上架时间缺 | 上架包其余部分（文案/需求单/合规/测算）照常产出并披露该降级 | 区块 1 标「⚠️ 需人工核查：竞品/关键词情报需外部 MCP…」；失败时「待人工确认项」逐字记录 status=failed 与 error_code，缺失时记录「缺落盘 product_analyze.json」 |
 | 汇率（`config/fx.yaml`）未配置 | 跨币种无法折算 | 利润只标「估算、仅供参考」，不给精确值 | 「汇率未配置，需人工核查」 |

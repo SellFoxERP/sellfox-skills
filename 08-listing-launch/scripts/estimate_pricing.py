@@ -9,12 +9,13 @@
 | 平台佣金 | ``referralFee`` | get_online_product_page_list | 售价口径 |
 | FBA 费用 | ``fbaFees`` | get_online_product_page_list | 售价口径 |
 | 变动结算费 | ``variableClosingFee`` | get_online_product_page_list | 售价口径 |
-| 头程 | ``headTripPrice`` | **仅 get_custom_report_page_list** | 成本口径 |
+| 头程 | ``headTripCost``（商品行，首选）/ ``headTripPrice``（宽表补充） | get_online_product_page_list / get_custom_report_page_list | 成本口径 |
 
 铁律：
 - 售价（USD）与成本（CNY）**不得直接相减**；必须经 ``config/fx.yaml`` 换算并标注来源/日期。
 - 汇率未配置 → 标「⚠️ 需人工核查」，**不臆造汇率、不给假数字**。
-- 头程在 get_online_product_page_list 取不到 → 标「需人工核查」。
+- 头程优先消费商品行 ``headTripCost``（线上实测返回；来源标注「商品行」，成本口径换算入账），
+  缺值再走宽表 ``headTripPrice`` / 人工核查。
 """
 
 from __future__ import annotations
@@ -55,8 +56,14 @@ def _convert(
         valid_rate = float(rate)
     except (TypeError, ValueError):
         valid_rate = 0.0
-    if not math.isfinite(valid_rate) or valid_rate <= 0 or not fx.get("source") or not fx.get("as_of"):
-        notes.need_manual(f"{label} 汇率须为正数，且必须填写来源与日期")
+    if not math.isfinite(valid_rate) or valid_rate <= 0:
+        notes.need_manual(f"{label} 汇率须为正数")
+        return None
+    if not fx.get("source"):
+        notes.need_manual(f"{label} 汇率须填写来源")
+        return None
+    if not fx.get("as_of"):
+        notes.need_manual(f"{label} 汇率须填写日期")
         return None
     # 支持 base<->quote 两个方向。
     if from_ccy == quote and to_ccy == base:
@@ -125,26 +132,33 @@ def estimate_pricing(
         else:
             notes.need_manual("FBA 费用（fbaFees）取不到且未配置缺省值，需人工核查")
 
-    # 头程：本工具取不到，固定提示。
+    # 头程：优先消费商品行 headTripCost（线上实测字段；成本口径 → 换算到售价口径），
+    # 缺值再走宽表（get_custom_report_page_list → headTripPrice）/人工。
     note_headtrip = pricing.get("headtrip_source")
-    notes.need_manual(f"头程成本：{note_headtrip}")
+    headtrip_raw = product.get("headtrip_cost")
+    headtrip = _convert(headtrip_raw, cost_ccy, price_ccy, fx, notes, "头程成本")
+    if headtrip_raw is None:
+        notes.need_manual(f"头程成本：{note_headtrip}")
+    else:
+        notes.note_source("headtrip", "商品行 headTripCost")
+        result["headtrip_source"] = "商品行 headTripCost"
 
     # 组装单件利润（全部换算到售价口径）。
-    cost_items = [x for x in (purchase_cost, referral, fba, vcs) if x is not None]
-    result["cost_breakdown"] = {
+    cost_components: Dict[str, Optional[float]] = {
         "purchase_cost": purchase_cost,
         "referral_fee": referral,
         "fba_fees": fba,
         "variable_closing_fee": vcs,
-        "headtrip": None,  # 需人工核查
+        "headtrip": headtrip,
     }
+    result["cost_breakdown"] = dict(cost_components)
 
+    # total_cost 判据只看与成本直接相关的必填项是否**实际缺值**（采购成本/头程/佣金/FBA 等），
+    # 不看 notes.manual_checks——后者恒含字符限制等无关项，会把任何配置下的利润都拦掉。
+    missing_costs = [k for k, v in cost_components.items() if v is None]
     total_cost: Optional[float] = None
-    if cost_items and not notes.manual_checks:
-        total_cost = sum(cost_items)
-    elif cost_items:
-        # 有缺失项 → 不给「精确」总额，避免误导。
-        total_cost = None
+    if not missing_costs:
+        total_cost = sum(cost_components.values())
 
     est_profit: Optional[float] = None
     est_margin: Optional[float] = None
@@ -166,7 +180,9 @@ def estimate_pricing(
             result["target_margin_pct"] = target
             result["suggested_price"] = round(total_cost / (1 - t), 2)
     elif target is not None:
-        notes.need_manual("成本不完整（有费用缺失），无法倒推建议售价，需人工核查")
+        notes.need_manual(
+            f"成本不完整（缺 {'、'.join(missing_costs)}），无法倒推建议售价，需人工核查"
+        )
 
     result["manual_checks"] = list(notes.manual_checks)
     if not result["cost_complete"]:

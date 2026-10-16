@@ -45,7 +45,7 @@ session 并发安全，实测 10 并发 10/10 成功），但每步都要落盘�
 | 1 | `out/raw/shops.json` | `get_shop_page_list` | `page_no/page_size` 为 **string**（pattern `^[1-9][0-9]*$`） | `rows` | 40 | 店铺清单：为步骤 2 提供 shop_id 分批依据；可缓存 7 天 |
 | 2 | `out/raw/msku_<shopId>.json`（每店铺批一个） | `get_custom_report_page_list` | `report_id`（必填）；`start_date/end_date = on_date−report_window_days ~ on_date`（`yyyy-MM-dd`）；`shop_ids` 单批；分页参数按当次契约 | `rows` | 200（总量） | **主源**（489 字段宽表）。report_id 缺 → **整步跳过**走步骤 3 降级；单次 ≤1 页（服务端 20 条/页硬上限） |
 | 3 | `out/raw/online_products_<batch>.json` | `get_online_product_page_list` | `shop_id_list` 传数组（按当次契约）；`inventoryManage` 子对象随行返回 | `rows` | 200 | **降级 / 补充源**：report_id 缺失或宽表落盘缺失时才取 |
-| 4 | `out/raw/fba_shipments.json` | `get_fba_shipment_page_list` | `update_time_start/end` 至少一组完整区间（`yyyy-MM-dd HH:mm:ss`，≤360 天）；`shop_ids` 数组 | `rows` | 100 | 在途货件明细；可能 `data:{}` → 无数据 |
+| 4 | `out/raw/fba_shipments.json` | `get_fba_shipment_page_list` | `update_time_start/end` 至少一组完整区间（`yyyy-MM-dd HH:mm:ss`，≤360 天）；`shop_ids` 契约为 **integer 数组**——与店铺清单字符串 ID（`"AD-10001"`）不兼容，从报表行取数字 `shopId` 传入，取不到则省略（default `[]`） | `rows` | 100 | 在途货件明细；可能 `data:{}` → 无数据 |
 | 5 | `out/raw/awd_inventory.json` | `get_awd_inventory_page_list` | `page_no/page_size` 必填 | `rows` | 100 | AWD 库存；可能为空 → 无数据 |
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §7）：

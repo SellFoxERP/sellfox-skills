@@ -105,6 +105,57 @@ def _anomaly(
     }
 
 
+# --- 跨平台销量汇总（可选步骤 6）---------------------------------------------
+MULTI_VALUE_FIELDS = ("salePrice", "orderNum", "productNum")
+
+
+def _multiplatform_summary(data: Dict[str, Any]) -> Dict[str, Any]:
+    """汇总 bundle.data.multiplatform：按（指标, 平台, 币种）分组，不跨币种合计。
+
+    兼容两种行形状（均为线上/离线实测）：
+      * 扁平行：``{platformName: str, currency, salePrice, orderNum, ...}``；
+      * 嵌套行：``{platformName: [str], productSaleDayOpenVo: [{day, currency, salePrice, ...}]}``。
+    """
+    metrics = (data.get("multiplatform") or {}).get("metrics") or {}
+    groups: Dict[tuple, Dict[str, Any]] = {}
+    platforms: Dict[str, None] = {}
+    rows_total = 0
+    for metric in sorted(metrics):
+        for r in metrics[metric] or []:
+            if not isinstance(r, dict):
+                continue
+            platform = r.get("platformName")
+            if isinstance(platform, list):
+                platform = platform[0] if platform else None
+            platform = str(platform or "未知平台")
+            entries = r.get("productSaleDayOpenVo")
+            entries = entries if isinstance(entries, list) and entries else [r]
+            for e in entries:
+                if not isinstance(e, dict):
+                    continue
+                rows_total += 1
+                platforms.setdefault(platform, None)
+                cur_m = str(e.get("currency") or "未知")
+                g = groups.setdefault(
+                    (metric, platform, cur_m),
+                    {"metric": metric, "platform": platform, "currency": cur_m, "rows": 0,
+                     **{f: None for f in MULTI_VALUE_FIELDS}},
+                )
+                g["rows"] += 1
+                for f in MULTI_VALUE_FIELDS:
+                    v = num(e.get(f))
+                    if v is not None:
+                        g[f] = (g[f] or 0.0) + v
+    return {
+        "available": bool(groups),
+        "rows": rows_total,
+        "metrics": sorted(metrics),
+        "platforms": list(platforms),
+        "groups": sorted(groups.values(), key=lambda x: (x["metric"], x["platform"], x["currency"])),
+        "note": "跨平台行含多币种时按币种分组展示（未折算），不跨币种直接合计；覆盖平台以上游实际返回为准。",
+    }
+
+
 def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
     th = bundle.get("thresholds") or {}
     data = bundle.get("data") or {}
@@ -150,7 +201,6 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
         gmv = gross = None
         analysis["degradations"].append("返回多种币种，未统一折算；金额按返回币种分别展示，不计算跨币种总金额。")
     gpr = (gross / gmv * 100.0) if (gmv and gross is not None) else None
-
     ad_cost = _sum(msku_rows, "adCost")
     ad_sales = _sum(msku_rows, "adSalePrice")
     acos = (ad_cost / ad_sales * 100.0) if (ad_cost is not None and ad_sales) else None
@@ -161,7 +211,8 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
     analysis["l1"] = {
         "gmv": gmv, "gross_profit": gross, "gross_profit_rate": gpr,
         "units": units, "acos": acos, "cvr": cvr, "by_currency": grouped_money if len(groups) > 1 else {},
-        "currency": next(iter(groups)) if len(groups) == 1 else "多币种（分组展示）",
+        "currency": next(iter(groups)) if len(groups) == 1
+        else ("多币种（分组展示）" if groups else (bundle.get("config") or {}).get("currency", "USD")),
         "store_count": len(store_rows),
     }
 
@@ -343,6 +394,9 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
         "manual": ["政策合规 — MCP 无此接口", "绩效风险 — MCP 无此接口"],
     }
 
+    # ---------- 跨平台销量（可选步骤 6；多币种不跨币种合计）----------
+    analysis["multiplatform"] = _multiplatform_summary(data)
+
     # ---------- 今日红线（按 |偏离度| 排序，≤5）----------
     max_items = int((th.get("redline") or {}).get("max_items", 5))
     positives = [a for a in anomalies if a.get("deviation_pct") is not None]
@@ -358,6 +412,7 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
             "direction": "down", "clue": w["clue"], "unit": "天",
         })
     analysis["redlines"] = redlines
+    analysis["redline_max_items"] = max_items
 
     return analysis
 

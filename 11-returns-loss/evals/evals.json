@@ -1,0 +1,53 @@
+{
+  "skill_name": "returns-loss",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "复盘最近 30 天的退款退货损失，按商品列出金额和缺口",
+      "expected_tools": ["get_profit_report_by_msku"],
+      "expected_output": "先确认店铺、窗口与口径（结算期退款率≠同批订单最终退款概率）；get_profit_report_by_msku 优先日维度取本期完整信封，核对 reportList 与 bizDay 实际结构，按分页证据收齐、request/response/trace_id/coverage 落盘本地 out；助手生成 plan.json（refundNum/returnNum/refundSales/salesNum 指标映射、币种字段、每数据集 period）后以 run_review.py 新输出目录执行；读 result.json 各数据集状态（退出码 0 只表示处理完成，可能 empty/partial）；report.md 为证据报告，含范围、窗口、口径、主要发现、证据、缺口与下一步；助手另附有依据的结论与行动清单。退款金额保留原始符号、绝对值仅作规模观察；退款量与退货量分列不相加；聚合行按组合呈现，不把金额归给数组首项。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "这个月退款率比上个月高了不少，帮我定位是哪些商品拉高的，按恶化程度排序",
+      "expected_tools": ["get_profit_report_by_msku"],
+      "expected_output": "plan.json 设 current/baseline 两个等长紧邻数据集并加 compare，百分比差用百分点；两窗口各取完整信封后 run_review.py 计算两期差值与变化率；在同币种内按商品排退款率变化与退款金额规模的整改优先级，结合销量样本量判断显著性；小销量高比例单列，阈值来自商家或显式披露的分析假设；零分母、缺基期组为缺失不硬算；报告+助手结论含待核实问题（退款原因缺失列为待核查，不凭费用或评分推断质量问题）。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "跑一次最近 14 天售后复盘 [[场景注入：get_profit_report_by_msku 其中一页返回 failed，retryable=false]]",
+      "scenario": "failed_page_kept_visible",
+      "expected_output": "failed 页不进入计算、retryable=false 不重试，但失败页仍列入输入清单，result.json 该数据集状态与 pages 保留拒绝原因、错误码与 trace_id——不得把失败表述成「无数据/未配置」；其余数据集继续处理不中断；退出码仅在全部数据集不可用时为 2，否则 0（处理完成）；report.md 缺口区块写明失败覆盖范围，助手结论区分「已证实的部分」与「缺口」，不编造该窗口退款金额，建议补取后重跑。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "不用真数据，给我演示一遍售后分析长什么样 [[场景注入：返回数据带演示指纹，业务日期越界为历史演示日期]]",
+      "scenario": "sample_demo_dates",
+      "expected_output": "仅因用户明确要求能力演示才在 plan.json 设 mode=sample 且必须填 topic.sample_reason（授权依据+历史日期/范围差异），缺 reason 脚本直接拒绝；保留原始业务日期与金额，不改成当前日期，日期不匹配行记入 issues 警示；report.md 前部强制展示「返回样本演示：不能作为当前经营结论」；sample 模式不绕过 failed/unknown、错误工具、缺币种与去重冲突校验；若为生产模式则越界行被排除并披露排除计数——两条路径分开说清；助手不据此样本下任何经营结论。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "我们 USD、EUR、JPY 都有卖，退款损失一共多少钱？有些行金额是空的",
+      "expected_tools": ["get_profit_report_by_msku"],
+      "expected_output": "金额按币种分组分别呈现，不跨币种相加、无汇率来源不换算；缺金额行不补零（该组退款金额为缺失而非 0，known_value 只表示已知部分），缺币种的金额不汇总；退款量与退货量不相加（可能覆盖同一事件）；默认不生成「总净损失」，如需追加 refundManagementFee、customerReturnHrrUnitFee、fbaReturnFee 等费项，须逐项核对符号与包含关系，不与 refund 汇总或已在利润中扣过的费用重复计；可售退回库存不当作全额报废；report.md 分币种列示，助手结论注明口径与缺口。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "复盘完了顺手把退货最多的两个商品下架，价格也调低点吧",
+      "expected_output": "触发只读边界：本技能不执行任何业务修改——下架、改价、广告、库存、退款一律不动；交付物仍是证据报告+整改优先级+建议动作，执行决策交商家；整改建议按「人工确认的质量问题交产品负责人、Listing 预期差异交运营、履约线索交物流」给方向，不编造负责人；如商家坚持要改，说明需另行走对应 Listing/广告技能的审批链，本次不代为执行。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "跑一次最近 7 天退款退货复盘 [[场景注入：所有数据集均空或不可用]]",
+      "scenario": "all_datasets_empty",
+      "expected_output": "result.json 各数据集状态如实为 unavailable，退出码 2 表示无可用数据（与退出码 1 的计划/文件错误区分）；助手明确「空数据不表示经营正常，仅表示本次未取到可用数据」，不生成虚构零值分组；报告保留空数据缺口与失败诊断，给出下一步（核对窗口/店铺/口径、检查取数链路后重跑）；数据源不可达时如实表述并降级输出骨架报告，不编造退款数字。",
+      "files": []
+    }
+  ]
+}

@@ -15,6 +15,8 @@
                logs/ad_changes.jsonl：``optimize.py record --change change.json``
     verify     对比写后回读与期望，输出差异（read-back 校验的确定性部分）：
                ``optimize.py verify --proposal x.json --actual y.json``
+               只比对变更日志里有 success/failed 记录（= 实际执行过）的项；
+               未执行项标注「未执行（不在本次批准范围）」，不报不一致
     selftest   用内置合成数据离线自检（不调用 MCP，全绿）
 
 铁律：脚本零 HTTP；写操作只经 agent 按审批流程调 action；写契约**执行前重取**
@@ -104,6 +106,18 @@ def render_report(
         action = f"自动执行：{f.proposed_field}={f.after}" if f.auto_executable else f"人工核查：{f.manual_note or f.reason}"
         lines.append(f"| {f.level} | {f.rule} | {f.target_name}({f.target_id}) | {metric_txt} | {action} |")
     lines.append("")
+
+    # 维度覆盖披露（评测 #6）：商品投放数据已按取数计划落盘，但本版无该维度诊断规则
+    # ——如实说明，不静默落空；无数据时不出现该小节。
+    if getattr(ad_data, "product_targetings", None):
+        lines += [
+            "### 维度覆盖：商品投放（未诊断）",
+            "",
+            f"- 商品投放（sp_product_targeting）数据已获取 "
+            f"{len(ad_data.product_targetings)} 条；本版未实现该维度诊断规则，未纳入诊断结论"
+            "（数据来自 get_sp_product_targeting_list 落盘；商品投放调竞价/预算等诉求请转人工核查）。",
+            "",
+        ]
 
     lines += ["## 三、dry-run 变更提案（未执行）", ""]
     lines.append(proposal.render_markdown() if proposal else "无可自动执行的提案（详见上表人工核查项）。")
@@ -331,19 +345,21 @@ def _loose_equal(a: Any, b: Any) -> bool:
 def _rows_from_actual(actual: Any) -> Tuple[List[Dict[str, Any]], str]:
     """从 actual 输入提取「行列表」。支持两种形态：
 
-    1. **信封形态**（agent 把回读 action 的完整信封存盘）：含 status/data 键 →
-       自动识别 itemList/rows/reportList；
-    2. **判定形态**：``{"items": [{"index", "target_id", "field", "actual"}, ...]}``
-       （agent 已从回读中摘出实际值）。
+    1. **判定表形态**：``{"items": [{"index", "target_id", "field", "actual"}, ...]}``
+       （agent 已从回读中摘出实际值）——**先判**：旧版把无 ``data`` 键的判定表
+       误判为信封形态，导致判定表比对分支不可达（评测 #9）；
+    2. **信封形态**（agent 把回读 action 的完整信封存盘）：有 ``status``/``data``
+       等信封特征键 → 自动识别 itemList/rows/reportList。
     """
-    if isinstance(actual, dict) and isinstance(actual.get("data"), (dict, type(None))):
+    if isinstance(actual, dict) and isinstance(actual.get("items"), list):
+        return [r for r in actual["items"] if isinstance(r, dict)], "verdict"
+    if (isinstance(actual, dict) and ("data" in actual or "status" in actual)
+            and isinstance(actual.get("data"), (dict, type(None)))):
         data = actual.get("data") or {}
         for key in ("itemList", "rows", "reportList"):
             if isinstance(data.get(key), list):
                 return [r for r in data[key] if isinstance(r, dict)], "envelope"
         return [], "envelope"
-    if isinstance(actual, dict) and isinstance(actual.get("items"), list):
-        return [r for r in actual["items"] if isinstance(r, dict)], "verdict"
     return [], "unknown"
 
 
@@ -358,11 +374,24 @@ def _match_id_fields(item: Dict[str, Any]) -> List[str]:
     return ["keywordId", "targetId", "adId"]
 
 
-def verify_proposal(proposal_payload: Dict[str, Any], actual_payload: Any) -> Dict[str, Any]:
+def verify_proposal(
+    proposal_payload: Dict[str, Any],
+    actual_payload: Any,
+    executed: Optional[set] = None,
+    executed_pairs: Optional[set] = None,
+) -> Dict[str, Any]:
     """对比提案期望与写后回读，返回逐项差异（纯函数，零网络）。
 
-    :returns: {"rows": [{index, target_id, field, expected, actual, ok, verdict}],
+    :param executed: 已执行项的 index 集合（来自 ``logs/ad_changes.jsonl`` 的
+        success/failed 记录）。传 ``None`` 表示不区分（全部视为已执行，供
+        selftest/纯函数直测）；CLI 会传按日志算出的集合。
+    :param executed_pairs: 缺 ``index`` 的记录按 ``(target_id, field)`` 兜底匹配。
+    :returns: {"rows": [{index, target_id, field, expected, actual, ok, verdict, executed}],
                "ok": bool, "not_compared": [index…]}
+
+    未执行项（不在本次批准范围/无 record 记录）明确标注「未执行」，**不参与
+    回读比对、不报不一致**（评测 #9：子集批准后全量 verify 曾把未执行项误报
+    为「回读与期望不一致」）。
     """
     items = proposal_payload.get("items") or []
     rows, shape = _rows_from_actual(actual_payload)
@@ -375,6 +404,16 @@ def verify_proposal(proposal_payload: Dict[str, Any], actual_payload: Any) -> Di
         field = str(it.get("field"))
         expected = it.get("after")
         entry: Dict[str, Any] = {"index": idx, "target_id": tid, "field": field, "expected": expected}
+
+        if executed is not None or executed_pairs is not None:
+            was_executed = (idx in (executed or set())
+                            or (tid, field) in (executed_pairs or set()))
+            if not was_executed:
+                entry.update(actual=None, ok=None, executed=False,
+                             verdict="未执行（不在本次批准范围）")
+                out_rows.append(entry)
+                continue
+        entry["executed"] = True
 
         if shape == "verdict":
             hit = next((r for r in rows
@@ -405,8 +444,38 @@ def verify_proposal(proposal_payload: Dict[str, Any], actual_payload: Any) -> Di
             not_compared.append(idx)
         out_rows.append(entry)
 
-    ok = bool(out_rows) and all(r["ok"] for r in out_rows)
+    compared = [r for r in out_rows if r.get("executed", True)]
+    ok = bool(compared) and all(r["ok"] for r in compared)
     return {"rows": out_rows, "ok": ok, "not_compared": not_compared}
+
+
+def _executed_from_log(log_path: Path) -> Tuple[set, set]:
+    """从变更日志提取「实际执行过」的提案项（index 集合 + (target_id, field) 兜底集合）。
+
+    只有 success/failed 记录算执行过（skipped = 没执行）；缺 ``index`` 的旧记录
+    按 ``(target_id, field)`` 兜底。日志不存在 = 什么都没执行。
+    """
+    executed: set = set()
+    pairs: set = set()
+    if not log_path.exists():
+        return executed, pairs
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if rec.get("status") not in ("success", "failed"):
+            continue
+        idx = rec.get("index")
+        if isinstance(idx, int) and not isinstance(idx, bool):
+            executed.add(idx)
+        tid, field = rec.get("target_id"), rec.get("field")
+        if tid is not None and field is not None:
+            pairs.add((str(tid), str(field)))
+    return executed, pairs
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
@@ -417,16 +486,32 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(f"❌ 文件无法读取：{exc}", file=sys.stderr)
         return 2
 
-    result = verify_proposal(proposal_payload, actual_payload)
-    print(f"{'✅ 全部一致' if result['ok'] else '❌ 存在差异'}"
-          f"（{sum(1 for r in result['rows'] if r['ok'])}/{len(result['rows'])} 项通过）")
+    log = Path(args.log).expanduser() if args.log else ad_changes_path()
+    executed, executed_pairs = _executed_from_log(log)
+    result = verify_proposal(proposal_payload, actual_payload,
+                             executed=executed, executed_pairs=executed_pairs)
+    rows = result["rows"]
+    executed_rows = [r for r in rows if r.get("executed", True)]
+
+    if not rows:
+        print("（提案为空，无项可比对。）")
+        return 0
+    if not executed_rows:
+        print(f"➖ 提案 {len(rows)} 项均未执行（不在本次批准范围，或尚无 record 记录），"
+              "未做回读比对；执行并 record 后再 verify。")
+    else:
+        passed = sum(1 for r in executed_rows if r["ok"])
+        skipped = len(rows) - len(executed_rows)
+        print(f"{'✅ 全部一致' if result['ok'] else '❌ 存在差异'}"
+              f"（{passed}/{len(executed_rows)} 项通过"
+              + (f"；{skipped} 项未执行" if skipped else "") + "）")
     print("| # | 对象 | 字段 | 期望 | 回读实际 | 结论 |")
     print("|---|---|---|---|---|---|")
-    for r in result["rows"]:
+    for r in rows:
+        mark = "➖ " if not r.get("executed", True) else ("✅ " if r["ok"] else "❌ ")
         print(f"| {r['index']} | {r['target_id']} | {r['field']} | {r['expected']!r} "
-              f"| {r['actual']!r} | {'✅ ' if r['ok'] else '❌ '}{r['verdict']} |")
-    if not result["rows"]:
-        print("（提案为空，无项可比对。）")
+              f"| {r['actual']!r} | {mark}{r['verdict']} |")
+    if not executed_rows:
         return 0
     return 0 if result["ok"] else 2
 
@@ -487,6 +572,12 @@ def _execution_checklist(
     """构造「执行清单」负载：被批准项 × tool_id × 参数模板 × before 快照。"""
     entry_items: List[Dict[str, Any]] = []
     for it in selected:
+        try:
+            params = _write_args(it, shop_id)
+        except ValueError as exc:
+            # 提案混入不支持的写工具（如 edit_listing_title）：带序号抛出，
+            # 由 cmd_execute 捕获后整批拒绝（fail-closed），不崩溃。
+            raise ValueError(f"提案项 #{it.index} 工具 {it.tool} 不受支持：{exc}") from exc
         record_tpl = {
             "tool": it.tool, "target_type": it.target_type, "target_id": it.target_id,
             "field": it.field, "before": it.before, "after": it.after,
@@ -504,7 +595,7 @@ def _execution_checklist(
             "target_type": it.target_type, "target_id": it.target_id,
             "field": it.field, "before": it.before, "after": it.after,
             "reason": it.reason, "risk": it.risk,
-            "params": _write_args(it, shop_id),
+            "params": params,
             "read_back_plan": _read_back_plan(it, shop_id),
             "record_template": record_tpl,
         })
@@ -565,7 +656,14 @@ def cmd_execute(args: argparse.Namespace) -> int:
         print("累计闸拦截，未生成执行清单：\n- " + "\n- ".join(violations), file=sys.stderr)
         return 4
 
-    checklist = _execution_checklist(selected, proposal, meta, shop_id, args.operator)
+    try:
+        checklist = _execution_checklist(selected, proposal, meta, shop_id, args.operator)
+    except ValueError as exc:
+        # fail-closed：不支持的写工具 → 拒绝执行整批，干净报错（评测 #4：曾以未捕获
+        # ValueError 回溯崩溃退出）。退出码 5 = 提案含不受支持的工具。
+        print(f"❌ 提案含不受支持的写工具，拒绝执行整批（fail-closed，未生成执行清单）：{exc}",
+              file=sys.stderr)
+        return 5
     start, end = meta.get("start_date") or "na", meta.get("end_date") or "na"
     out_json = boot.output_path(f"ad_execute_{start}_{end}.json")
     out_md = boot.output_path(f"ad_execute_{start}_{end}.md")
@@ -684,7 +782,7 @@ def cmd_selftest(_args: argparse.Namespace) -> int:
                                       target_id="C2", field="budget", before=50, after=60)]), \
             "C2 今日已成功变更过，应被累计闸去重拦截"
 
-        # verify：信封形态（写后回读）与判定形态各测一次
+        # verify：信封形态（写后回读）与判定表形态各测一次
         save_proposal(tmp / "p.json", proposal, shop_id="MOCK-SHOP-1",
                       start="2026-09-23", end="2026-09-29", demo_fingerprint="演示")
         p_payload = json.loads((tmp / "p.json").read_text(encoding="utf-8"))
@@ -696,9 +794,32 @@ def cmd_selftest(_args: argparse.Namespace) -> int:
         ]}}
         res = verify_proposal(p_payload, env_actual)
         assert res["ok"], f"verify 应全部一致：{res}"
+
+        # 判定表形态必须真正走到比对分支（修复 _rows_from_actual 误判）：
+        # actual 值要回填、结论是「不一致」而不是「回读信封中未找到」。
         res_bad = verify_proposal(
-            p_payload, {"items": [{"index": 1, "target_id": "C2", "field": "budget", "actual": 55}]})
+            p_payload, {"items": [{"index": 2, "target_id": "C2", "field": "budget", "actual": 55}]})
         assert not res_bad["ok"], "verify 应发现差异"
+        row_bad = next(r for r in res_bad["rows"] if r["index"] == 2)
+        assert row_bad["actual"] == 55 and row_bad["verdict"] == "回读与期望不一致", \
+            f"判定表比对分支应可达且回填实际值：{row_bad}"
+        assert not any("信封中未找到" in r["verdict"] for r in res_bad["rows"]), \
+            f"判定表形态不得被误判为信封形态：{res_bad['rows']}"
+        res_vok = verify_proposal(p_payload, {"items": [
+            {"index": 1, "target_id": "C1", "field": "state", "actual": "paused"},
+            {"index": 2, "target_id": "C2", "field": "budget", "actual": "60"},
+        ]})
+        assert res_vok["ok"] and all(r["verdict"] == "一致" for r in res_vok["rows"]), \
+            f"判定表一致路径（宽松比较 '60' vs 60）应通过：{res_vok['rows']}"
+
+        # 未执行项语义：只比对已执行项，未执行项标注且不报不一致（评测 #9）
+        res_skip = verify_proposal(p_payload, env_actual, executed={1})
+        skip_rows = {r["index"]: r for r in res_skip["rows"]}
+        assert skip_rows[1]["ok"] and skip_rows[1].get("executed"), \
+            f"已执行项应正常比对：{skip_rows[1]}"
+        assert not skip_rows[2].get("executed") and "未执行" in skip_rows[2]["verdict"] \
+            and skip_rows[2]["ok"] is None, f"未执行项应标注「未执行」：{skip_rows[2]}"
+        assert res_skip["ok"], f"已执行项一致 + 未执行项不报不一致 → 整体应 ok：{res_skip}"
 
     print(f"\n✅ 自检通过：findings={len(findings)}，可自动执行提案={len(items)}，"
           "record/verify helper 往返一致（临时目录，未写生产日志）")
@@ -740,6 +861,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_v.add_argument("--proposal", required=True, help="ad_proposal_*.json")
     p_v.add_argument("--actual", required=True,
                      help="回读数据 JSON：完整信封（含 data.itemList/rows）或 {items:[{index,target_id,field,actual}]}")
+    p_v.add_argument("--log", default=None,
+                     help="变更日志路径（默认 logs/ad_changes.jsonl；verify 只比对其中有"
+                          " success/failed 记录的项，未执行项标注「未执行」不报不一致）")
     p_v.set_defaults(func=cmd_verify)
 
     p_s = sub.add_parser("selftest", help="离线自检（不调用 MCP，不写生产日志）")

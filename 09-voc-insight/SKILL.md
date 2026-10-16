@@ -163,8 +163,10 @@ python3 scripts/voc_insight.py --reviews-json raw_reviews.json --confirm-externa
 
 # 3) 逐脚本运行 + 可写飞书（演示环境默认阻断）
 python3 scripts/fetch_signals.py --days 7 --out out/signals.json
-python3 _shared/scripts/validate_raw.py --dir out/raw \
-    --step custom_current:rows --step custom_previous:rows   # 共享落盘校验器（可选）
+# 共享落盘校验器（可选）：⚠️ 源码布局下 _shared/ 只在**仓库根**（技能目录内没有）——
+# 须从仓库根运行（下例用子 shell 临时回到上级仓库根，--dir 相对仓库根指向本技能的 out/raw）
+(cd .. && python3 _shared/scripts/validate_raw.py --dir 09-voc-insight/out/raw \
+    --step custom_current:rows --step custom_previous:rows)
 python3 scripts/fetch_reviews.py --signals out/signals.json --reviews-json raw_reviews.json \
     --confirm-external --out out/reviews.json
 python3 scripts/analyze_themes.py --out out/voc_analysis.json

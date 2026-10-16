@@ -56,6 +56,6 @@ pricing:
   default_referral_fee_pct: null # 平台佣金率缺省值，% ；null = 需人工核查
   default_fba_fee: null          # FBA 配送费缺省值；null = 需人工核查
   # 头程成本口径说明：
-  #   headTripPrice 字段**仅存在于 get_custom_report_page_list（489 字段宽表）**，
-  #   get_online_product_page_list 取不到。未接自定义报表时，头程一律标「需人工核查」。
-  headtrip_source: "需人工核查（需 get_custom_report_page_list / reports.yaml: profit）"
+  #   首选商品行字段 headTripCost（get_online_product_page_list 行内实测返回，成本口径）；
+  #   缺值时再走宽表 get_custom_report_page_list 的 headTripPrice（补充源）或人工核查。
+  headtrip_source: "商品行 headTripCost 无值，需人工核查（宽表 get_custom_report_page_list / reports.yaml: profit 为补充源）"

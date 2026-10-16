@@ -142,12 +142,19 @@ def cmd_verify(gov, args) -> int:
         return 1
 
     results = gov.verify_against_rows(manifest, rows, cfg)
-    out_dir = _resolve(_SKILL_ROOT, args.out_dir or "out")
+    out_dir = _resolve_to(args.out_dir, _SKILL_ROOT / "out")
+
+    # 回读补偿（record-then-verify 顺序张力）：mismatch 且原记录为 success 的项，
+    # 追加 type=amend 补偿记录指向原记录（不改写历史；累计闸仍按原始 success 计数）。
+    log_path = str(cfg.get("change_log_path") or "ad_changes.jsonl")
+    amends = gov.append_verify_amends(manifest, results, operator=args.operator, log_path=log_path)
+
     out_path = Path(gov.save_json(out_dir / f"verify_{_ts()}.json", {
         "manifest": args.manifest,
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "verify_rows": len(rows),
         "results": results,
+        "amend_records": amends,
     }))
 
     icons = {"match": "✅", "mismatch": "❌", "not_found": "⚠️", "unknown_field": "⚠️"}
@@ -162,6 +169,9 @@ def cmd_verify(gov, args) -> int:
     print(f"\n一致 {n_match} / 共 {len(results)}；明细已写出：{out_path}")
     if n_bad:
         print("⚠️ 存在不一致/无法判定项：不重放、不自动重试；核对后列「需人工核查」，不得记 success。")
+    if amends:
+        print(f"ℹ️ 已向 {log_path} 追加 {len(amends)} 条补偿记录（type=amend，指向原 success 记录，不改写历史）；"
+              "累计闸按原始 success 计数的风险见记录 status_note=verify mismatch。")
     return 0 if n_bad == 0 else 2
 
 
@@ -208,12 +218,22 @@ def main(argv=None) -> int:
         print("⚠️ config/metric_governance.yaml 的 desired_indices 为空，无可治理项。")
         return 0
 
-    # Step 1：官方指标目录（读落盘 stat_index_op1/2.json，防御性解析）。
+    # Step 1：官方指标目录（读落盘 stat_index_op1/2.json，防御性解析，递归全部层级）。
     trees, tree_notes, tree_demo = gov.load_official_trees(raw_dir)
     for n in tree_notes:
         print(n)
     for op in sorted(trees):
-        print(f"官方指标目录(op_type={op}) 节点数：{len(trees[op])}（基线参照，不参与差异判定）")
+        summary = gov.tree_summary(trees[op])
+        level_txt = "，".join(f"L{k} {v}" for k, v in summary["nodes_by_level"].items())
+        level_part = f"（{level_txt}）" if level_txt else ""
+        print(f"官方指标目录(op_type={op}) 顶级 {summary['top_level']} / 共 {summary['total_nodes']} 节点"
+              f"{level_part}（基线参照，不参与差异判定）")
+    if any(trees.values()):
+        tree_path = gov.save_json(
+            out_dir / f"official_tree_{_ts()}.json",
+            {op: gov.tree_summary(trees[op]) for op in sorted(trees)},
+        )
+        print(f"官方指标树全量结构（含全部层级 children，供作答/对照）：{tree_path}")
 
     # Step 2：现有自定义指标（读落盘 custom_indices_<page>.json，多页合并）。
     state = gov.load_existing_indices(raw_dir, cfg)
@@ -229,13 +249,25 @@ def main(argv=None) -> int:
     plan = gov.build_plan(state.rows, desired)
     print("差异比对：" + "；".join(plan.describe_lines()))
     if plan.pending:
-        print("以下指标公式未人工确认（needs_human），不进入提案：")
+        print("以下指标不进入提案（原因逐项标注）：")
         for d in plan.pending:
-            print(f"  - {d.name}（类型 {d.type}；依据字段 {', '.join(d.source_fields) or '—'}）")
+            fields = ", ".join(d.source_fields) or "—"
+            if plan.pending_reason(d) == "missing_id":
+                print(f"  - {d.name}（公式已人工确认，但现有指标行缺真实 indexId → "
+                      f"待补真实 ID 后重跑，不能用名称充当 ID；依据字段 {fields}）")
+            else:
+                print(f"  - {d.name}（类型 {d.type}；公式未人工确认 needs_human；依据字段 {fields}）")
 
     review_lines = ["# 指标治理检查结果", "", f"已读取自定义指标：{len(state.rows)} 行。", "",
                     *plan.describe_lines(), "", "## 待确认公式"]
-    review_lines.extend(f"- {d.name}：{', '.join(d.source_fields) or '字段待确认'}" for d in plan.pending)
+
+    def _pending_line(d) -> str:
+        reason = ("待补真实 indexId（现有行缺 ID，不能用名称充当 ID；重查后回填）"
+                  if plan.pending_reason(d) == "missing_id"
+                  else "公式未人工确认（needs_human）")
+        return f"- {d.name}：{reason}；依据字段 {', '.join(d.source_fields) or '字段待确认'}"
+
+    review_lines.extend(_pending_line(d) for d in plan.pending)
     review_lines.extend(["", "## 数据说明", *tree_notes, *state.notes])
     if demo_fp:
         review_lines.insert(1, "> 演示数据；本次仅生成检查结果，不写入业务系统。")

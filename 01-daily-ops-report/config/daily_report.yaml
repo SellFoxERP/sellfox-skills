@@ -52,7 +52,7 @@ output:
 
 # 缺少 daily_ops report_id 时的降级说明（写进「数据说明」区块，口径降级需显式标注）
 degradation:
-  no_report_id_note: "缺少自定义报表 report_id：L2 明细层口径降级。仅使用店铺级利润报表 （get_profit_report_by_shop）与在线产品（get_online_product_page_list）可得的指标； 流量（sessions/转化率）、广告点击、库龄分桶、补货建议等宽表字段不可用，标注「需人工核查」。"
+  no_report_id_note: "缺少自定义报表 report_id：L2 明细层口径降级。跳过宽表步骤（get_custom_report_page_list，缺口在「口径降级」区块披露），仅使用店铺级利润报表（get_profit_report_by_shop）与订单 / 广告等其余步骤可得指标； 流量（sessions/转化率）、广告点击、库龄分桶、补货建议等宽表字段不可用，标注「需人工核查」。"
 
 # MCP 无对应数据源、必须人工核查的巡检项（显式占位，绝不编造）
 human_check:

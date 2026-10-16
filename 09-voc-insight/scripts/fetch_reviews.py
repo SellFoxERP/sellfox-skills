@@ -3,8 +3,11 @@
 
 本脚本**不内置任何评论源**，也不自己发 HTTP 到外部服务。它做三件事：
 
-1. **成本闸**：根据「问题 ASIN 数」× adapter 的计费口径，算出预计调用次数/条数，
-   未确认（未传 ``--confirm-external``）时输出 ``HOLD``，**不得继续**。外部源按次/按条收费。
+1. **成本闸**：根据「问题 ASIN 数」× adapter 的计费口径，算出预计调用次数/条数；
+   HOLD 判定基于「**将发生外部调用**」（显式传 ``--adapter-file`` 即视为启用外部调用的明确意图，
+   不再被 ``external_reviews.enabled=false`` 否决）。``--reviews-json`` 是本地回灌，
+   不属于外部调用：不触发闸门，只在输出标注「本地回灌样本，未发生外部调用」；
+   问题 ASIN 为 0 时无调用可发生，跳过确认直接给无调用结论。外部源按次/按条收费。
 2. **规范化 + 脱敏**：把 AI 助手（或人工）按 adapter 契约取回的原始评论，
    用 ``config/field-map.yaml → external_review_contract`` 规范化，并掩码评论者昵称。
 3. **降级**：未接入 / 未确认 / 取回为空 → 不改写为「无差评」，而是标记 ``degraded``，
@@ -135,30 +138,48 @@ def run(args: argparse.Namespace) -> int:
     require_conf = bool(ext_cfg.get("require_confirmation", True))
     enabled = bool(ext_cfg.get("enabled"))
     connected = bool(adapter.get("mcp_name"))
+    # 显式传 --adapter-file = 本次**明确启用外部调用**的意图（进入闸门评审）；
+    # config external_reviews.enabled=false 只约束默认行为，不再把显式意图判成 HOLD。
+    intent_external = bool(args.adapter_file) or enabled
+    # --reviews-json 是本地回灌：本次不会再发生外部调用，不属于成本闸管辖（只标注）。
+    local_replay = bool(args.reviews_json)
+    # 「将发生外部调用」= 有外部意图 + 非回灌 + 确有问题 ASIN（0 个 ASIN 无调用可发生）
+    pending_external_call = intent_external and not local_replay and est_calls > 0
+
     gate_action = "PROCEED"
     gate_reasons: List[str] = []
-
-    if not enabled:
-        gate_action = "HOLD"
-        gate_reasons.append("external_reviews.enabled=false：未启用外部评论源。")
-    if not connected:
-        gate_action = "HOLD"
-        gate_reasons.append("未配置 adapter（external_reviews.adapter 为空）：无可用的评论源。")
-    if require_conf and not args.confirm_external:
-        gate_action = "HOLD"
-        gate_reasons.append(
-            f"待确认：将对 {est_calls} 个 ASIN 发起外部调用（上限 {max_calls} 次），"
-            f"计费口径 {cost['basis']}，金额需人工核查。传 --confirm-external 表示已确认。"
-        )
+    gate_note = ""
+    if local_replay:
+        gate_note = "本地回灌样本，未发生外部调用（--reviews-json 不触发成本闸）。"
+    elif est_calls == 0:
+        gate_note = "问题 ASIN 为 0 → 本次不发起外部调用，无需确认。"
+    if not local_replay:
+        if not intent_external:
+            gate_action = "HOLD"
+            gate_reasons.append(
+                "external_reviews.enabled=false：未启用外部评论源"
+                "（本次如需外部调用，显式传 --adapter-file 或配置 external_reviews.enabled=true）。"
+            )
+        if intent_external and not connected:
+            gate_action = "HOLD"
+            gate_reasons.append("未配置可用 adapter（--adapter-file 缺失或不可解析）：无可用的评论源。")
+        if pending_external_call and require_conf and not args.confirm_external:
+            gate_action = "HOLD"
+            gate_reasons.append(
+                f"待确认：将对 {est_calls} 个 ASIN 发起外部调用（上限 {max_calls} 次），"
+                f"计费口径 {cost['basis']}，金额需人工核查。传 --confirm-external 表示已确认。"
+            )
 
     print("── 外部评论取数成本闸 ──")
     print(f"  adapter        : {adapter.get('mcp_name') or '（未配置）'}")
     print(f"  预计调用次数    : {est_calls}（上限 {max_calls}）")
     print(f"  计费口径        : {cost['basis']}")
     print(f"  预计金额        : ⚠️ 需人工核查（未配置单价）")
-    print(f"  闸门状态        : {gate_action}")
+    print(f"  闸门状态        : {'N/A（本地回灌）' if local_replay else gate_action}")
     for r in gate_reasons:
         print(f"    · {r}")
+    if gate_note:
+        print(f"  ℹ️ {gate_note}")
 
     normalized: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
@@ -200,7 +221,15 @@ def run(args: argparse.Namespace) -> int:
     payload = {
         "generated_at": _dt.datetime.now().isoformat(timespec="seconds"),
         "adapter": adapter,
-        "gate": {"action": gate_action, "reasons": gate_reasons, "cost": cost},
+        "gate": {
+            "action": gate_action,
+            "reasons": gate_reasons,
+            "cost": cost,
+            "note": gate_note,
+            # 本地回灌不属于外部调用：无闸门阻断语义，只在输出里如实标注
+            "local_replay": local_replay,
+            "pending_external_call": pending_external_call,
+        },
         "source_signals": str(signals_path),
         "reviews": normalized,
         "invalid": invalid,
@@ -211,7 +240,7 @@ def run(args: argparse.Namespace) -> int:
         },
         "degraded": degraded,
         "banner": banner,
-        "warnings": ([banner] if banner else []),
+        "warnings": ([banner] if banner else []) + ([gate_note] if gate_note else []),
     }
     vc.write_json(args.out, payload)
 

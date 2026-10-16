@@ -74,7 +74,7 @@
 | `orderStatus` | 订单状态 |
 | `orderTotalAmount` / `orderTotalCurrency` | 金额 / 币种 |
 | `isReturnOrder` | 是否退货单 |
-| `refundStatus` / `refundDate` | 退款状态 / 日期 |
+| `refundStatus` / `refundDate` | 退款状态 / 日期。`refundStatus` 为字符串枚举：线上实测 `"0"`=非退款，非 `"0"`=退款——**勿按真值判断**（`"0"` 在 Python 中为真） |
 | `isBuyerRequestedCancel` | 买家请求取消 |
 | `orderFlag` / `comment` | 订单标记 / 备注 |
 | `settlementStatus` | 结算状态 |

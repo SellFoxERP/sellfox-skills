@@ -82,6 +82,8 @@ def render_report(
     # ---- 核心结论 ----
     totals = report.totals or {}
     mcp_calls = int(fetch_meta.get("mcp_calls", 0) or 0)
+    # 「失败」与「无数据」必须区分（评测问题 #3）：MSKU 主源取数失败时按真实状态给文案。
+    msku_failed = [str(s) for s in (fetch_meta.get("msku_failed") or [])]
     lines.append("## 核心结论")
     lines.append("")
     if report.mskus:
@@ -97,12 +99,33 @@ def render_report(
             "⚠️ **本次未发起任何赛狐 MCP 取数调用（mcp_calls=0）**，报告为空**不代表当期无异常**，"
             "而是取数未执行。请检查店铺范围/参数配置与 MCP 连通性后重跑。"
         )
+    elif msku_failed:
+        lines.append(
+            f"本次已发起 **{mcp_calls}** 次赛狐 MCP 取数调用，但 MSKU 利润报表取数失败"
+            f"（{ '；'.join(msku_failed) }），未取回可诊断的 MSKU 记录 —— **取数失败，原因见数据说明**。"
+        )
     else:
         lines.append(
             f"本次已发起 **{mcp_calls}** 次赛狐 MCP 取数调用，但未取回可诊断的 MSKU 记录"
             "（可能为「无数据」，而非失败；覆盖面见下方「数据说明」）。"
         )
     lines.append("")
+
+    # ---- 范围防御（评测线上问题 N3）：请求 ASIN 0 命中披露 ----
+    # 上游 search_type/search_contents 过滤可能被忽略（实测返回了别的 MSKU），
+    # 请求值与取回样本不符时显式披露，且不下任何归因结论 —— 答非所问不如不答。
+    requested_asins = [str(a).strip() for a in (fetch_meta.get("requested_asins") or []) if str(a).strip()]
+    wanted_asins = {a.upper() for a in requested_asins}
+    asin_miss = bool(wanted_asins) and not any(
+        str(d.asin or "").strip().upper() in wanted_asins for d in report.mskus
+    )
+    if asin_miss:
+        lines.append(
+            "> ⚠️ 请求的 ASIN " + "、".join(f"`{a}`" for a in requested_asins)
+            + " 未命中任何 MSKU 行（上游 search_type/search_contents 过滤可能未生效）。"
+            "本次取回样本与请求范围不符，**不下任何归因结论**；请核对 ASIN 或改用 msku/sku 维度重新取数。"
+        )
+        lines.append("")
 
     if report.mskus:
         lines.extend(["## 已取回样本的毛利对比", "", "| MSKU | 基期毛利 | 本期毛利 | 变化 |", "|---|---|---|---|"])
@@ -112,24 +135,32 @@ def render_report(
     # ---- 异常清单 + 归因 ----
     lines.append("## 异常清单与归因")
     lines.append("")
-    shown = 0
-    for diag in report.mskus:
-        if not (diag.has_anomaly and diag.driver_factors):
-            continue
-        if shown >= top_n:
-            break
-        shown += 1
-        lines.extend(_render_one(diag, currency=fetch_meta.get("report_currency", "USD")))
-        lines.append("")
-
-    if shown == 0 and report.mskus:
-        lines.append("本期无 MSKU 同时满足「毛利下滑」与「可归因」两个条件。")
-        lines.append("")
-    if shown >= top_n and len([d for d in report.mskus if d.has_anomaly and d.driver_factors]) > top_n:
+    if asin_miss:
+        # 范围防御：请求 ASIN 0 命中 → 不对「取回的别的 MSKU」下归因结论（答非所问）。
         lines.append(
-            f"> ⚠️ 异常清单仅展示前 {top_n} 条（`output.top_n_loss`），其余未纳入。"
+            "⚠️ 请求的 ASIN 未命中任何取回行（上游过滤可能未生效）：跳过归因结论，"
+            "先核对请求的 ASIN/MSKU 维度并重新取数。"
         )
         lines.append("")
+    else:
+        shown = 0
+        for diag in report.mskus:
+            if not (diag.has_anomaly and diag.driver_factors):
+                continue
+            if shown >= top_n:
+                break
+            shown += 1
+            lines.extend(_render_one(diag, currency=fetch_meta.get("report_currency", "USD")))
+            lines.append("")
+
+        if shown == 0 and report.mskus:
+            lines.append("本期无 MSKU 同时满足「毛利下滑」与「可归因」两个条件。")
+            lines.append("")
+        if shown >= top_n and len([d for d in report.mskus if d.has_anomaly and d.driver_factors]) > top_n:
+            lines.append(
+                f"> ⚠️ 异常清单仅展示前 {top_n} 条（`output.top_n_loss`），其余未纳入。"
+            )
+            lines.append("")
 
     # ---- 延期结算与赔偿（易漏的钱）----
     if include_deferred:
@@ -203,6 +234,13 @@ def _render_one(diag: MskuDiagnosis, *, currency: str) -> List[str]:
     for f in diag.driver_factors:
         out.append(f.to_row())
     out.append("")
+    # 符号校准披露（归因表脚注）：费用类因子实测存储符号与配置 profit_sign 假设不符时必列。
+    cal_notes = sorted({f.sign_note for f in diag.factors if f.sign_calibrated and f.sign_note})
+    if cal_notes:
+        out.append("> ⚠️ **符号校准披露**（profit_sign 假设仅为缺省，已按实测存储符号归因）：")
+        for note in cal_notes:
+            out.append(f"> - {note}")
+        out.append("")
     # 建议动作
     out.append("**建议动作**")
     out.append("")
@@ -254,7 +292,9 @@ def _render_deferred(report: DiagnosisReport, fetch_meta: Dict[str, Any]) -> Lis
         out.append(
             "本次未取到延期结算/赔偿类数据。"
             "原因可能为：(a) 未配置自定义报表 `report_id`（口径降级）；"
-            "(b) 该期确无此类金额（**标「无数据」，不写 0**）。"
+            "(b) 该期确无此类金额（**标「无数据」，不写 0**）；"
+            "(c) 主源 `get_profit_report_by_msku` 取数失败或未取回行 —— 无 MSKU 锚点，"
+            "自定义报表的延期/赔偿数值无法挂靠展示（失败原因见「数据说明」警示区）。"
         )
     out.append("")
     return out
