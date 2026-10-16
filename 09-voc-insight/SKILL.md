@@ -11,10 +11,10 @@ description: 评论 VOC 归因（赛狐/SellFox 官方聚合指标 + 可插拔�
 ## 运行环境与路径
 
 以本文件所在目录为技能根目录，执行脚本前切换到该目录，使用 Python 3.10+。
-本项目采用批量安装，九个技能共用一份底座；源码布局的底座位于 `../_shared/`。
+本项目采用批量安装，专项技能（01~09）共用一份底座；源码布局的底座位于 `../_shared/`。
 读取下文 `_shared/...` 引用时先定位实际共享底座。脚本定位优先级为：显式参数（支持时）
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
-批量安装器将共享路径写入配置，九个技能复用同一份商家配置。
+批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
 `help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
 已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
@@ -57,7 +57,7 @@ description: 评论 VOC 归因（赛狐/SellFox 官方聚合指标 + 可插拔�
 | `config/field-map.yaml` | 需要字段-数据源归属与外部评论契约时 |
 | `_shared/SELLFOX_CLIENT.md` | **必读**：MCP 调用约定（三段式、contract_version、类型按契约、coverage、落盘纪律） |
 
-> `_shared/` 是 9 个技能共用底座，**不是技能**。脚本通过本技能 `config/paths.yaml`
+> `_shared/` 是专项技能（01~09）的共用底座，**不是技能**。脚本通过本技能 `config/paths.yaml`
 > 定位它；优先使用包内 `_shared/`，源码布局回退到同级共享目录。
 
 ## 关键字段与数据源（已核对 _shared/FIELD_DICTIONARY.md）
