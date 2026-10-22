@@ -110,5 +110,6 @@
 | 分页类 | `data.rows` | `page_no` 递增 | `get_ad_download_task_page_list` |
 | 利润报表 | `data.rows`（标准化分页） | `page_no` | `get_profit_report_by_*`（本技能不涉及） |
 
-> 用 `data.rows` 解析广告列表会拿到空结果且不报错；历史测试常见 20 条/页（当前分页以契约为准），
+> 列表键以当次信封与契约为准（网关默认标准化分页即 `data.rows`）；用不匹配的历史键解析会拿到空结果且不报错；
+> 历史测试常见 20 条/页（当前分页以契约为准），
 > 不能靠 `page_size` 控量，必须客户端 `max_rows` 截断并披露。游标超时时间 1 分钟。

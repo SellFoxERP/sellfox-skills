@@ -3,7 +3,7 @@
 用法（各技能的 fetch_*.py 校验模式统一走这里）：
 
     python validate_raw.py --dir <skill>/out/raw \
-        --step shops:rows --step profit_shop:reportList \
+        --step shops:rows --step profit_shop:rows \
         [--window 2026-10-14:2026-10-14] [--json]
 
     --step <文件名[:列表字段]>   期望存在的信封及其列表字段（rows/reportList/itemList）
@@ -113,7 +113,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--dir", required=True, help="out/raw 目录")
     ap.add_argument(
         "--step", action="append", default=[],
-        help="期望步骤 文件名[:列表字段]，如 shops:rows / profit_shop:reportList",
+        help="期望步骤 文件名[:列表字段]，如 shops:rows / profit_shop:rows",
     )
     ap.add_argument("--window", default=None, help="业务日窗口 start:end（yyyy-MM-dd）")
     ap.add_argument("--json", action="store_true", help="输出 JSON")

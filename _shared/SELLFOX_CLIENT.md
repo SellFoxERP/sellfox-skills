@@ -70,7 +70,7 @@
 
 ## 6. 落盘约定
 
-AI 每步读取后保存 action 的完整业务信封到 `<技能根目录>/out/raw/<step>.json`，文件名按该技能 workflow。
+AI 每步读取后保存 sf_execute 的完整业务信封到 `<技能根目录>/out/raw/<step>.json`，文件名按该技能 workflow。
 保留 status/data/coverage/pagination/warnings/period/currency/trace_id/output_validation 等全部字段。
 MCP 包装层有 structuredContent 时取其业务信封；仅有 text 时解析其中 JSON；不要把整个 JSON-RPC 结果直接当作 data。
 每次业务任务使用新的原始数据集合；避免把不同日期、店铺或旧任务文件混在同一目录。覆盖已有文件前先确认其属于本次任务，或先另存归档。
