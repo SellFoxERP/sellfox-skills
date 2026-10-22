@@ -110,16 +110,18 @@ python scripts/compute_metrics.py --in weekly_data.json --out computed.json
 python scripts/render_report.py --in computed.json --out weekly_report.md
 ```
 
-报告输出 `weekly_report.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
+报告输出 `weekly_report.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试）。
 严格用 `references/report-template.md` 的结构；**「数据说明」区块必填**。
 
 ### Step 5（可选）：推送飞书
 
 ```bash
+python scripts/render_report.py --in computed.json --out weekly_report.md --keep-md   # 先产出 .md 通道载荷
 python scripts/push_feishu.py --markdown weekly_report.md --computed computed.json
 ```
 
 默认 `feishu.enabled=false` 不推送；演示环境默认阻断；写入前过 PII 脱敏。
+`--markdown` 取 `render_report.py --keep-md` 产物或自备文件。
 
 ## 不可跳过的硬约束
 

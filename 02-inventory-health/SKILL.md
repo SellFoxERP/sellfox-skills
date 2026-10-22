@@ -64,7 +64,7 @@ python scripts/run_inventory_health.py --feishu            # 写入飞书（演�
 python scripts/run_inventory_health.py --answers '{"MOCK-SKU-001":45}' --write-back  # 本次填写并回写到货周期
 ```
 
-报告输出 `out/inventory.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
+报告输出 `out/inventory.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试）。
 
 ## 执行流程
 

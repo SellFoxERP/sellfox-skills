@@ -123,9 +123,16 @@ class TopicTest(unittest.TestCase):
         subprocess.run([sys.executable,str(ROOT/'scripts/install.py'),'--skills-dir',str(dest),'--update'],check=True,capture_output=True)
         for folder,name,rows in [('11-returns-loss','returns-loss',[self.row()]),('12-new-product-review','new-product-review',[{'shopId':'fixture','id':'a','openDate':'2026-10-01','day7SaleNum':3,'day30SaleNum':3}])]:
             plan=self.plan(folder);self.page(plan,rows);path=self.base/(name+'.json');path.write_text(json.dumps(plan))
-            cmd=[sys.executable,str(dest/name/'scripts/run_review.py'),'--plan',str(path),'--out-dir',str(self.base/name)]
+            cmd=[sys.executable,str(dest/name/'scripts/run_review.py'),'--plan',str(path),'--out-dir',str(self.base/name),'--keep-md']
             run=subprocess.run(cmd,capture_output=True,text=True);self.assertEqual(run.returncode,0,run.stderr)
-            self.assertTrue((self.base/name/'report.md').is_file())
+            self.assertTrue((self.base/name/'report.html').is_file())
+            self.assertTrue((self.base/name/'report.md').is_file())  # --keep-md 才额外留档 .md
             self.assertEqual(subprocess.run(cmd,capture_output=True).returncode,1)
+        # 默认（无 --keep-md）仅写 report.html，不产出 report.md
+        default_out=self.base/'default-only'
+        run=subprocess.run([sys.executable,str(dest/'returns-loss/scripts/run_review.py'),'--plan',str(self.base/'returns-loss.json'),'--out-dir',str(default_out)],capture_output=True,text=True)
+        self.assertEqual(run.returncode,0,run.stderr)
+        self.assertTrue((default_out/'report.html').is_file())
+        self.assertFalse((default_out/'report.md').exists())
 
 if __name__=='__main__':unittest.main()

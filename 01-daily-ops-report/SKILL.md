@@ -67,7 +67,7 @@ description: 当用户要求“配置赛狐”“配置经营报表”或“初�
 | 店铺范围 | 全部 | `_shared/config/shops.yaml` 的 `default_scope` |
 | 利润口径 | `settlement`（结算） | `daily_report.yaml` |
 | 聚合币种 | USD | `daily_report.yaml` |
-| 输出 | 本地 HTML 主报告（附同名 .md 留档） | 写飞书需显式 `--feishu` |
+| 输出 | 本地 HTML 主报告（HTML 即报告） | 写飞书需显式 `--feishu` |
 
 > ⚠️ **利润口径必须确认并在输出标注**。`settlement` 与 `shipment` 同一时间段结果不同，不标注必与财务对不上账。
 
@@ -114,7 +114,7 @@ inputSchema、失配重取一次、不信 has_more 信 coverage、每步落盘�
 
 ### Step 3：渲染
 
-用 `scripts/render_report.py`，**严格使用 `references/report-template.md` 的结构**。报告输出 `out/daily_report.html`（主报告，附同名 .md 留档供飞书通道与文本核对）：
+用 `scripts/render_report.py`，**严格使用 `references/report-template.md` 的结构**。报告输出 `out/daily_report.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试）：
 
 ```
 📊 每日经营日报 | {日期}

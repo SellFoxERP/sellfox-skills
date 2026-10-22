@@ -18,7 +18,7 @@ import skill_paths  # noqa: F401  （bootstrap 供后续可能的加载）
 
 skill_paths.bootstrap()  # 挂载 _shared/scripts，供下方 report_html 导入
 
-from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：默认只写同名 .html，HTML 即报告）
 
 NA = "不适用"
 NEEDS_REVIEW = "⚠️ 需人工核查"
@@ -299,15 +299,20 @@ def _main() -> None:
     ap = argparse.ArgumentParser(description="周报/月报渲染（只读）")
     ap.add_argument("--in", dest="inp", default="computed.json")
     ap.add_argument("--out", default="weekly_report.md")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="额外写出同名 .md（飞书通道载荷/调试/测试用；默认只写 .html）")
     ap.add_argument("--no-mermaid", action="store_true")
     args = ap.parse_args()
 
     computed = json.loads(Path(args.inp).read_text(encoding="utf-8"))
     md = render(computed, include_mermaid=not args.no_mermaid)
     out_path = Path(args.out)
-    out_path.write_text(md, encoding="utf-8")
-    html_path = write_html_report(md, out_path)
-    print(f"✅ 渲染完成 → {out_path} / {html_path}（{len(md.splitlines())} 行）")
+    # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md（供 push_feishu.py 通道）
+    html_path = write_html_report(md, out_path, keep_md=args.keep_md)
+    if args.keep_md:
+        print(f"✅ 渲染完成 → {html_path}（md 留档：{out_path}，{len(md.splitlines())} 行）")
+    else:
+        print(f"✅ 渲染完成 → {html_path}（{len(md.splitlines())} 行）")
 
 
 if __name__ == "__main__":

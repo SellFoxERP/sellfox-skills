@@ -49,19 +49,24 @@ class ReleaseTest(unittest.TestCase):
         self.raw(p,'shops',envelope([{'id':'SHOP-DEMO-1','name':'演示店'}]))
         self.raw(p,'profit_shop',envelope([PROFIT],'reportList'))
         self.run_script(p,'run_daily_report.py','--date','2026-10-14')
-        report=(p/'out/daily_report.md').read_text()
+        # 默认仅 .html（HTML 即报告），不再落 .md
+        report_html=p/'out/daily_report.html'
+        self.assertTrue(report_html.is_file());self.assertFalse((p/'out/daily_report.md').exists())
+        report=report_html.read_text()
         self.assertIn('演示',report);self.assertIn('1,000',report);self.assertIn('降级',report)
     def test_02_inventory(self):
         p=self.skill(2);self.raw(p,'online_products_1',envelope([PRODUCT]))
         out=p/'out/inventory.md'
-        self.run_script(p,'run_inventory_health.py','--date','2026-10-14','--out',out)
+        self.run_script(p,'run_inventory_health.py','--date','2026-10-14','--out',out,'--keep-md')
+        self.assertTrue(out.with_suffix('.html').is_file())
         report=out.read_text();self.assertIn('演示',report);self.assertIn('B0DEMO00001',report)
         self.assertTrue('断货' in report or '需人工核查' in report)
     def test_03_listing(self):
         p=self.skill(3);self.raw(p,'online_1',envelope([PRODUCT]))
         self.run_script(p,'fetch_listing_data.py','--out','out/data.json')
         self.run_script(p,'diagnose.py','--in','out/data.json','--out','out/problems.json')
-        self.run_script(p,'render_report.py','--in','out/problems.json','--out','out/report.md')
+        self.run_script(p,'render_report.py','--in','out/problems.json','--out','out/report.md','--keep-md')
+        self.assertTrue((p/'out/report.html').is_file())
         report=(p/'out/report.md').read_text();self.assertIn('B0DEMO00001',report);self.assertIn('不可售',report)
     def test_04_weekly(self):
         p=self.skill(4)
@@ -69,7 +74,8 @@ class ReleaseTest(unittest.TestCase):
             self.raw(p,step,envelope([PROFIT],'reportList'))
         self.run_script(p,'fetch_weekly_data.py','--anchor','2026-10-12','--out','out/data.json')
         self.run_script(p,'compute_metrics.py','--in','out/data.json','--out','out/computed.json')
-        self.run_script(p,'render_report.py','--in','out/computed.json','--out','out/report.md')
+        self.run_script(p,'render_report.py','--in','out/computed.json','--out','out/report.md','--keep-md')
+        self.assertTrue((p/'out/report.html').is_file())
         self.assertIn('演示',(p/'out/report.md').read_text())
         self.run_script(p,'test_regression.py')
     def test_05_profit(self):self.assertIn('全部通过',self.run_script(self.skill(5),'selfcheck.py'))
@@ -81,12 +87,14 @@ class ReleaseTest(unittest.TestCase):
         self.assertFalse(list((p/'out').glob('execute_manifest*')))
     def test_08_launch(self):
         p=self.skill(8);self.raw(p,'online_product',envelope([PRODUCT]))
-        self.run_script(p,'listing_launch.py','--search-content','B0DEMO00001','--name','测试产品','--out','out/package.md')
+        self.run_script(p,'listing_launch.py','--search-content','B0DEMO00001','--name','测试产品','--out','out/package.md','--keep-md')
+        self.assertTrue((p/'out/package.html').is_file())   # 默认仅 .html（此处 --keep-md 供下文读 .md 断言）
         report=(p/'out/package.md').read_text();self.assertIn('演示',report);self.assertIn('需人工',report)
     def test_09_voc(self):
         p=self.skill(9);self.raw(p,'online_products',envelope([PRODUCT]))
         self.run_script(p,'voc_insight.py','--days','7')
-        report=(p/'out/voc-report.md').read_text();self.assertIn('演示',report)
+        self.assertFalse((p/'out/voc-report.md').exists())  # 默认仅 .html，不产出 .md
+        report=(p/'out/voc-report.html').read_text();self.assertIn('演示',report)
         self.assertTrue('无原文' in report or '未接入' in report or '无评论' in report,report)
     def test_10_bulk_install_and_update(self):
         dest=Path(self.tmp.name)/'installed skills'
@@ -180,7 +188,8 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
         skill=(plugin_root/plugin['skills'][0]).parent
         self.raw(skill,'shops',envelope([{'id':'SHOP-DEMO-1','name':'演示店'}]))
         self.raw(skill,'profit_shop',envelope([PROFIT],'reportList'))
-        self.run_script(skill,'run_daily_report.py','--date','2026-10-14')
+        self.run_script(skill,'run_daily_report.py','--date','2026-10-14','--keep-md')
+        self.assertTrue((skill/'out/daily_report.html').is_file())
         self.assertIn('1,000',(skill/'out/daily_report.md').read_text())
 
     def test_18_voc_default_keywords_without_pyyaml(self):
@@ -202,7 +211,7 @@ assert v.match_themes('a neutral comment',compiled)==['other']
         self.raw(p,'profit_shop',envelope([bad],'reportList',status='unknown'))
         # 2026-10-16 修复：缺/不可采信利润不再 exit 2 阻断（最小集可跑），改为降级横幅继续产出；
         # 但 unknown 信封的数值仍不得泄漏为收入。
-        output=self.run_script(p,'run_daily_report.py','--date','2026-10-14')
+        output=self.run_script(p,'run_daily_report.py','--date','2026-10-14','--keep-md')
         bundle=json.loads((p/'out/bundle.json').read_text())
         self.assertIsNone(bundle['data']['store_profit'])
         report=(p/'out/daily_report.md').read_text()
@@ -243,7 +252,7 @@ assert len(unsafe.updates)==0
         self.raw(p,'shops',envelope([{'id':'SHOP-DEMO-1'}]))
         rows=[dict(PROFIT,currency='USD',bizDay=20250115),dict(PROFIT,currency='EUR',productSales=2000,bizDay=20250115)]
         self.raw(p,'profit_shop',envelope(rows,'reportList'))
-        self.run_script(p,'run_daily_report.py','--date','2026-10-14')
+        self.run_script(p,'run_daily_report.py','--date','2026-10-14','--keep-md')
         a=json.loads((p/'out/analysis.json').read_text())
         self.assertIsNone(a['l1']['gmv'])
         self.assertEqual(a['l1']['by_currency']['USD']['gmv'],1000)
@@ -298,19 +307,19 @@ with tempfile.TemporaryDirectory() as d:
     def test_28_launch_matches_target_and_missing_price(self):
         p=self.skill(8)
         self.raw(p,'online_product',envelope([dict(PRODUCT,asin='WRONG',listingPrice=987654),dict(PRODUCT,asin='TARGET',listingPrice=23)]))
-        self.run_script(p,'listing_launch.py','--search-content','TARGET','--name','fixture','--out','out/matched.md')
+        self.run_script(p,'listing_launch.py','--search-content','TARGET','--name','fixture','--out','out/matched.md','--keep-md')
         report=(p/'out/matched.md').read_text()
         self.assertIn('售价：23',report)
         self.assertNotIn('售价：987654',report)
         self.assertNotIn('None',report)
-        self.run_script(p,'listing_launch.py','--search-content','MISSING','--name','fixture','--out','out/missing.md')
+        self.run_script(p,'listing_launch.py','--search-content','MISSING','--name','fixture','--out','out/missing.md','--keep-md')
         self.assertIn('精确匹配 0', (p/'out/missing.md').read_text())
 
     def test_29_voc_snapshot_without_baseline(self):
         p=self.skill(9)
         self.raw(p,'online_products',envelope([PRODUCT]))
         self.run_script(p,'voc_insight.py','--days','7')
-        report=(p/'out/voc-report.md').read_text()
+        report=(p/'out/voc-report.html').read_text()   # 报告出口仅 .html
         self.assertIn('缺少历史基线',report)
         self.assertIn('B0DEMO00001',report)
         self.assertNotIn('未发现达标的问题 ASIN',report)

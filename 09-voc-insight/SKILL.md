@@ -173,7 +173,7 @@ python3 scripts/analyze_themes.py --out out/voc_analysis.json
 python3 scripts/render_report.py --out out/voc-report.md --print
 ```
 
-主要输出：`out/signals.json`、`out/reviews.json`、`out/voc_analysis.json`、`out/voc-report.html`（主报告，附同名 `.md` 留档）。
+主要输出：`out/signals.json`、`out/reviews.json`、`out/voc_analysis.json`、`out/voc-report.html`（主报告，`--keep-md` 才附同名 `.md`）。
 
 ## 阈值与配置
 

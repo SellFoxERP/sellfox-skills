@@ -169,16 +169,16 @@ def run(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = Path(args.out) if args.out else out_dir / f"listing-package-{stamp}.md"
-    out_path.write_text(md, encoding="utf-8")
-    # HTML 主报告出口：同名 .html（md 留档不变；_common 挂 _shared/scripts）。
+    # HTML 主报告出口：仅同名 .html（--keep-md 才附 .md；_common 挂 _shared/scripts）。
     from _common import ensure_shared_path  # 局部导入（与写飞书分支同模式）
 
     if ensure_shared_path():
         from report_html import write_html_report  # type: ignore  # 由 _shared 提供
 
-        html_path = write_html_report(md, out_path)
+        html_path = write_html_report(md, out_path, keep_md=args.keep_md)
     else:  # pragma: no cover  # _shared 缺位时降级为只写 md
         html_path = None
+        out_path.write_text(md, encoding="utf-8")
 
     # 附件：需求单 + 各步骤结构化结果，便于 AI 助手 后续调用外部 MCP。
     brief_path = out_path.with_suffix(".asset-brief.json")
@@ -191,8 +191,7 @@ def run(args: argparse.Namespace) -> int:
     )
 
     print(md)
-    print(f"\n---\n已写入：{out_path}\n素材需求单：{brief_path}"
-          + (f"\nHTML 主报告：{html_path}" if html_path else ""))
+    print(f"\n---\n已写入：{html_path or out_path}\n素材需求单：{brief_path}")
     print(f"成本闸：{gate['action']}（需确认={gate['required']}，已确认={gate['confirmed']}）")
 
     # 可选：写飞书（演示环境默认阻断）。
@@ -226,6 +225,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="agent 落盘目录（默认 <skill>/out/raw；shop_ids/max_rows 等取数参数在取数计划里控制）")
     ap.add_argument("--copy-json", default=None, help="AI 助手 生成后的文案 JSON（可选）")
     ap.add_argument("--out", default=None, help="上架包输出路径")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
     ap.add_argument("--confirm-assets", action="store_true", help="已确认素材数量与成本，放行生成")
     ap.add_argument("--write-feishu", action="store_true")
     ap.add_argument("--allow-demo-write", action="store_true", help="演示环境强制写飞书（危险）")

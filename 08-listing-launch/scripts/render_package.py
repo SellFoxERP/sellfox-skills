@@ -180,6 +180,8 @@ def _main() -> int:  # pragma: no cover
     ap = argparse.ArgumentParser(description="渲染上架素材包 Markdown")
     ap.add_argument("--input-json", required=True, help="包含各步骤结果的 JSON")
     ap.add_argument("--out")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
     args = ap.parse_args()
     payload = json.loads(open(args.input_json, encoding="utf-8").read())
     md = render_package(
@@ -195,13 +197,14 @@ def _main() -> int:  # pragma: no cover
     )
     if args.out:
         out_path = Path(args.out)
-        out_path.write_text(md, encoding="utf-8")
         html_path = None
-        if ensure_shared_path():  # HTML 主报告出口（同名 .html；md 留档不变）
+        if ensure_shared_path():  # HTML 主报告出口（仅同名 .html；--keep-md 才附 .md）
             from report_html import write_html_report  # type: ignore  # 由 _shared 提供
 
-            html_path = write_html_report(md, out_path)
-        print(f"已写入 {out_path}" + (f"（HTML 主报告：{html_path}）" if html_path else ""))
+            html_path = write_html_report(md, out_path, keep_md=args.keep_md)
+        else:  # pragma: no cover  # _shared 缺位时降级为只写 md
+            out_path.write_text(md, encoding="utf-8")
+        print(f"已写入 {html_path or out_path}")
     else:
         print(md)
     return 0

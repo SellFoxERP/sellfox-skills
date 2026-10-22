@@ -72,7 +72,7 @@ inputSchema 为准（⚠️ 标注处为实测差异）。多状态/多店铺批
 python scripts/fetch_listing_data.py --shop-ids 10001 --out data.json   # 校验+组装
 python scripts/diagnose.py --in data.json --out problems.json            # 分诊
 python scripts/render_report.py --in problems.json --out report.md       # 渲染
-# 报告输出 report.html（主报告，附同名 .md 留档供飞书通道与文本核对）
+# 报告输出 report.html（主报告，HTML 即报告；--keep-md 可附同名 .md）
 # 也可单独跑共享校验器（⚠️ 运行前置：_shared 在仓库根/安装根，不在技能目录内，
 # 须从仓库根运行并写清相对路径；批量安装布局下从安装根运行）：
 python _shared/scripts/validate_raw.py --dir 03-listing-health/out/raw --step online_active:rows

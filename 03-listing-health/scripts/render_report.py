@@ -17,7 +17,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 import listing_common as lc
-from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html；_shared/scripts 已由 listing_common 挂载）
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：默认只写同名 .html，HTML 即报告；_shared/scripts 已由 listing_common 挂载）
 
 _CHECK_SHORT = {
     "不可售/被删除": "不可售/被删除",
@@ -201,6 +201,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Listing 健康体检报告渲染")
     ap.add_argument("--in", dest="inp", required=True)
     ap.add_argument("--out", default="report.md")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--push-feishu", action="store_true")
     ap.add_argument("--folder", default="")
     ap.add_argument("--title", default="")
@@ -211,9 +213,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     lc.write_json  # noqa: B018  (保持 import 一致性)
     from pathlib import Path
     out_path = Path(args.out)
-    out_path.write_text(markdown, encoding="utf-8")
-    html_path = write_html_report(markdown, out_path)
-    print(f"✓ 报告已渲染 → {out_path} / {html_path}")
+    # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md
+    html_path = write_html_report(markdown, out_path, keep_md=args.keep_md)
+    if args.keep_md:
+        print(f"✓ 报告已渲染 → {html_path}（md 留档：{out_path}）")
+    else:
+        print(f"✓ 报告已渲染 → {html_path}")
 
     if args.push_feishu:
         title = args.title or f"Listing 健康体检报告 {_dt.date.today().isoformat()}"

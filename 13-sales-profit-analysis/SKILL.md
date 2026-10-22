@@ -33,7 +33,7 @@ description: 销售利润分析（赛狐/SellFox ERP，只读）。即席回答�
 ⑤ 取排名   get_product_analyze_list + 顶层 fields/field_modules 投影（anyOf 至少一项非空，
             参数以当轮契约为准）；两期各一次，本地按 ASIN 对齐
 ⑥ 算账     scripts/run_analysis.py：代数和桥接 + 四条自检，残差如实报，不凑系数
-⑦ 归因输出  scripts/render_report.py：六段内容，第一行必须是口径行；出口 out/report.html（主报告，附同名 .md 留档）
+⑦ 归因输出  scripts/render_report.py：六段内容，第一行必须是口径行；出口 out/report.html（主报告，--keep-md 才附同名 .md）
 ```
 
 每步的参数类型、落盘路径、预算处置见 [workflow.md](references/workflow.md)。

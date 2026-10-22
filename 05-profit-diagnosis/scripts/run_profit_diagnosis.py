@@ -31,7 +31,7 @@ from _bootstrap import SKILL_ROOT, load_diagnosis, load_reports, load_shops, loa
 from diagnose import diagnose  # noqa: E402
 from fetch_profit import FetchResult, assemble_all, resolve_windows  # noqa: E402
 from render import render_report  # noqa: E402
-from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：默认只写同名 .html，HTML 即报告）
 
 HERE = Path(__file__).resolve().parent
 SKILL_DIR = HERE.parent
@@ -95,7 +95,9 @@ def main(argv: list[str] | None = None) -> int:
                          "0 命中会在报告显式披露且不下任何归因结论（不传则用信封 scope 记录的请求值）")
     ap.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     ap.add_argument("--check-only", action="store_true", help="只做前置校验（含落盘检查）")
-    ap.add_argument("--out", default=None, help="输出 Markdown 路径（默认打印到 stdout）")
+    ap.add_argument("--out", default=None, help="输出报告路径（默认打印到 stdout；写出时 HTML 即报告）")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="--out 时额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--feishu", action="store_true", help="写入飞书文档（演示环境默认阻断）")
     ap.add_argument("--allow-demo-write", action="store_true", help="显式放行演示环境写入飞书（仍加水印）")
     ap.add_argument("--folder-token", default=None, help="飞书文件夹 token")
@@ -210,9 +212,12 @@ def _run(args: argparse.Namespace) -> int:
 
     if args.out:
         out_path = Path(args.out)
-        out_path.write_text(markdown, encoding="utf-8")
-        html_path = write_html_report(markdown, out_path)
-        print(f"✅ 已写入 {out_path} / {html_path}")
+        # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md
+        html_path = write_html_report(markdown, out_path, keep_md=args.keep_md)
+        if args.keep_md:
+            print(f"✅ 已写入 {html_path}（md 留档：{out_path}）")
+        else:
+            print(f"✅ 已写入 {html_path}")
     else:
         print(markdown)
 

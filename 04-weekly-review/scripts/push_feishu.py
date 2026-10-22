@@ -72,7 +72,9 @@ def push(
 
 def _main() -> None:
     ap = argparse.ArgumentParser(description="周报/月报写入飞书（默认关闭，需配置）")
-    ap.add_argument("--markdown", default="weekly_report.md")
+    ap.add_argument("--markdown", default="weekly_report.md",
+                    help="飞书通道载荷的 Markdown 文件：render_report.py --keep-md 产物或自备文件"
+                         "（默认 weekly_report.md，即 --keep-md 的默认产物）")
     ap.add_argument("--computed", default="computed.json")
     ap.add_argument("--title", default=None)
     ap.add_argument("--override-demo", action="store_true",

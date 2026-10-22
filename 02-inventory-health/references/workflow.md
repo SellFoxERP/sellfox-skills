@@ -89,7 +89,7 @@ python scripts/run_inventory_health.py --date 2026-09-29 --out out/inventory.md
 python scripts/run_inventory_health.py --check-only    # 只做前置校验（含落盘检查）
 ```
 
-报告输出 `out/inventory.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
+报告输出 `out/inventory.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试）。
 
 - `fetch_inventory.py`（v3 改造）：校验 `out/raw/`（存在性 / status / 空数据 / 演示指纹 /
   coverage 截断），组装出与旧版相同形状的记录 —— `replenishment.py` / `render.py` 零改动；

@@ -40,8 +40,8 @@
 
 | 子命令 | 做什么 | 不做什么 |
 |---|---|---|
-| `diagnose` | 读 `out/raw/` 落盘 → 诊断 → 提案 `.md/.json` | 不取数、不写任何对象 |
-| `execute` | 解析批准 + 累计闸 → 输出**执行清单**（`out/ad_execute_*.html` 主报告，附同名 `.md` 留档，与 `.json`） | **不调用任何写工具** |
+| `diagnose` | 读 `out/raw/` 落盘 → 诊断 → 提案 `.html/.json` | 不取数、不写任何对象 |
+| `execute` | 解析批准 + 累计闸 → 输出**执行清单**（`out/ad_execute_*.html` 主报告与 `.json`） | **不调用任何写工具** |
 | `record` | 把 agent 的一条执行结果追加 `logs/ad_changes.jsonl` | 不校验网关返回真伪（防线是 read_back.ok） |
 | `verify` | 对比写后回读与期望，输出差异 | 不重试、不修复 |
 | `selftest` | 合成数据离线自检（全绿） | 不调 MCP、不写生产日志 |
@@ -143,7 +143,7 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 若提案**全部**是「暂停活动」且 ≥2 条，`build_change_items` 会主动把它们降级为人工，
 不让整份提案被禁止清单直接打死。校验不过时提案清空，只保留人工核查清单。
 
-写出三个文件：`out/ad_proposal_<start>_<end>.html`（主报告，附同名 `.md` 留档）与 `.json`（机读提案）。
+写出两个文件：`out/ad_proposal_<start>_<end>.html`（主报告）与 `.json`（机读提案）。
 提案 JSON 每项含 **`tool_id`**（`edit_sp_campaign` / `edit_sp_targeting` 等，即寻址
 action 的工具名）与 **`contract_version: null` 占位**——占位值**不得**直接用于执行，
 每项执行前必须重新 `search` 取当次版本（写契约变更频率高于读契约）。

@@ -210,15 +210,17 @@ def main(topic):
     parser=argparse.ArgumentParser(description='从完整 MCP 信封生成主题分析，计划由助手生成')
     parser.add_argument('--plan',type=Path,required=True)
     parser.add_argument('--out-dir',type=Path,required=True)
+    parser.add_argument('--keep-md',action='store_true',help='额外保留同名 report.md 留档（默认仅写 report.html）')
     args=parser.parse_args()
     try:
         plan=data.read_json(args.plan)
         result=review(plan,args.plan.resolve().parent,topic)
         args.out_dir.mkdir(parents=True,exist_ok=False)
         report_md=render(result)
-        for filename,content in [('result.json',data.dump(result)),('report.md',report_md),('plan.json',data.dump(plan))]:
+        for filename,content in [('result.json',data.dump(result)),('plan.json',data.dump(plan))]:
             (args.out_dir/filename).write_text(content+'\n',encoding='utf-8')
-        write_html_report(report_md,args.out_dir/'report.md')  # HTML 主报告，.md 留档
+        # HTML 主报告：唯一报告文件出口；--keep-md 时才额外写出同名 .md 留档。
+        write_html_report(report_md,args.out_dir/'report.md',keep_md=args.keep_md)
         print(data.dump({'output':str(args.out_dir),'statuses':{k:v['status'] for k,v in result['datasets'].items()}}))
         return 2 if all(v['status']=='unavailable' for v in result['datasets'].values()) else 0
     except (ValueError,OSError,TypeError,KeyError) as exc:

@@ -140,6 +140,11 @@ class ConsistencyTest(unittest.TestCase):
             content = html_path.read_text(encoding='utf-8')
             self.assertTrue(content.startswith('<!doctype html>'))
             self.assertIn('<title>标题 A</title>', content)
+            self.assertFalse(md_path.exists())            # 默认不写 .md（HTML 即报告）
+            html_path = shared_html.write_html_report('# 标题 A\n\n正文\n', md_path, keep_md=True)
+            self.assertTrue(html_path.is_file())
+            self.assertTrue(md_path.is_file())            # keep_md=True 才额外写出 .md
+            self.assertEqual(md_path.read_text(encoding='utf-8'), '# 标题 A\n\n正文\n')
 
 
 class RenderSmokeTest(unittest.TestCase):
@@ -182,6 +187,7 @@ class RenderSmokeTest(unittest.TestCase):
         md = render_report.render(analysis)
         html_path = shared_html.write_html_report(md, self.base / 'report.md')
         self.assertTrue(html_path.is_file())
+        self.assertFalse((self.base / 'report.md').exists())  # 13 报告出口：默认仅 .html
         content = html_path.read_text(encoding='utf-8')
         self.assertTrue(content.startswith('<!doctype html>'))
         self.assertIn('<table>', content)
@@ -189,7 +195,7 @@ class RenderSmokeTest(unittest.TestCase):
         self.assertIn('演示/样本数据指纹', content)
 
     def test_topic_review_main_writes_html_report(self):
-        """10 的 topic render（11/12 的同一出口）→ report.md 留档 + report.html 主报告。"""
+        """10 的 topic render（11/12 的同一出口）→ 默认仅 report.html 主报告；--keep-md 额外留档 .md。"""
         plan = json.loads((ROOT / '11-returns-loss' / 'references' / 'plan-example.json').read_text(encoding='utf-8'))
         row = {'shopId': 'fixture', 'id': 'item-a', 'bizDay': '2026-10-02', 'currency': 'USD',
                'salesNum': 10, 'refundNum': 2, 'returnNum': 1, 'refundSales': -40}
@@ -203,16 +209,22 @@ class RenderSmokeTest(unittest.TestCase):
         with argv('run_review.py', '--plan', str(self.base / 'plan.json'), '--out-dir', str(out)):
             code = topic_review.main('returns')
         self.assertIn(code, (0, 2))
-        self.assertTrue((out / 'report.md').is_file())
+        self.assertFalse((out / 'report.md').exists())    # 默认不写 .md
         html_path = out / 'report.html'
         self.assertTrue(html_path.is_file())
         content = html_path.read_text(encoding='utf-8')
         self.assertTrue(content.startswith('<!doctype html>'))
         self.assertIn('<title>退款退货损失分析</title>', content)
         self.assertIn('<table>', content)
+        keep = self.base / 'review-keep-md'
+        with argv('run_review.py', '--plan', str(self.base / 'plan.json'), '--out-dir', str(keep), '--keep-md'):
+            code = topic_review.main('returns')
+        self.assertIn(code, (0, 2))
+        self.assertTrue((keep / 'report.html').is_file())
+        self.assertTrue((keep / 'report.md').is_file())   # --keep-md 额外留档
 
     def test_process_data_main_writes_html_report(self):
-        """10 的 process_data（Markdown 输出分支）→ report.html 主报告，JSON 输出不变。"""
+        """10 的 process_data（Markdown 输出分支）→ 默认仅 report.html 主报告，JSON 输出不变。"""
         plan = {'version': 1, 'tool_id': 'fixture-tool', 'rows_path': 'data.rows',
                 'group_by': ['shopId'], 'dedupe_by': ['shopId', 'bizDay'],
                 'metrics': {'记录数': {'op': 'count', 'unit': 'count'}},
@@ -227,7 +239,7 @@ class RenderSmokeTest(unittest.TestCase):
         with argv('process_data.py', '--plan', str(self.base / 'plan.json'), '--out-dir', str(out)):
             code = process_data.main()
         self.assertEqual(code, 0)
-        self.assertTrue((out / 'report.md').is_file())
+        self.assertFalse((out / 'report.md').exists())    # 默认不写 .md
         html_path = out / 'report.html'
         self.assertTrue(html_path.is_file())
         content = html_path.read_text(encoding='utf-8')
@@ -235,6 +247,12 @@ class RenderSmokeTest(unittest.TestCase):
         self.assertIn('<title>赛狐业务数据处理结果</title>', content)
         self.assertTrue((out / 'result.json').is_file())
         self.assertTrue((out / 'plan.json').is_file())
+        keep = self.base / 'processed-keep-md'
+        with argv('process_data.py', '--plan', str(self.base / 'plan.json'), '--out-dir', str(keep), '--keep-md'):
+            code = process_data.main()
+        self.assertEqual(code, 0)
+        self.assertTrue((keep / 'report.html').is_file())
+        self.assertTrue((keep / 'report.md').is_file())   # --keep-md 额外留档
 
 
 if __name__ == '__main__':

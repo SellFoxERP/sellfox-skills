@@ -395,7 +395,7 @@ class Fix13RenderTests(unittest.TestCase):
             render_report.render = render_with_leak
             saved_argv = sys.argv
             sys.argv = ["render_report.py", "--analysis", str(td / "analysis.json"),
-                        "--out", str(out_path)]
+                        "--out", str(out_path), "--keep-md"]  # 断言读 .md → 加 --keep-md（默认仅 .html）
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
                     rc = render_report.main()

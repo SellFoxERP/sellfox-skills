@@ -63,6 +63,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="写后回读公式比对（读 custom_indices_verify_<page>.json，配合 --manifest）")
     p.add_argument("--verify-file", action="append", default=None,
                    help="指定回读落盘文件（可多次；默认自动发现 custom_indices_verify_*.json）")
+    p.add_argument("--keep-md", action="store_true",
+                   help="报告额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
     return p.parse_args(argv)
 
 
@@ -290,9 +292,9 @@ def main(argv=None) -> int:
         review_lines.insert(1, "> 演示数据；本次仅生成检查结果，不写入业务系统。")
     review_path = raw_dir.parent / "governance_report.md"
     review_text = "\n".join(review_lines) + "\n"
-    review_path.write_text(review_text, encoding="utf-8")
-    review_html = write_html_report(review_text, review_path)  # 同名 .html 主报告（md 留档不变）
-    print(f"检查报告：{review_path}（HTML 主报告：{review_html}）")
+    review_html = write_html_report(review_text, review_path,
+                                    keep_md=args.keep_md)  # 仅 .html 主报告（--keep-md 才附 .md）
+    print(f"检查报告：{review_html}")
     # 取数可信门：落盘不可信时不生成提案（防误判缺失→重复建指标）。
     if not state.reliable:
         print(
@@ -319,12 +321,11 @@ def main(argv=None) -> int:
     # 必须带演示指纹警示（demo_fp 复用现有 demo 检测：state.demo_fingerprint or tree_demo）；
     # HTML 链由 report_html 把首行 blockquote 渲染为警示条。
     proposal_md = proposal.render_markdown(limits, demo_fingerprint=demo_fp)
-    md_path.write_text(proposal_md, encoding="utf-8")
-    prop_md = str(md_path)
-    prop_html = write_html_report(proposal_md, md_path)  # 同名 .html 主报告（md 留档不变）
+    prop_html = write_html_report(proposal_md, md_path,
+                                  keep_md=args.keep_md)  # 仅 .html 主报告（--keep-md 才附 .md）
     prop_json = gov.save_json(out_dir / f"proposal_{ts}.json", gov.proposal_to_dict(proposal))
     print("\n" + proposal_md)
-    print(f"\n提案已写出：{prop_md} / {prop_json}（HTML 主报告：{prop_html}）")
+    print(f"\n提案已写出：{prop_html} / {prop_json}")
     print("注：提案项 contract_version 为 null 占位——执行前由 agent 重取写契约（search detail=true）。")
 
     if not args.execute:

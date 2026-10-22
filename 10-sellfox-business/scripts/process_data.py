@@ -444,6 +444,7 @@ def main():
     parser.add_argument('--plan', type=Path, required=True, help='助手根据当前契约生成的本地 JSON 处理计划')
     parser.add_argument('--out-dir', type=Path, required=True, help='本次任务的新输出目录，拒绝覆盖已有结果')
     parser.add_argument('--sample-reason', help='sample 模式授权依据（说明用户授权与样本限制）；也可写进计划的 sample_reason 字段')
+    parser.add_argument('--keep-md', action='store_true', help='额外保留同名 report.md 留档（默认仅写 report.html）')
     args = parser.parse_args()
     try:
         plan = read_json(args.plan)
@@ -455,10 +456,8 @@ def main():
         dest.mkdir(parents=True, exist_ok=False)
         (dest/'result.json').write_text(dump(result) + '\n', encoding='utf-8')
         report_md = render(result)
-        md_path = dest/'report.md'
-        md_path.write_text(report_md, encoding='utf-8')
-        # HTML 主报告：与 .md 同名写出；.md 留档，JSON 输出不变。
-        write_html_report(report_md, md_path)
+        # HTML 主报告：唯一报告文件出口；--keep-md 时才额外写出同名 .md 留档，JSON 输出不变。
+        write_html_report(report_md, dest/'report.md', keep_md=args.keep_md)
         (dest/'plan.json').write_text(dump(plan) + '\n', encoding='utf-8')
         print(dump({'output': str(dest), 'datasets': {k: {'status':v['status'],'accepted_rows':v['accepted_rows']} for k,v in result['datasets'].items()}}))
         if all(v['status'] == 'unavailable' for v in result['datasets'].values()):

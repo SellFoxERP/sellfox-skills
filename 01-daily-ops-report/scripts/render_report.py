@@ -2,7 +2,7 @@
 """每日经营日报 —— 渲染层（render_report.py）。
 
 输入：analysis.json（+ 可选 bundle.json 以取订单样本与店铺名）
-输出：Markdown 日报（本地文件），可选写入飞书。
+输出：HTML 日报（本地文件；默认只写同名 .html，--keep-md 时附 .md），可选写入飞书。
 
 要点：
   * 严格使用 references/report-template.md 的结构：结论与行动 / 分项明细 / 附录 / 数据说明。
@@ -12,7 +12,7 @@
 
 用法::
 
-    python render_report.py --analysis out/analysis.json --bundle out/bundle.json --out out/daily.md
+    python render_report.py --analysis out/analysis.json --bundle out/bundle.json --out out/daily_report.md
     python render_report.py --analysis out/analysis.json --feishu
 """
 
@@ -36,7 +36,7 @@ if not _SHARED_ROOT.exists():
     raise SystemExit(f"_shared 路径不可用：{_SHARED_ROOT}。请设置 config/paths.yaml 的 shared_root。")
 sys.path.insert(0, str(_SHARED_ROOT / "scripts"))
 from config_loader import load_yaml_file  # noqa: E402
-from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：默认只写同名 .html，HTML 即报告）
 
 _SKILL_CFG = load_yaml_file(_SKILL_ROOT / "config" / "daily_report.yaml")
 
@@ -475,6 +475,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--analysis", default="out/analysis.json")
     ap.add_argument("--bundle", default="out/bundle.json")
     ap.add_argument("--out", default="out/daily_report.md")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--feishu", action="store_true", help="写入飞书文档")
     ap.add_argument("--override-demo", action="store_true", help="演示环境也强制写入飞书（仍需水印）")
     args = ap.parse_args(argv)
@@ -491,11 +493,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     bundle = json.loads(_path(args.bundle).read_text(encoding="utf-8")) if _path(args.bundle).exists() else {}
 
     md = render_markdown(analysis, bundle)
-    out = _path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(md, encoding="utf-8")
-    html_path = write_html_report(md, out)
-    print(f"✅ 日报已渲染：{out} / {html_path}")
+    # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md
+    html_path = write_html_report(md, _path(args.out), keep_md=args.keep_md)
+    if args.keep_md:
+        print(f"✅ 日报已渲染：{html_path}（md 留档：{_path(args.out)}）")
+    else:
+        print(f"✅ 日报已渲染：{html_path}")
 
     if args.feishu:
         try:

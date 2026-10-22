@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""渲染面：out/analysis.json → out/report.md（六段，口径行恒第一行；零网络）。
+"""渲染面：out/analysis.json → out/report.html（六段，口径行恒第一行；零网络；仅 HTML 出口）。
 
-    python3 scripts/render_report.py [--analysis out/analysis.json] [--out out/report.md]
+    python3 scripts/render_report.py [--analysis out/analysis.json] [--out out/report.md] [--keep-md]
 """
 
 from __future__ import annotations
@@ -259,6 +259,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--analysis", default="out/analysis.json")
     ap.add_argument("--out", default="out/report.md")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
     args = ap.parse_args()
     ap_path = Path(args.analysis)
     if not ap_path.is_absolute():
@@ -271,9 +273,8 @@ def main() -> int:
     if not out.is_absolute():
         out = SKILL_ROOT / out
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
-    html_path = write_html_report(text, out)  # 同名 .html 主报告（md 留档不变）
-    print(f"报告已写出 → {out}\nHTML 主报告 → {html_path}")
+    html_path = write_html_report(text, out, keep_md=args.keep_md)  # 仅 .html 主报告（--keep-md 才附 .md）
+    print(f"报告已写出 → {html_path}")
     return 0
 
 

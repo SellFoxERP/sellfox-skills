@@ -138,7 +138,7 @@ python scripts/test_regression.py   # 改动计算层后先跑回归护栏
 python scripts/render_report.py --in computed.json --out weekly_report.md
 ```
 
-报告输出 `weekly_report.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
+报告输出 `weekly_report.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试）。
 严格使用 `references/report-template.md` 的结构。**「数据说明」区块为必填**，缺失即视为报告不合格。
 趋势图优先用 `get_product_analyze_detail` 返回的 `charData`；缺失时降级为利润报表 `bizDay`
 日粒度序列，并标注「charData 缺失，降级」。
@@ -148,6 +148,7 @@ python scripts/render_report.py --in computed.json --out weekly_report.md
 ## 5. 可选：推送飞书
 
 ```bash
+python scripts/render_report.py --in computed.json --out weekly_report.md --keep-md   # 先产出 .md 通道载荷
 python scripts/push_feishu.py --markdown weekly_report.md --computed computed.json
 ```
 
@@ -155,6 +156,7 @@ python scripts/push_feishu.py --markdown weekly_report.md --computed computed.js
 - 演示环境默认**阻断**；确需写入要显式 `--override-demo`，且文档顶部保留水印。
 - 写入前过 **PII 脱敏**（`buyerEmail`/`buyerName`/买家地址），文末标注「已脱敏」。
 - 飞书应用须先被**添加为文档协作者**，否则写入 403；创建文档限流 3 次/秒。
+- `--markdown` 取 `render_report.py --keep-md` 产物或自备文件。
 
 ---
 

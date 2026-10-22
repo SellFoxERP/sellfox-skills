@@ -421,10 +421,13 @@ class AsinMissDisclosureTest(TempRawMixin, unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable, str(SCRIPTS / "run_profit_diagnosis.py"),
                  "--end", "2026-10-15", "--report-id", "RID-TEST",
-                 "--raw-dir", str(raw), "--asin", "B0MOCKA001", "--out", str(out)],
+                 "--raw-dir", str(raw), "--asin", "B0MOCKA001", "--out", str(out),
+                 "--keep-md"],
                 capture_output=True, text=True, timeout=120,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            # 默认仅 .html；--keep-md 时两者（HTML 即报告，md 为调试/测试载荷）
+            self.assertTrue(out.with_suffix(".html").is_file())
             md = out.read_text(encoding="utf-8")
             self.assertIn("请求的 ASIN `B0MOCKA001` 未命中任何 MSKU 行", md)
             self.assertIn("不下任何归因结论", md)

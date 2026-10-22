@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """报告 HTML 出口：把技能渲染层产出的 Markdown 报告转成自包含 HTML（零网络、零第三方依赖）。
 
-用法（各技能渲染层在写完 .md 后追加一行）：
+用法（各技能渲染层唯一的文件出口；默认不再写 .md，HTML 即报告）：
 
     from report_html import write_html_report
-    html_path = write_html_report(md_text, md_path)   # 写出同名 .html，返回其路径
+    html_path = write_html_report(md_text, report_base_path)          # 只写 .html
+    html_path = write_html_report(md_text, md_path, keep_md=True)     # 调试/飞书载荷需要 md 时
 
 支持的 Markdown 子集（本仓库渲染层实际使用的全部形态）：
 标题 #~###### ｜ 表格 |a|b|（第二行为 --- 分隔行）｜ 无序/有序列表 ｜ **加粗** ｜
@@ -203,11 +204,18 @@ def render_html_document(md: str, title: Optional[str] = None) -> str:
             "</body>\n</html>\n")
 
 
-def write_html_report(md: str, md_path: Path, title: Optional[str] = None) -> Path:
-    """在 .md 同目录写同名 .html（主报告出口），返回 HTML 路径。"""
+def write_html_report(md: str, md_path: Path, title: Optional[str] = None,
+                      keep_md: bool = False) -> Path:
+    """以 md_path 的名字为基准写同名 .html（唯一报告出口），返回 HTML 路径。
+
+    默认**不写 .md 文件**（HTML 即报告）；`keep_md=True` 时额外写出 .md，
+    仅供飞书通道载荷与测试断言使用。
+    """
     html_path = md_path.with_suffix(".html")
     html_path.parent.mkdir(parents=True, exist_ok=True)
     html_path.write_text(render_html_document(md, title), encoding="utf-8")
+    if keep_md:
+        md_path.write_text(md, encoding="utf-8")
     return html_path
 
 

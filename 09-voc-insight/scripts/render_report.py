@@ -361,9 +361,8 @@ def run(args: argparse.Namespace) -> int:
     md = render(signals, analysis, optimization)
     out = _p(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(md, encoding="utf-8")
-    html_path = write_html_report(md, out)  # 同名 .html 主报告（md 留档不变）
-    print(f"已写出 {out}（{len(md.splitlines())} 行）；HTML 主报告：{html_path}")
+    html_path = write_html_report(md, out, keep_md=args.keep_md)  # 仅 .html 主报告（--keep-md 才附 .md）
+    print(f"已写出 {html_path}（{len(md.splitlines())} 行）")
     if args.print:
         print("\n" + md)
     return 0
@@ -375,6 +374,8 @@ def main() -> int:
     p.add_argument("--analysis", default="out/voc_analysis.json")
     p.add_argument("--optimization", default=None, help="可选：优化素材需求单 JSON")
     p.add_argument("--out", default="out/voc-report.md")
+    p.add_argument("--keep-md", action="store_true",
+                   help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
     p.add_argument("--print", action="store_true", help="同时在终端打印报告")
     return run(p.parse_args())
 

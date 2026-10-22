@@ -5,7 +5,7 @@
 
 子命令：
     diagnose   读 out/raw/ 落盘（agent 已按取数计划取好）→ 诊断 → dry-run 提案
-               out/ad_proposal_<start>_<end>.{md,json}（提案 JSON 每项含
+               out/ad_proposal_<start>_<end>.{html,json}（提案 JSON 每项含
                ``tool_id`` 与 ``contract_version: null`` 占位）
     execute    **不调用任何写工具**：解析批准文本 → 累计闸 → 输出「执行清单」
                （被批准项 × tool_id × 参数模板 × before 快照 × read-back 计划 ×
@@ -617,14 +617,13 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     report = render_report(ad_data, findings, proposal, _sources_markdown(),
                            start_date=args.start, end_date=args.end)
     out_md = boot.output_path(f"ad_proposal_{args.start}_{args.end}.md")
-    out_md.write_text(report, encoding="utf-8")
-    out_html = write_html_report(report, out_md)  # 同名 .html 主报告（md 留档不变）
+    out_html = write_html_report(report, out_md, keep_md=args.keep_md)  # 仅 .html 主报告（--keep-md 才附 .md）
     out_json = boot.output_path(f"ad_proposal_{args.start}_{args.end}.json")
     save_proposal(out_json, proposal, shop_id=ad_data.shop_id, start=args.start, end=args.end,
                   demo_fingerprint=ad_data.demo_fingerprint)
 
     print(report)
-    print(f"\n（已写入 {out_md} 与 {out_json}；HTML 主报告：{out_html}）")
+    print(f"\n（已写入 {out_html} 与 {out_json}）")
     print(f"（提示：{_WRITE_PROTOCOL_NOTE}）")
     return 0
 
@@ -769,10 +768,9 @@ def cmd_execute(args: argparse.Namespace) -> int:
             "",
         ]
     md_text = "\n".join(md_lines)
-    out_md.write_text(md_text, encoding="utf-8")
-    out_html = write_html_report(md_text, out_md)  # 同名 .html 主报告（md 留档不变）
+    out_html = write_html_report(md_text, out_md, keep_md=args.keep_md)  # 仅 .html 主报告（--keep-md 才附 .md）
 
-    print(f"✅ 执行清单已生成（脚本未执行任何写操作）：\n  {out_md}\n  HTML 主报告：{out_html}\n  {out_json}")
+    print(f"✅ 执行清单已生成（脚本未执行任何写操作）：\n  {out_html}\n  {out_json}")
     print(f"下一步由 agent 按清单逐项执行：{_WRITE_PROTOCOL_NOTE}")
     print(f"每项执行完：python scripts/optimize.py record --change change.json")
     print(f"全部执行完：python scripts/optimize.py verify --proposal {args.proposal} --actual <回读落盘.json>")
@@ -907,6 +905,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_d.add_argument("--start", required=True, help="yyyy-MM-dd")
     p_d.add_argument("--end", required=True, help="yyyy-MM-dd")
     p_d.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
+    p_d.add_argument("--keep-md", action="store_true",
+                     help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
     p_d.set_defaults(func=cmd_diagnose)
 
     p_e = sub.add_parser("execute",
@@ -916,6 +916,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_e.add_argument("--operator", default="", help="操作人标识（飞书 open_id）")
     p_e.add_argument("--shop-id", default="", help="覆盖提案中的 shop_id")
     p_e.add_argument("--allow-demo", action="store_true", help="演示环境放行（默认阻断）")
+    p_e.add_argument("--keep-md", action="store_true",
+                     help="执行清单额外留档同名 .md（默认只写 .html）")
     p_e.set_defaults(func=cmd_execute)
 
     p_r = sub.add_parser("record", help="把一条执行结果追加 logs/ad_changes.jsonl（agent 逐项调用）")

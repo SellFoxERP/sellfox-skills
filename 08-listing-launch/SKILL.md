@@ -182,7 +182,7 @@ python3 scripts/listing_launch.py \
 python3 scripts/listing_launch.py ... --confirm-assets
 ```
 
-主要输出：`out/listing-package-<时间戳>.html`（主报告，附同名 `.md` 留档）与同名 `.asset-brief.json`（含成本闸状态）。
+主要输出：`out/listing-package-<时间戳>.html`（主报告，`--keep-md` 才附同名 `.md`）与同名 `.asset-brief.json`（含成本闸状态）。
 
 ## 数据源与字段（真实字段，勿臆造）
 

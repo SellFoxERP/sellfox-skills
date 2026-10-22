@@ -279,7 +279,7 @@ class PendingReasonTest(unittest.TestCase):
             self.skipTest("归档 case5 raw_noid 不存在")
         tmp = _sandbox(raw_src=raw_noid, files={"config.yaml": cfg})
         proc = _run_cli("--raw-dir", "raw", "--out-dir", "out", "--skill-config", "config.yaml",
-                        cwd=tmp)
+                        "--keep-md", cwd=tmp)  # 断言读 .md → 按 CLI 约定加 --keep-md
         combined = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, combined)
         self.assertIn("待确认公式或标识 1", proc.stdout)

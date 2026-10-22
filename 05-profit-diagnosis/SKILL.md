@@ -70,7 +70,7 @@ python scripts/fetch_profit.py --end 2026-09-30 --out out/profit_bundle.json  # 
 python scripts/selfcheck.py                                             # 离线自检（零网络，无需凭证）
 ```
 
-带 `--out` 时报告输出同名 `.html`（主报告，附 `.md` 留档供飞书通道与文本核对）。
+带 `--out` 时报告输出同名 `.html`（主报告，HTML 即报告；`--keep-md` 可附 `.md` 供调试与测试）。
 
 ## 执行流程
 

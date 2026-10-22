@@ -111,7 +111,9 @@ def run(args: argparse.Namespace) -> int:
                                "--out", "out/voc_analysis.json"]
          + (["--llm-themes", args.llm_themes] if args.llm_themes else [])),
         ("render_report.py", ["--signals", "out/signals.json", "--analysis", "out/voc_analysis.json",
-                              "--out", "out/voc-report.md"]),
+                              "--out", "out/voc-report.md"]
+         # 报告出口仅 .html；--keep-md 只在需要飞书 md 载荷（--feishu）时附加
+         + (["--keep-md"] if args.feishu else [])),
     ]
 
     for script, argv in steps:
@@ -127,7 +129,7 @@ def run(args: argparse.Namespace) -> int:
         if rc != 0:
             return rc
 
-    print("\n✅ 完成。报告：out/voc-report.md")
+    print("\n✅ 完成。报告：out/voc-report.html")
     if args.feishu:
         return _run("write_feishu.py", ["--report", "out/voc-report.md"]
              + (["--override-demo"] if args.override_demo else []))

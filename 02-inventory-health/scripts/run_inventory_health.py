@@ -38,7 +38,7 @@ from _shared_bootstrap import add_shared_to_path, shared_root
 add_shared_to_path()
 
 from config_loader import ConfigLoader, load_yaml_file  # noqa: E402
-from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：默认只写同名 .html，HTML 即报告）
 
 from fetch_inventory import FetchResult, assemble_all  # noqa: E402
 from replenishment import build_lead_time_specs, compute  # noqa: E402
@@ -109,7 +109,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check-only", action="store_true", help="只做前置校验（含 out/raw 落盘检查）")
     ap.add_argument("--answers", default=None, help='本次填写的到货周期 JSON，如 \'{"SKU":30}\'')
     ap.add_argument("--write-back", action="store_true", help="把本次填写回写 lead_time.yaml")
-    ap.add_argument("--out", default=None, help="输出 Markdown 路径（默认打印到 stdout）")
+    ap.add_argument("--out", default=None, help="输出报告路径（默认打印到 stdout；写出时 HTML 即报告）")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="--out 时额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--shared-root", default=None, help="覆盖 _shared 路径")
     ap.add_argument("--feishu", action="store_true", help="写入飞书文档（演示环境默认阻断）")
     ap.add_argument(
@@ -208,9 +210,12 @@ def _run(args: argparse.Namespace) -> int:
         if not out_path.is_absolute():
             out_path = SKILL_DIR / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(markdown, encoding="utf-8")
-        html_path = write_html_report(markdown, out_path)
-        print(f"✅ 已写入 {out_path} / {html_path}")
+        # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md
+        html_path = write_html_report(markdown, out_path, keep_md=args.keep_md)
+        if args.keep_md:
+            print(f"✅ 已写入 {html_path}（md 留档：{out_path}）")
+        else:
+            print(f"✅ 已写入 {html_path}")
     else:
         print(markdown)
 

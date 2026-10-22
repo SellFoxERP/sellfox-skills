@@ -153,11 +153,19 @@ class BusinessDataTest(unittest.TestCase):
         shutil.copytree(SCRIPT.parent,standalone/'scripts',ignore=shutil.ignore_patterns('__pycache__'))
         self.page([self.row()])
         plan=self.root/'plan.json';plan.write_text(json.dumps(self.plan))
+        # 默认：仅写 report.html，不产出 report.md
+        html_only=self.root/'html-only'
+        run=subprocess.run([sys.executable,str(standalone/'scripts/process_data.py'),'--plan',str(plan),'--out-dir',str(html_only)],text=True,capture_output=True)
+        self.assertEqual(run.returncode,0,run.stderr)
+        self.assertTrue((html_only/'report.html').is_file())
+        self.assertFalse((html_only/'report.md').exists())
+        # --keep-md：额外留档同名 report.md
         out=self.root/'result'
-        cmd=[sys.executable,str(standalone/'scripts/process_data.py'),'--plan',str(plan),'--out-dir',str(out)]
+        cmd=[sys.executable,str(standalone/'scripts/process_data.py'),'--plan',str(plan),'--out-dir',str(out),'--keep-md']
         first=subprocess.run(cmd,text=True,capture_output=True)
         self.assertEqual(first.returncode,0,first.stderr)
         self.assertEqual(json.loads((out/'result.json').read_text())['datasets']['current']['groups'][0]['metrics']['revenue']['value'],'100')
+        self.assertTrue((out/'report.html').is_file())
         original=(out/'report.md').read_bytes()
         self.assertEqual(subprocess.run(cmd,capture_output=True).returncode,1)
         self.assertEqual((out/'report.md').read_bytes(),original)
@@ -166,8 +174,9 @@ class BusinessDataTest(unittest.TestCase):
         self.page([self.row()],status='failed')
         plan=self.root/'plan.json';plan.write_text(json.dumps(self.plan))
         out=self.root/'unavailable'
-        run=subprocess.run([sys.executable,str(SCRIPT),'--plan',str(plan),'--out-dir',str(out)],capture_output=True)
+        run=subprocess.run([sys.executable,str(SCRIPT),'--plan',str(plan),'--out-dir',str(out),'--keep-md'],capture_output=True)
         self.assertEqual(run.returncode,2)
+        self.assertTrue((out/'report.html').is_file())
         self.assertIn('unavailable',(out/'report.md').read_text())
 
     def test_real_failure_shape_preserves_upstream_diagnostics(self):

@@ -84,6 +84,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="请求的站点过滤（如 US；透传 fetch_data.py，用于核验过滤生效性并回显范围）")
     ap.add_argument("--feishu", action="store_true", help="写入飞书")
     ap.add_argument("--override-demo", action="store_true", help="演示环境也强制写飞书")
+    ap.add_argument("--keep-md", action="store_true",
+                    help="渲染层额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--check-only", action="store_true", help="只做前置校验")
     ap.add_argument("--workdir", default="out", help="中间产物目录（相对技能根目录）")
     args = ap.parse_args(argv)
@@ -106,7 +108,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     bundle = work / "bundle.json"
     analysis = work / "analysis.json"
-    report = work / "daily_report.md"
+    report = work / "daily_report.md"          # 仅作 --out 命名基准（HTML 即报告）
 
     steps = [
         [sys.executable, str(_THIS.parent / "fetch_data.py"),
@@ -117,6 +119,7 @@ def main(argv: Optional[List[str]] = None) -> int:
          "--in", str(bundle), "--out", str(analysis)],
         [sys.executable, str(_THIS.parent / "render_report.py"),
          "--analysis", str(analysis), "--bundle", str(bundle), "--out", str(report)]
+        + (["--keep-md"] if args.keep_md else [])
         + (["--feishu"] if args.feishu else [])
         + (["--override-demo"] if args.override_demo else []),
     ]
@@ -127,7 +130,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"❌ 步骤失败（exit {rc}）：{' '.join(cmd)}", file=sys.stderr)
             return rc
 
-    print(f"\n🎉 完成。日报：{report}")
+    done = f"（md 留档：{report}）" if args.keep_md else ""
+    print(f"\n🎉 完成。日报：{report.with_suffix('.html')}{done}")
     return 0
 
 
