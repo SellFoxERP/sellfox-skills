@@ -75,10 +75,13 @@ def render(a: Dict[str, Any]) -> str:
                 if n.get("coverage_conflict")]
     win = (f"窗口={_fmt_window(meta['current'])}（单窗口快照，无对比基期）" if snapshot
            else f"窗口={_fmt_window(meta['current'])} vs {_fmt_window(base_win)}")
+    # 时间粒度：窗口 8 位=按天（默认）、6 位=按月（用户点名）
+    st = str((meta.get("current") or {}).get("start") or "")
+    t_gran = "月（点名）" if len(st) == 6 else ("日" if len(st) == 8 else "未知")
     lines.append(
         f"① 口径={meta.get('caliber')}｜币种={a.get('currencies') or '多币种分开未折算'}｜"
         f"{win}｜"
-        f"粒度={meta.get('granularity')}｜成本层级={meta.get('cost_layer')}｜覆盖={cov_desc or '见数据说明'}"
+        f"粒度={meta.get('granularity')}｜时间粒度={t_gran}｜成本层级={meta.get('cost_layer')}｜覆盖={cov_desc or '见数据说明'}"
         + (f"｜⚠️ {'；'.join(conflict)}" if conflict else ""))
     lines.append("")
 

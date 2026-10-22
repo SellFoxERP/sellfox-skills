@@ -17,13 +17,17 @@ description: 销售利润分析（赛狐/SellFox ERP，只读）。即席回答�
 **按问题裁剪**，有更合适的路径就走）。本技能的价值是判断准，不是格式齐。
 
 ```
-只问一个数 / 只要明细      → ①②③ 就够
-问"赚不赚钱、谁在亏、谁最大" → ①②③⑤（排名走产品分析）
-问"变化/为什么/被什么吃了"  → 全走 ①~⑦（含日序列，见下）
+时间维度默认=按天（date_type=2、yyyyMMdd、近 14 天 vs 前 14 天，相邻不重叠）；
+用户点名"本月/上月"等月份时才切月窗口 yyyyMM。按需选路，不必全走：
+  只问一个数 / 只要明细      → ①②③ 就够
+  问"赚不赚钱、谁在亏、谁最大" → ①②③⑤（排名走产品分析）
+  问"变化/为什么/被什么吃了"  → 全走 ①~⑦（含日序列，见下）
 ① 锁口径   profit_caliber_type（order 侧叫 caliber_type，发货词是 delivery）+ currency + 窗口
+            窗口默认按天（近 14 天 vs 前 14 天）；点名月份才用 yyyyMM
             未确认 → 问一句，别拿默认空串硬跑
-② 定店铺   get_shop_page_list → shop_ids（integer 数组）；status 枚举以当轮契约与实测为准
-            （线上见过 active/inactive 与数字码两种形态）；授权失效的店铺别当"没生意"
+② 定店铺   get_shop_page_list（page_size=100，string，按 totalPage 翻完）→ shop_ids（integer 数组）
+            status 枚举以当轮契约与实测为准（线上见过 active/inactive 与数字码 1·2 两种形态；
+            授权失效的店铺别当"没生意"
 ③ 取窗口金额  profit_by_msku|_by_shop 聚合（date_type=2 + show_on_day=false）→ 1 行/窗口
 ④ 取日序列  show_on_day=true 分段取，每次 ≤7 天；变化归因类默认要做
 ⑤ 取排名   get_product_analyze_list + 顶层 fields/field_modules 投影（anyOf 至少一项非空，

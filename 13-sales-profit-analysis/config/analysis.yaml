@@ -13,6 +13,7 @@ thresholds:
   row_margin_watch_band: [0, 10]        # 行级 grossProfitRate 关注区间（%）
   row_margin_alert_below: 0             # 行级 < 0 = 亏损品
 window:
+  default_time_granularity: day         # 时间维度默认=按天；月窗口仅用户点名时
   daily_recent_days: 14                 # 日窗口默认：近 14 天 vs 前 14 天（相邻不重叠）
   segment_max_days: 7                   # show_on_day=true 每段 ≤7 天（实测 14 行超预算）
 new_product:

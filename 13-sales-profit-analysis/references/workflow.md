@@ -29,12 +29,12 @@
 
 ## 二、取数计划表
 
-按序取数；已知 tool_id 直接 `search`（一次 ≤5 个）拿契约再 action。多店铺批次可并行，
+**时间维度默认=按天**（`date_type=2` + `yyyyMMdd`，默认窗口近 14 天 vs 前 14 天，相邻不重叠）；月粒度 `yyyyMM` 仅在用户以**月语义**指代窗口时使用——「本月/上月/这个月/上个月/X月」都算点名月份（切月），「最近 N 天/上周 vs 这周」仍走日窗口。按序取数；已知 tool_id 直接 `search`（一次 ≤5 个）拿契约再 action。多店铺批次可并行，
 每步落盘完整信封并核对 status。
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/shops.json` | `get_shop_page_list` | `page_no`/`page_size` 为 **string** | `rows` | 105 | 按 `totalPage` 翻完；`status` 枚举以当轮契约与实测为准（线上见过 `active`/`inactive` 与数字码两种形态）——授权失效的店铺别当"没生意"；行可能重复，按唯一店铺 ID 去重 |
+| 1 | `out/raw/shops.json` | `get_shop_page_list` | `page_no`/`page_size` 为 **string**（`page_size=100`） | `rows` | 105 | 按 `totalPage` 翻完；`status` 枚举以当轮契约与实测为准（线上见过 `active`/`inactive` 与数字码两种形态）——授权失效的店铺别当"没生意"；行可能重复，按唯一店铺 ID 去重 |
 | 2 | `out/raw/agg_current.json` / `agg_base.json` | `get_profit_report_by_msku`（或 `_by_shop`） | `date_type=2`；`start_date`/`end_date` `yyyyMMdd`；`show_on_day=false`；`profit_caliber_type` **string**；`page_no`/`page_size` **integer** | `reportList` | 5 | 窗口聚合 1 行，本期/基期各一次（总额与桥接用）；`page_size=5` 足够 |
 | 3 | `out/raw/daily_current/<seg>.json`、`daily_base/<seg>.json`（每段一个） | 同上 | `show_on_day=true`，**每段 ≤7 天** | `reportList` | 7×段数 | 变化归因类默认做（**两期都要**：基期贷项剔除与停投对照都靠它）；纯快照或已确认无贷项/停投可省 |
 | 4 | `out/raw/rank_current.json` / `rank_base.json` | `get_product_analyze_list` | 顶层 `fields`（字段常量 ≤199）/ `field_modules`（模块 ≤14）——**anyOf 至少一项非空**（投影后行极小；**参数以当轮契约为准**，实测没有 options 投影嵌套参数）；`dim_type` 1/6；`merge_asin` 显式 false；分页 **integer**；店铺参数名 `shop_id_list`（**string 数组**，与利润工具不同） | `rows` | 200 | 赚钱榜/亏损榜各发一次 desc=true/false（排序常量以当轮契约为准——fields 字典的利润列常量是 `profitPrice`，无 `gross_profit`）；**亏损榜必须再发一次 `desc=false`**（负毛利在降序尾部，从 desc 结果筛 `<0` ≈ 空集） |
