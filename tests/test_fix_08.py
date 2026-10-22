@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -404,6 +405,69 @@ class TestDocsAligned(unittest.TestCase):
     def test_template_no_stale_headtrip_claim(self):
         text = (SKILL / "references" / "listing-package-template.md").read_text(encoding="utf-8")
         self.assertNotIn("仅存在于 get_custom_report_page_list", text)
+
+
+class TestV17DeFeishuGuardDemo(unittest.TestCase):
+    """[v1.7.0] 去飞书（写飞书分支删除）+ 外部生成闸改用 sellfox_offline.guard_demo + 去自定义报表。"""
+
+    def test_sources_have_no_feishu_or_custom_report(self):
+        for path in list(SKILL.rglob("*")):
+            if ("__pycache__" in path.parts or "out" in path.parts
+                    or not path.is_file() or path.suffix not in (".py", ".md", ".yaml", ".json")):
+                continue
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("FeishuWriter", text, str(path))
+            self.assertNotIn("write_feishu:", text, str(path))   # 配置键形态（移除注释除外）
+            self.assertNotIn('"--write-feishu"', text, str(path))
+            self.assertNotIn("feishu_writer", text, str(path))
+            self.assertNotIn("get_custom_report_page_list", text, str(path))
+
+    def test_parser_has_no_write_feishu_flag(self):
+        src = (SCRIPTS / "listing_launch.py").read_text(encoding="utf-8")
+        self.assertNotIn('"--write-feishu"', src)
+        self.assertIn("from sellfox_offline import guard_demo", src)   # 新 import 路径
+        self.assertIn("外部生成闸", src)
+
+    def _run_cli(self, *args):
+        return subprocess.run(
+            [sys.executable, str(SCRIPTS / "listing_launch.py"), *args],
+            cwd=str(SKILL), capture_output=True, text=True)
+
+    def test_demo_gate_blocks_external_generation_and_override_releases(self):
+        # 演示指纹（B0DEMO）+ 已确认成本（--confirm-assets）→ guard_demo 默认阻断外部生成；
+        # 显式 --allow-demo-write 才放行。语义与 v1.7.0 前的飞书写入闸一致，闸门对象换成外部生成。
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = write_raw(tmp, online=[online_row(asin="B0DEMO1234")],
+                            analyze=[analyze_row(asin="B0DEMO1234")])
+            hold = self._run_cli(
+                "--search-type", "asin", "--search-content", "B0DEMO1234",
+                "--name", "演示闸门商品", "--marketplace", "US",
+                "--raw-dir", str(raw), "--out", str(Path(tmp) / "pkg-hold.md"),
+                "--confirm-assets")
+            self.assertEqual(hold.returncode, 0, hold.stdout + hold.stderr)
+            self.assertIn("生成闸：HOLD", hold.stdout)
+            self.assertIn("演示数据默认阻断外部生成", hold.stdout)
+            self.assertIn("外部生成闸", hold.stdout)          # 警示进输出
+            proceed = self._run_cli(
+                "--search-type", "asin", "--search-content", "B0DEMO1234",
+                "--name", "演示闸门商品", "--marketplace", "US",
+                "--raw-dir", str(raw), "--out", str(Path(tmp) / "pkg-proceed.md"),
+                "--confirm-assets", "--allow-demo-write")
+            self.assertEqual(proceed.returncode, 0, proceed.stdout + proceed.stderr)
+            self.assertIn("生成闸：PROCEED", proceed.stdout)
+
+    def test_gate_stays_hold_without_cost_confirmation(self):
+        # 未过成本确认（无 --confirm-assets）时闸门本就 HOLD，外部生成闸不介入。
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = write_raw(tmp, online=[online_row()],
+                            analyze=[analyze_row(asin="B0FIX0001")])
+            proc = self._run_cli(
+                "--search-type", "asin", "--search-content", "B0FIX0001",
+                "--name", "成本闸商品", "--marketplace", "US",
+                "--raw-dir", str(raw), "--out", str(Path(tmp) / "pkg.md"))
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("生成闸：HOLD", proc.stdout)
+            self.assertIn("未经人工确认前不得批量生成", proc.stdout)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@
 | 1 | `get_shop_page_list` | shops | 读 | 02-7（分批体检） | 01-1、X-3、X-18 |
 | 2 | `get_profit_report_by_shop` | finance | 读 | 01-6（发货口径） | 04-6、04-8、05-6、X-1、X-13 |
 | 3 | `get_profit_report_by_msku` | finance | 读 | 04-5（Top50 截断披露） | 05-7、05-8、X-5 |
-| 4 | `get_custom_report_page_list` | reports | 读 | 01-9（契约失配注入） | 02-7、03-6、05-5、09-5、X-14 |
+| 4 | `get_custom_report_page_list` | reports | 读 | 14-3（字段映射核对） | X-14；v1.7.0 起查询归属 custom-report-analysis（01~09 已移除该步骤） |
 | 5 | `get_order_page_list` | orders | 读 | 01-8（PII 脱敏） | — |
 | 6 | `get_sp_campaign_list` | advertising | 读 | 06-1（游标分页） | X-5、X-9 |
 | 7 | `get_sp_keyword_list` | advertising | 读 | 06-6（优质词提案） | X-5 |
@@ -58,6 +58,7 @@
 | 10-sellfox-business | `get_shop_page_list`、`get_multiplatform_sale_stats`、`get_order_page_list`、`get_product_analyze_list`、`get_fba_shipment_page_list`、`get_awd_inventory_page_list`、`get_profit_report_by_shop`、`get_sp_campaign_list`、`get_custom_report_index_page_list`、`get_custom_report_stat_index_list`、help（no_match 场景） | 10-1~10-14（14 例） |
 | 11-returns-loss | `get_profit_report_by_msku`、`get_shop_page_list`（+ 复用 10 的 process/topic 组件） | 11-1~11-7（7 例） |
 | 12-new-product-review | `get_online_product_page_list`、`get_product_analyze_list`、`get_profit_report_by_msku` | 12-1~12-7（7 例） |
+| 14-custom-report-analysis | `get_custom_report_index_page_list`（发现）、`get_custom_report_page_list`（验证读+取数） | 14-1~14-8（8 例） |
 | 13-sales-profit-analysis | `get_shop_page_list`、`get_profit_report_by_msku`/`_by_shop`（聚合+日序列）、`get_product_analyze_list`（两榜，desc 双向）、`get_profit_report_by_order`（延期结算） | 13-1~13-12（12 例） |
 
 新记录的数据源事实（线上实测，详见线上评测 SUMMARY §四）：`stat_index_page_list` 形态

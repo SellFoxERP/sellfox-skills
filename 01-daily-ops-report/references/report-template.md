@@ -1,13 +1,13 @@
-# 日报模板与飞书映射（report-template.md）
+# 日报模板（report-template.md）
 
 > SKILL.md 渲染日报时读本文件。`scripts/render_report.py` 已按此结构实现。
+> 报告仅本地 HTML（HTML 即报告），不外发（飞书写入能力 v1.7.0 已移除）。
 
 ## 目录
 
 - [一、模板骨架](#一模板骨架)
 - [二、双读者分层说明](#二双读者分层说明)
-- [三、飞书 block 映射](#三飞书-block-映射)
-- [四、不可省略的区块](#四不可省略的区块)
+- [三、不可省略的区块](#三不可省略的区块)
 
 ---
 
@@ -49,8 +49,8 @@
 - ⚠️ 账户健康 / 绩效通知 / 买家消息 — 需人工核查
 
 ### STEP 02 销售 / 流量 🔴 P0
-- GMV / 销量 / 基线方法
-- 异常 MSKU（销量环比）：…
+- GMV / 销量 / 基线方法（30 天切片）
+- MSKU 级销量环比为宽表指标（custom-report-analysis 承接）— 需人工核查
 
 ### STEP 03 广告
 - 广告花费 / 广告销售额 / ACOS
@@ -59,8 +59,7 @@
 - 说明：servingStatus 的 BUDGET_CAPPED 不作判定条件
 
 ### STEP 04 库存
-- 断货预警 N 项（紧急 M 项）
-  - [等级] {msku}：可售 {days} 天，在途 working/shipped/transit
+- 可售天数/库龄分桶/补货建议为宽表字段（custom-report-analysis 承接）— 需人工核查
 
 ### STEP 05 转化
 - Sessions / 订单 / CVR；购物车占比偏低项
@@ -106,25 +105,11 @@
 
 ---
 
-## 三、飞书 block 映射
+## 三、PII 脱敏（订单样本附录）
 
-用 `_shared/scripts/feishu_writer.py`：
-
-```python
-from feishu_writer import FeishuWriter
-fw = FeishuWriter(folder_token="…")
-fw.guard_demo(bundle["data"])              # 演示环境默认阻断，可 override=True
-doc_id = fw.create_doc("每日经营日报 2026-09-29")
-fw.write_blocks(doc_id, fw.markdown_to_blocks(report_markdown))
-```
-
-`markdown_to_blocks` 已按行映射：`#`→heading1/2/3、`-`→bullet、`---`→divider、代码块→code、`>`→quote。
-**写入前对 `buyerEmail` / `buyerName` 自动脱敏**（`mask_pii_in_text`）。
-
-### 两个必踩的坑
-
-1. 飞书应用必须被**添加为文档协作者**，否则写入返回 `403`。
-2. 创建文档接口限流 **3 次/秒**（错误码 `99991400`），同文件夹创建必须**串行**。
+订单样本行渲染前统一过 `_shared/scripts/sellfox_offline.py` 的
+`mask_pii_in_text`（`buyerEmail` 掩码为 `ab***@x.com`、`buyerName` 保留首字符），
+附录末尾标注「已脱敏：buyerEmail / buyerName 已掩码」。
 
 ---
 
@@ -134,5 +119,5 @@ fw.write_blocks(doc_id, fw.markdown_to_blocks(report_markdown))
 
 1. **「本日报未能覆盖」** —— 列出 MCP 无数据源的项（账户健康、买家消息、政策、评论原文），标「⚠️ 需人工核查」。
 2. **数据说明** —— 利润口径 / 币种 / 业务日边界 / 数据源 / 数据截止时间。
-3. **参数来源** —— 阈值、report_id 等的来源（配置命中 / 本次填写 / 默认值），默认值必须显式标注。
+3. **参数来源** —— 阈值、利润口径等的来源（配置命中 / 本次填写 / 默认值），默认值必须显式标注。
 4. **截断/降级/无数据披露**（如有）—— 禁止静默。

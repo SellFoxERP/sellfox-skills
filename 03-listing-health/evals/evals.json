@@ -10,41 +10,48 @@
     {
       "id": 2,
       "prompt": "这个 listing 有流量但是不出单，帮我查查为什么",
-      "expected_output": "命中「有流量无转化/价格劣势/评分下滑」P2 分支，加载 references/conversion.md；读 sessions 高 + conversionRate 低；类目基准拿不到时标「⚠️ 需人工核查」，不编造基准值。",
+      "expected_output": "命中「有流量无转化/价格劣势/评分下滑」分支，加载 references/conversion.md；如实说明 sessions/conversionRate 为宽表字段（本技能未接入自定义报表，由 custom-report-analysis 承接）→ 标「⚠️ 需人工核查」；可用 get_product_analyze_list（契约 fields 实测含会话/转化字段）作替代源按当次契约取值；类目基准拿不到时标「⚠️ 需人工核查」，不编造基准值。",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "没有 report_id，能帮我做 listing 体检吗？",
-      "expected_output": "启用降级路径（只用 get_online_product_page_list 字段：onlineStatus/bsrRank/rating/listingPrice），显式声明 sessions/pageViews/conversionRate/buyBoxPercent/lowReviewNum/availableDays 等只在 489 宽表的字段「取不到」，并列出口径降级说明，不用别的字段冒充。",
+      "prompt": "不用配报表，能帮我做 listing 体检吗？",
+      "expected_output": "可以：本技能 v1.7.0 起不再依赖 report_id/自定义报表（宽表字段分析由 custom-report-analysis 技能承接）。只用 get_online_product_page_list 字段（onlineStatus/bsrRank/rating/listingPrice/buyBoxWinner/day7/day30SaleNum），显式声明 sessions/pageViews/conversionRate/buyBoxPercent/lowReviewNum/availableDays 等宽表字段「不可用（custom-report-analysis 承接）」，并列出口径降级说明，不用别的字段冒充，不引导配置报表。",
       "files": []
     },
     {
       "id": 4,
       "prompt": "『清仓』标签下的商品做一次体检",
-      "expected_tools": ["get_product_by_label"],
+      "expected_tools": [
+        "get_product_by_label"
+      ],
       "expected_output": "按 get_product_by_label 取标签命中商品（标签参数按契约传；config 的 labels.required_groups 缺失时先引导补配置）；命中集合与在售扫描合并分诊；标签无命中标「无数据」；结果按 P0→P3 严重度排序。",
       "files": []
     },
     {
       "id": 5,
       "prompt": "这个类目里 BSR 排名最近往下掉的链接找出来",
-      "expected_tools": ["get_product_analyze_list"],
+      "expected_tools": [
+        "get_product_analyze_list"
+      ],
       "expected_output": "用 get_product_analyze_list 取类目与 BSR 明细，bsrRank[].rank 名次变差判 P2；类目名与宽表的 big/smallCategoryRanking 分属不同工具，字段来源标注不混淆；缺历史快照时说明需要环比基线，不给无基线的「下降」结论。",
       "files": []
     },
     {
       "id": 6,
       "prompt": "上周新上架的链接帮我跟踪下流量和转化",
-      "expected_tools": ["get_custom_report_page_list", "get_online_product_page_list"],
-      "expected_output": "按上架时间过滤（openDate 类字段，注明其所属工具）；sessions/conversionRate 只存在于宽表——report_id 未配时显式降级标注「流量/转化不可用」，不用别的字段冒充；新品无历史基线时环比标「无基线」，不编趋势结论。",
+      "expected_tools": [
+        "get_online_product_page_list",
+        "get_product_analyze_list"
+      ],
+      "expected_output": "按上架时间过滤（openDate 类字段，注明其所属工具）；sessions/conversionRate 为宽表字段（本技能未接入自定义报表，由 custom-report-analysis 承接）→ 标「⚠️ 需人工核查」，不用别的字段冒充；get_product_analyze_list 契约 fields 实测含 sessions/conversionRate，可作替代源（以当次契约为准）；新品无历史基线时环比标「无基线」，不编趋势结论。",
       "files": []
     },
     {
       "id": 7,
       "prompt": "全店 listing 体检 [[场景注入：get_online_product_page_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
       "scenario": "contract_version_mismatch",
-      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败时报告明确标注「在售扫描源不可用」，只输出宽表侧可得结论（或反之），不静默丢步骤、不中断整份体检报告。",
+      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败时报告明确标注「在售扫描源不可用」，只输出其余源（analyze/labels）可得结论，不静默丢步骤、不中断整份体检报告；宽表指标固定由 custom-report-analysis 承接，不受影响。",
       "files": []
     }
   ]

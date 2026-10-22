@@ -4,32 +4,32 @@
     {
       "id": 1,
       "prompt": "帮我诊断一下利润，最近毛利下滑得厉害，到底亏在哪里？",
-      "expected_output": "含利润口径声明（settlement/shipment）、本期 vs 基期窗口、异常清单、每个 MSKU 的归因表（逐字段标注来源工具：get_profit_report_by_msku / get_custom_report_page_list）、建议动作、延期结算与赔偿区块、数据说明（覆盖范围 + 需人工核查）。",
+      "expected_output": "含利润口径声明（settlement/shipment）、本期 vs 基期窗口、异常清单、每个 MSKU 的归因表（逐字段标注来源工具，全部为 get_profit_report_by_msku）、建议动作、延期结算与赔偿区块（宽表分工固定披露 + 赔偿条数核对）、数据说明（覆盖范围 + 需人工核查）。",
       "files": []
     },
     {
       "id": 2,
       "prompt": "ASIN B0MOCKA001 这个产品为什么一直不赚钱？",
-      "expected_output": "单个 MSKU 的归因解读：毛利环比、3~5 条归因（含来源工具与贡献额）、建议动作；若 report_id 未配置则显式标注采购成本/头程/赔偿/延期结算「不可用，需人工核查」。",
+      "expected_output": "单个 MSKU 的归因解读：毛利环比、3~5 条归因（全部来自 msku 报表因子，含来源工具与贡献额）、建议动作；宽表因子（采购成本/头程/赔偿金额/延期结算）固定标注「由 custom-report-analysis 承接」，不用 msku 汇总字段冒充明细。",
       "files": []
     },
     {
       "id": 3,
       "prompt": "我们有不少钱是延期结算的，还有赔偿好像一直没到账，帮我看看这个月的利润有没有被这些拖累。",
-      "expected_output": "命中「延期结算与赔偿」专线：deferredAmount / reimbursementAmount / warehouseLostAmount / missingFromInboundAmount 独立区块，字段标注来源为 get_custom_report_page_list，并用 get_amazon_reimbursement_report 交叉核对赔偿条数；无数据标「无数据」不写 0。",
+      "expected_output": "命中「延期结算与赔偿」区块：金额因子（deferredAmount / reimbursementAmount / warehouseLostAmount / missingFromInboundAmount）固定披露由 custom-report-analysis 技能承接、本报告不取值不编造；同时用 get_amazon_reimbursement_report 做条数级核对（无数据标「无数据」不写 0）；提示延期结算是「钱推迟确认，勿当成本砍」。",
       "files": []
     },
     {
       "id": 4,
-      "prompt": "用结算口径帮我出一份上个月的利润异常报告，推到飞书。",
-      "expected_output": "报告首部标注 settlement 口径并写入飞书；演示环境下默认阻断写入，只有显式 --allow-demo-write 才放行且文档含演示水印。",
+      "prompt": "用结算口径帮我出一份上个月的利润异常报告。",
+      "expected_output": "报告首部标注 settlement 口径，本地输出 HTML 报告；演示环境数据顶部加水印，不可用于业务口径验证。",
       "files": []
     },
     {
       "id": 5,
       "prompt": "赔偿报告里的条目和利润报表对得上吗？有没有漏领的？",
-      "expected_tools": ["get_amazon_reimbursement_report", "get_custom_report_page_list"],
-      "expected_output": "get_amazon_reimbursement_report 与宽表 reimbursementAmount（来源：get_custom_report_page_list）交叉核对；赔偿报告可能返回 data:{} → 标「无数据」不重试；两边都有数且口径可对齐时才给差异结论，否则差异条目进「需人工核查」清单，不轻下「漏领」结论。",
+      "expected_tools": ["get_amazon_reimbursement_report"],
+      "expected_output": "get_amazon_reimbursement_report 赔偿条目按三态如实呈现（已取数 N 批 M 行 / 无数据 / 取数失败带 error_code）；赔偿报告可能返回 data:{} → 标「无数据」不重试；金额级交叉核对（reimbursementAmount）属宽表，固定披露由 custom-report-analysis 承接；不下轻率的「漏领」结论。",
       "files": []
     },
     {

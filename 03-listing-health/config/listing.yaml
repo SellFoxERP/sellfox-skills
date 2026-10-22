@@ -64,11 +64,11 @@ labels:
 
 # ---------- 降级 / 数据源 ----------
 degradation:
-  # 流量/购物车占比/CVR/类目排名/评分数等字段只在 get_custom_report_page_list（489 字段宽表）。
-  # 报表 ID 复用 _shared/config/reports.yaml 的 daily_ops 段（同一张宽表）。
-  traffic_fields_tool: get_custom_report_page_list
-  report_key: daily_ops
-  # 未配置 report_id 时，以下检查项直接标「需人工核查」，不得编造、不得写 0：
+  # v1.7.0 起本技能不再调用 get_custom_report_page_list（自定义报表宽表），
+  # 也不依赖 report_id：宽表字段分析由 custom-report-analysis 技能承接。
+  # 流量/购物车占比/CVR/类目排名/评分数等宽表专属字段固定不可用，标「需人工核查」。
+  traffic_fields_tool: get_custom_report_page_list  # 仅作字段归属标注（实际由 custom-report-analysis 承接）
+  # 以下检查项固定标「需人工核查」，不得编造、不得写 0：
   manual_when_no_report:
     - 丢购物车占比（buyBoxPercent）
     - 无流量（sessions/pageViews 连续为 0）

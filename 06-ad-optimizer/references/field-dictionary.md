@@ -8,9 +8,8 @@
 - [一、读接口字段](#一读接口字段)
 - [二、写接口参数](#二写接口参数)
 - [三、绩效字段（下载任务 xlsx）](#三绩效字段下载任务-xlsx)
-- [四、绩效字段（自定义报表兜底）](#四绩效字段自定义报表兜底)
-- [五、字段确认状态](#五字段确认状态)
-- [六、列表字段与分页形态](#六列表字段与分页形态)
+- [四、字段确认状态](#四字段确认状态)
+- [五、列表字段与分页形态](#五列表字段与分页形态)
 
 ---
 
@@ -91,52 +90,24 @@
 
 ---
 
-## 四、绩效字段（自定义报表兜底）
-
-`get_custom_report_page_list`（分页类，列表字段 `data.rows`）请求：`report_id`(必填)、
-`start_date`(必填)、`end_date`(必填)、`currency`、`shop_ids`、`marketplace_ids` 等。
-
-已实测确认的广告字段（489 字段宽表内）：
-
-| 字段 | 样例值 | 说明 |
-|---|---|---|
-| `adCost` | `"0.0"` | 广告总花费 |
-| `adSpCost` / `adSbCost` / `adSdCost` | `250.3` / `90.2` / `55` | 分广告类型花费 |
-| `adImpressions` | `320000` | 曝光 |
-| `adClicks` | `4200` | 点击 |
-| `adClickRate` | `1.31` | 广告点击率 |
-| `adOrderNum` | `"0"` | 广告订单数 |
-| `acos` / `spAcos` / `sbAcos` / `sdAcos` | `"0.0"` / `20.8` / `21.4` / `23` | ACOS |
-| `roas` | `"0.0"` | ROAS |
-| `acoas` / `asoas` | `6.2` / `3.4` | 广告成本占销售额等 |
-| `cpc` / `cpa` / `cpo` | `"0.0"` / `"0"` / `4.29` | 单次成本类 |
-| `adConversionRateCpc` | `2.33` | 广告转化率（**字段字典 06 确认**，MSKU 级） |
-| `adSalePrice` | `1860.5` | 广告销售额 |
-
-> ⚠️ 这些是 **MSKU/商品维度**，**不可归因到单个 campaign**。只用于店铺级汇总与人工排查；
-> 启用后 campaign/关键词级诊断降级为「人工核查」。
-
----
-
-## 五、字段确认状态
+## 四、字段确认状态
 
 | 字段/取值 | 状态 | 用法约束 |
 |---|---|---|
 | `state` = enabled/paused/archived | 实测确认 | 可直接用于判定与写操作 |
 | `servingStatus` | 字段实测存在（见 `CAMPAIGN_PAUSED`） | 仅作人工提示 |
 | `servingStatus` = `BUDGET_CAPPED` | **未经实测验证** | **禁止**作为自动判定条件 |
-| `adConversionRateCpc` | 字段字典 06 确认（489 字段，样例 2.33） | 可用于人工排查转化端 |
 | `rate` / `currencyList` | 实测确认存在（`get_profit_report_by_msku`，171 字段） | 汇损归因；本技能不涉及利润报表 |
 | `edit_sp_targeting.targetId` 与关键词 `keywordId` 是否等价 | **未实测确认** | 默认不自动执行关键词竞价写 |
 
 ---
 
-## 六、列表字段与分页形态
+## 五、列表字段与分页形态
 
 | 类型 | 列表字段 | 翻页 | 涉及工具 |
 |---|---|---|---|
 | 广告类（游标） | `data.itemList` + `data.nextToken` | `next_token` ← `nextToken` | `get_sp_*` / `get_sb_*` |
-| 分页类 | `data.rows` | `page_no` 递增 | `get_ad_download_task_page_list`、`get_custom_report_page_list` |
+| 分页类 | `data.rows` | `page_no` 递增 | `get_ad_download_task_page_list` |
 | 利润报表 | `data.reportList` | `page_no` | `get_profit_report_by_*`（本技能不涉及） |
 
 > 用 `data.rows` 解析广告列表会拿到空结果且不报错；历史测试常见 20 条/页（当前分页以契约为准），

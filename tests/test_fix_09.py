@@ -1,19 +1,21 @@
-"""09-voc-insight 修复回归测试（2026-10-16 评测问题 P1-P8 / N1-N3）。
+"""09-voc-insight 修复回归测试（2026-10-16 评测问题 P1-P8 / N1-N3；2026-10-22 去飞书/去自定义报表改写）。
 
-直测十条修复的行为（零网络，只喂合成落盘信封）：
+直测修复的行为（零网络，只喂合成落盘信封）：
   1. [P5] signals.errors/error_details 渲染进「0. 数据说明」：步骤/工具/error_code/是否可重试逐条可见；
-  2. [N1] 降级原因三态区分：未配置 / 发现失败（error_code）/ 候选验证被拒（error_code），各自文案如实，
-     不把上游故障误归因为用户没配置 report_id；
-  3. [P6] 两窗口均 failed 时第 1 节给「取数失败（error_code：X）」而非「缺少历史基线」；
+  2. [固定口径] 宽表信号（lowReviewNum/reviewNum/reviewRate 及环比）由 custom-report-analysis 承接，
+     报告置顶固定横幅；残留宽表落盘不消费并披露；
+  3. [P6] online 快照取数失败时第 1 节给「取数失败（error_code：X）」；
      observed 为空不再打印「以下展示已取到的评分快照」；
-  4. [P2] review_rate_drop 补 min_rating_count 小样本保护（与 rating_drop 对称）；
+  4. [P2] 快照低分筛选补 min_rating_count 小样本保护（评分数不足不入选）；
   5. [P3] 成本闸：显式 --adapter-file 视为启用外部调用意图（不再按 enabled=false 判 HOLD），
      HOLD 基于「将发生外部调用」；--reviews-json 本地回灌不属于外部调用（无闸门 + 标注）；
   6. [N2] flagged=0 时跳过「将对 0 个 ASIN 发起外部调用」确认，直接输出无调用结论；
-  7. [P4] 编排入口 --end-date 透传 fetch_signals，环比两窗口固定；
+  7. [P4] 编排入口 --end-date 透传 fetch_signals，窗口固定；
   8. [P7] 损坏 JSON 与文件缺失区分报错（corrupt ≠ missing，排查方向不同）；
-  9. [N3] 人工核查清单语义重复条目去重 +「⚠️ ⚠️」双前缀修单；上游失败态不再补「需配置 report_id」；
+  9. [N3] 人工核查清单语义重复条目去重 +「⚠️ ⚠️」双前缀修单；
  10. [P1] SKILL.md 的 validate_raw 示例命令带仓库根运行前置。
+2026-10-22：自定义报表两窗口步骤已删，online_products.json 为唯一必选主路径；
+  --report-id / --feishu 入口已移除。
 """
 from __future__ import annotations
 
@@ -91,9 +93,9 @@ class _TmpRawMixin:
                 p.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
         return raw
 
-    def _signals(self, raw, report_id="880099", days=7):
+    def _signals(self, raw, days=7):
         out = raw.parent / "signals.json"
-        ns = argparse.Namespace(days=days, end_date=None, report_id=report_id,
+        ns = argparse.Namespace(days=days, end_date=None,
                                 raw_dir=str(raw), out=str(out))
         rc = fetch_signals.run(ns)
         return rc, json.loads(out.read_text(encoding="utf-8"))
@@ -104,131 +106,116 @@ class _TmpRawMixin:
 class TestErrorsRenderedInHeader(unittest.TestCase, _TmpRawMixin):
     def test_error_details_rendered_with_step_tool_code_retryable(self):
         raw = self._raw({
-            "custom_current.json": _failed_envelope("CONTRACT_VERSION_MISMATCH", "cv mismatch", None),
-            "custom_previous.json": _failed_envelope("CONTRACT_VERSION_MISMATCH", "cv mismatch", None),
+            "online_products.json": _failed_envelope("CONTRACT_VERSION_MISMATCH", "cv mismatch", None),
         })
         _, signals = self._signals(raw)
         md = render_report.render(signals, {}, None)
         self.assertIn("取数失败（该源已按无数据处理，需人工核查）", md)
-        self.assertIn("步骤 out/raw/custom_current.json（工具 get_custom_report_page_list）", md)
+        self.assertIn("步骤 out/raw/online_products.json（工具 get_online_product_page_list）", md)
         self.assertIn("error_code=CONTRACT_VERSION_MISMATCH", md)
         self.assertIn("是否可重试：未知", md)  # retryable 缺省（离线合成信封形态）
-        # 第 1 节：取数失败 ≠ 缺历史基线；observed 为空不打快照引导语
+        # 第 1 节：取数失败 ≠ 无数据；observed 为空不打快照引导语
         self.assertIn("取数失败（error_code：CONTRACT_VERSION_MISMATCH），原因见「0. 数据说明」", md)
-        self.assertNotIn("缺少历史基线", md)
         self.assertNotIn("以下展示已取到的评分快照", md)
 
     def test_retryable_true_false_words(self):
-        raw = self._raw({
-            "custom_current.json": _failed_envelope("RESULT_BUDGET_EXCEEDED", "budget", False),
-            "custom_previous.json": _failed_envelope("RATE_LIMITED", "slow down", True),
-        })
-        _, signals = self._signals(raw)
-        md = render_report.render(signals, {}, None)
-        self.assertIn("是否可重试：否", md)
-        self.assertIn("是否可重试：是", md)
+        raw_f = self._raw({"online_products.json": _failed_envelope("RESULT_BUDGET_EXCEEDED", "budget", False)})
+        _, signals_f = self._signals(raw_f)
+        md_f = render_report.render(signals_f, {}, None)
+        self.assertIn("是否可重试：否", md_f)
+        raw_t = self._raw({"online_products.json": _failed_envelope("RATE_LIMITED", "slow down", True)})
+        _, signals_t = self._signals(raw_t)
+        md_t = render_report.render(signals_t, {}, None)
+        self.assertIn("是否可重试：是", md_t)
 
     def test_legacy_errors_strings_still_visible(self):
         # 旧版 signals（无 error_details）：errors 字符串兜底渲染，error_code 仍全文可见
         signals = {"window": {"days": 7, "current": ["a", "b"], "previous": ["c", "d"]},
-                   "source": {"report_id": "x", "degraded": "none"},
+                   "source": {"degraded": "none"},
                    "counts": {"previous_rows": 0}, "flagged": [], "observed": [],
-                   "errors": ["out/raw/custom_current.json status=failed error_code=X_CODE boom"]}
+                   "errors": ["out/raw/online_products.json status=failed error_code=X_CODE boom"]}
         md = render_report.render(signals, {}, None)
         self.assertIn("error_code=X_CODE", md)
         self.assertIn("取数失败（error_code：X_CODE）", md)
 
 
-# ------------------------------------------------------ Fix 2：降级三态区分 --
+# ------------------------------------------------- Fix 2：固定口径（宽表承接）--
 
-class TestDegradationReason(unittest.TestCase, _TmpRawMixin):
-    def _reason(self, files):
-        files.setdefault("online_products.json", _ok_envelope([_row("B0X1")]))
-        raw = self._raw(files)
-        _, signals = self._signals(raw, report_id=None)
-        return signals
-
-    def test_unconfigured_keeps_current_banner(self):
-        signals = self._reason({})
+class TestFixedHandoff(unittest.TestCase, _TmpRawMixin):
+    def test_handoff_banner_top_and_manual(self):
+        raw = self._raw({"online_products.json": _ok_envelope([_row("B0X1")])})
+        _, signals = self._signals(raw)
         src = signals["source"]
-        self.assertEqual(src["degraded"], "no_custom_report")
-        self.assertEqual(src["degraded_reason"], "not_configured")
-        self.assertIn("缺少自定义报表 report_id", src["degraded_banner"])
-        self.assertIn("先配置 report_id", signals["manual_checks"][0])
-
-    def test_candidate_verification_rejected(self):
-        signals = self._reason({
-            "custom_current.json": _failed_envelope("RESULT_BUDGET_EXCEEDED"),
-            "custom_previous.json": _failed_envelope("RESULT_BUDGET_EXCEEDED"),
-        })
-        src = signals["source"]
-        self.assertEqual(src["degraded_reason"], "candidate_verification_rejected")
-        self.assertEqual(src["degraded_error_codes"], ["RESULT_BUDGET_EXCEEDED"])
-        banner = src["degraded_banner"]
-        self.assertIn("RESULT_BUDGET_EXCEEDED", banner)
-        self.assertIn("不是未配置 report_id", banner)
-        self.assertIn("上游读取被拒", banner)
-        self.assertNotIn("先配置 report_id", signals["manual_checks"][0])
-        self.assertIn("在赛狐网页端核对", signals["manual_checks"][0])
-
-    def test_discovery_failed(self):
-        signals = self._reason({"report_index_p1.json": _failed_envelope("PERMISSION_DENIED")})
-        src = signals["source"]
-        self.assertEqual(src["degraded_reason"], "discovery_failed")
-        self.assertEqual(src["degraded_error_codes"], ["PERMISSION_DENIED"])
-        self.assertIn("发现失败 ≠ 未配置", src["degraded_banner"])
-        self.assertIn("补配置解决不了", signals["manual_checks"][0])
-
-    def test_verification_takes_priority_over_discovery(self):
-        # 宽表失败信封在场 → 一定是「发现已完成、验证被拒」（index 失败只是伴生证据）
-        signals = self._reason({
-            "report_index_p1.json": _failed_envelope("PERMISSION_DENIED"),
-            "custom_current.json": _failed_envelope("RESULT_BUDGET_EXCEEDED"),
-        })
-        self.assertEqual(signals["source"]["degraded_reason"], "candidate_verification_rejected")
-
-    def test_banner_rendered_in_header_even_with_other_warnings(self):
-        signals = self._reason({"custom_current.json": _failed_envelope("RESULT_BUD_EXCEEDED")})
-        signals["warnings"].insert(0, "输出契约未完成业务口径认证；指标含义以契约说明为准。")
+        self.assertEqual(src["degraded"], "none")
+        self.assertIn("custom-report-analysis", src["handoff_banner"])
+        self.assertIn("固定口径", src["handoff_banner"])
+        self.assertTrue(any("custom-report-analysis" in w for w in signals["warnings"]))
+        self.assertTrue(any("custom-report-analysis" in m for m in signals["manual_checks"]))
         md = render_report.render(signals, {}, None)
         head = md.split("## 1.")[0]
-        self.assertIn("候选验证读取被上游拒绝（error_code：RESULT_BUD_EXCEEDED）", head)
-        self.assertIn("不是未配置 report_id", head)
+        self.assertIn("custom-report-analysis", head)
+        self.assertIn("固定口径", head)
+
+    def test_stale_custom_raw_not_consumed_but_disclosed(self):
+        raw = self._raw({
+            "online_products.json": _ok_envelope([_row("B0X1")]),
+            "custom_current.json": _ok_envelope([_row("B0X2")]),
+            "custom_previous.json": _ok_envelope([_row("B0X2")]),
+        })
+        _, signals = self._signals(raw)
+        # 快照行只来自 online；宽表行未混入
+        self.assertEqual(len(signals["observed"]), 1)
+        self.assertEqual(signals["counts"]["current_rows"], 1)
+        self.assertTrue(any("custom_current" in d and "custom-report-analysis" in d
+                            for d in signals["disclosures"]), signals["disclosures"])
+
+    def test_snapshot_flags_low_rating_rows(self):
+        raw = self._raw({"online_products.json": _ok_envelope([
+            _row("B0LOW1", rating=3.6, ratingCount=300, saleNum=50),
+            _row("B0HIGH", rating=4.6, ratingCount=300, saleNum=999),
+        ])})
+        _, signals = self._signals(raw)
+        self.assertEqual([f["asin"] for f in signals["flagged"]], ["B0LOW1"])
+        self.assertEqual(signals["flagged"][0]["flags"][0]["signal"], "low_rating_snapshot")
 
 
 # ------------------------------------------------- Fix 3：observed 空引导语 --
 
 class TestSnapshotIntroOnlyWhenObserved(unittest.TestCase, _TmpRawMixin):
-    def test_no_baseline_with_observed_keeps_intro_and_table(self):
-        raw = self._raw({"online_products.json": _ok_envelope([_row("B0Y1")])})
-        _, signals = self._signals(raw, report_id=None)
+    def test_snapshot_table_rendered_when_flagged_empty(self):
+        raw = self._raw({"online_products.json": _ok_envelope([_row("B0Y1", rating=4.5)])})
+        _, signals = self._signals(raw)
         md = render_report.render(signals, {}, None)
         sec1 = md.split("## 1.")[1].split("## 2.")[0]
-        self.assertIn("缺少历史基线", sec1)
+        self.assertIn("快照内无", sec1)
         self.assertIn("以下展示已取到的评分快照", sec1)
         self.assertIn("| B0Y1", sec1)
+        self.assertIn("无法判断评分是否下降", sec1)
+        self.assertIn("custom-report-analysis", sec1)
 
 
 # ------------------------------------------------ Fix 4：小样本保护对称性 --
 
-class TestReviewRateDropSmallSample(unittest.TestCase):
-    def _flags(self, rating_count):
-        rows_cur = [_row("B0S1", ratingCount=rating_count, reviewRate=0.80)]
-        rows_prev = [_row("B0S1", ratingCount=rating_count, reviewRate=0.95, rating=4.6)]
-        out = fetch_signals.build_signals(
-            rows_cur, rows_prev,
-            threshold_low=0, threshold_rating=0.2, min_rating_count=20,
-            min_low_review_num=2,
-            signals_enabled=["low_review_num_rise", "rating_drop", "review_rate_drop"],
+class TestSmallSampleProtection(unittest.TestCase):
+    def _flagged(self, rating_count):
+        rows = [_row("B0S1", rating=3.5, ratingCount=rating_count)]
+        out = fetch_signals.build_low_rating_rows(
+            rows, rating_low=4.0, min_rating_count=20,
         )
-        return [f["signal"] for f in out[0]["flags"]] if out else []
+        return out
 
     def test_small_sample_not_flagged(self):
-        # ratingCount=12 < min_rating_count=20：reviewRate 下滑也不判（与 rating_drop 对称）
-        self.assertNotIn("review_rate_drop", self._flags(12))
+        # ratingCount=12 < min_rating_count=20：评分 3.5 也不入选（小样本不判）
+        self.assertEqual(self._flagged(12), [])
 
     def test_large_sample_flagged(self):
-        self.assertIn("review_rate_drop", self._flags(200))
+        flagged = self._flagged(200)
+        self.assertEqual(len(flagged), 1)
+        self.assertEqual(flagged[0]["asin"], "B0S1")
+
+    def test_missing_rating_not_flagged(self):
+        self.assertEqual(fetch_signals.build_low_rating_rows(
+            [_row("B0S2", rating=None)], rating_low=4.0, min_rating_count=20), [])
 
 
 # ------------------------------------------------- Fix 5 / 6：成本闸语义 --
@@ -259,7 +246,8 @@ class TestCostGate(unittest.TestCase, _TmpRawMixin):
 
     @staticmethod
     def _signals(flagged_count):
-        flagged = [{"asin": f"B0G{i}", "flags": [{"signal": "rating_drop"}]} for i in range(flagged_count)]
+        flagged = [{"asin": f"B0G{i}", "flags": [{"signal": "low_rating_snapshot"}]}
+                   for i in range(flagged_count)]
         return {"flagged": flagged, "counts": {"flagged": flagged_count}}
 
     def test_flagged_zero_skips_confirmation(self):
@@ -328,55 +316,61 @@ class TestEndDatePassthrough(unittest.TestCase):
         self.assertIn("--end-date", fs_argv)
         self.assertEqual(fs_argv[fs_argv.index("--end-date") + 1], "2026-10-15")
 
+    def test_parser_no_feishu_or_report_id_flags(self):
+        """去飞书/去自定义报表后：编排入口不再有 --feishu / --report-id 参数。"""
+        argv = ["voc_insight.py", "--help"]
+        saved_argv, sys.argv = sys.argv, argv
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                with redirect_stdout(io.StringIO()) as buf:
+                    voc_insight.main()
+        finally:
+            sys.argv = saved_argv
+        self.assertEqual(cm.exception.code, 0)
+        self.assertNotIn("--feishu", buf.getvalue())
+        self.assertNotIn("--report-id", buf.getvalue())
+
+    def test_raw_steps_only_online(self):
+        """落盘检查只关注 online_products.json（宽表两窗口已删）。"""
+        self.assertEqual([name for name, _ in voc_insight.RAW_STEPS],
+                         ["online_products.json"])
+
 
 # ------------------------------------------------- Fix 8：corrupt ≠ missing --
 
 class TestCorruptVsMissing(unittest.TestCase, _TmpRawMixin):
     def test_missing_reports_missing(self):
-        raw = self._raw({"custom_current.json": _ok_envelope([_row("B0M1")])})
+        raw = self._raw({"stray_step.json": _ok_envelope([_row("B0M1")])})
         with self.assertRaises(SystemExit) as cm:
             self._signals(raw)
         msg = str(cm.exception)
-        self.assertIn("缺少取数计划落盘", msg)
-        self.assertIn("custom_previous.json", msg)
+        self.assertIn("缺少 out/raw/online_products.json", msg)
         self.assertNotIn("解析失败", msg)
 
     def test_corrupt_reports_corrupt_not_missing(self):
-        raw = self._raw({
-            "custom_current.json": _ok_envelope([_row("B0M1")]),
-            "custom_previous.json": '{"status": "complete", "data": {"rows": [ TRUNC',
-        })
+        raw = self._raw({"online_products.json": '{"status": "complete", "data": {"rows": [ TRUNC'})
         with self.assertRaises(SystemExit) as cm:
             self._signals(raw)
         msg = str(cm.exception)
         self.assertIn("存在但解析失败（损坏）", msg)
-        self.assertIn("custom_previous.json", msg)
-        self.assertNotIn("缺少取数计划落盘", msg)
-
-    def test_online_corrupt_vs_missing(self):
-        # 缺 online 时 raw 里须另有落盘文件才能越过「落盘目录为空」前置检查
-        for files, needle in (
-            ({"stray_step.json": _ok_envelope([_row("B0M1")])}, "缺少 out/raw/online_products.json"),
-            ({"online_products.json": "{ NOT JSON"}, "存在但解析失败（损坏）"),
-        ):
-            raw = self._raw(files)
-            with self.assertRaises(SystemExit) as cm:
-                self._signals(raw, report_id=None)
-            self.assertIn(needle, str(cm.exception))
+        self.assertIn("online_products.json", msg)
+        self.assertNotIn("缺少 out/raw/online_products.json", msg)
 
 
 # --------------------------------------------- Fix 9：清单去重 + 前缀修单 --
 
 class TestManualSectionDedup(unittest.TestCase):
-    def _signals(self, reason="not_configured"):
+    def _signals(self):
         return {
             "window": {"days": 7, "current": ["a", "b"], "previous": ["c", "d"]},
-            "source": {"report_id": None, "degraded": "no_custom_report",
-                       "degraded_reason": reason},
+            "source": {"degraded": "none",
+                       "handoff_banner": ("⚠️ 固定口径：自定义报表（489 宽表）已移出本技能，"
+                                          "lowReviewNum / reviewNum / reviewRate 及其环比不可用；"
+                                          "差评数与宽表分析由 custom-report-analysis 技能承接。"
+                                          "本报告基于 online 评分快照（rating/ratingCount，无历史基线，不做评分环比）。")},
             "counts": {"previous_rows": 0}, "flagged": [], "observed": [],
-            "warnings": ["⚠️ 口径降级：缺少自定义报表 report_id，lowReviewNum/reviewNum/reviewRate 不可用；仅能用 online 侧 rating/ratingCount（且无环比基线，需历史快照）。"],
-            "manual_checks": ["lowReviewNum / reviewNum / reviewRate 需自定义报表；当前仅有 online 侧 rating/ratingCount，"
-                              "且无上一窗口基线（online 无历史），无法做环比 → 需人工核查或先配置 report_id。"],
+            "warnings": ["⚠️ 固定口径：自定义报表（489 宽表）已移出本技能，lowReviewNum / reviewNum / reviewRate 及其环比不可用；差评数与宽表分析由 custom-report-analysis 技能承接。本报告基于 online 评分快照（rating/ratingCount，无历史基线，不做评分环比）。"],
+            "manual_checks": ["lowReviewNum / reviewNum / reviewRate：需自定义报表宽表 → 由 custom-report-analysis 技能承接；评分环比基线（online 无历史）无法构造，需人工比对历史或改用宽表。"],
         }
 
     def _section(self, signals):
@@ -388,11 +382,8 @@ class TestManualSectionDedup(unittest.TestCase):
 
     def test_no_duplicate_low_review_item(self):
         sec = self._section(self._signals())
-        self.assertEqual(sec.count("lowReviewNum"), 2)  # manual_checks 长条 + 降级横幅各一次，无第三条静态重复
-
-    def test_upstream_failure_reason_gets_no_configure_hint(self):
-        sec = self._section(self._signals(reason="candidate_verification_rejected"))
-        self.assertNotIn("需自定义报表 report_id", sec)
+        # manual_checks 长条一次；横幅原文在「0. 数据说明」置顶、清单不再复读（去重生效）
+        self.assertEqual(sec.count("lowReviewNum"), 1)
 
     def test_exact_duplicate_items_collapsed(self):
         signals = self._signals()
@@ -408,6 +399,10 @@ class TestSkillDocCommand(unittest.TestCase):
         text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         block = text.split("_shared/scripts/validate_raw.py")[0].split("```bash")[-1]
         self.assertIn("仓库根", block)  # 示例命令块内说明须从仓库根运行
+
+    def test_validate_raw_step_is_online_only(self):
+        text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("--step online_products:rows", text)
 
 
 if __name__ == "__main__":

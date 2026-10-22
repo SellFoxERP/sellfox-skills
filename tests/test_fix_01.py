@@ -9,6 +9,7 @@
   * 跨平台数据被消费（按币种分组，不跨币种合计）；
   * 红线标题用 thresholds.redline.max_items；
   * 数据说明输出店铺/站点覆盖范围。
+v1.7.0 追加：宽表（get_custom_report_page_list）步骤整体移除后的固定降级行为。
 零网络：只喂合成 JSON。
 """
 import importlib.util
@@ -170,15 +171,31 @@ class FetchBundleTest(unittest.TestCase):
         raw = write_raw(self.root, "shops.json", envelope("get_shop_page_list", {"rows": [shop("S1")]}))
         write_raw(self.root, "profit_shop.json", envelope("get_profit_report_by_shop",
                                                           {"reportList": [profit_row("S1", 100.0)]}))
-        write_raw(self.root, "msku_S1.json", envelope("get_custom_report_page_list",
-                                                      {"rows": [{"msku": "M", "saleNum": 1}]},
-                                                      status="failed", error_code="CONTRACT_VERSION_MISMATCH"))
+        write_raw(self.root, "orders.json", envelope("get_order_page_list",
+                                                     {"rows": [order("A1")]},
+                                                     status="failed", error_code="CONTRACT_VERSION_MISMATCH"))
         bundle = self._run(raw)
         hits = [d for d in bundle["degradations"]
                 if "error_code=CONTRACT_VERSION_MISMATCH" in d
-                and "步骤 3 宽表 S1" in d and "get_custom_report_page_list" in d]
+                and "步骤 3 订单样本" in d and "get_order_page_list" in d]
         self.assertTrue(hits, msg=str(bundle["degradations"]))
         self.assertIn("⚠️ 需人工核查", hits[0])
+
+    def test_wide_table_step_removed_fixed_degradation(self):
+        """v1.7.0：宽表步骤整体移除，固定降级说明（custom-report-analysis 承接），残留 msku_*.json 忽略。"""
+        raw = write_raw(self.root, "shops.json", envelope("get_shop_page_list", {"rows": [shop("S1")]}))
+        write_raw(self.root, "profit_shop.json", envelope("get_profit_report_by_shop",
+                                                          {"reportList": [profit_row("S1", 100.0)]}))
+        write_raw(self.root, "msku_S1.json", envelope("get_custom_report_page_list",
+                                                      {"rows": [{"msku": "M", "saleNum": 1}]}))
+        bundle = self._run(raw)
+        self.assertIsNone(bundle["data"]["msku_report"])                      # 不消费残留宽表落盘
+        self.assertNotIn("msku_rows", bundle["meta"])
+        self.assertTrue(any("custom-report-analysis" in d and "需人工核查" in d
+                            for d in bundle["degradations"]), msg=str(bundle["degradations"]))
+        joined = "\n".join(bundle["degradations"])
+        self.assertNotIn("步骤 3 宽表", joined)                                # 不再把宽表当取数步骤
+        self.assertNotIn("report_id", joined)
 
     def test_missing_profit_continues_with_degradation(self):
         raw = write_raw(self.root, "shops.json", envelope("get_shop_page_list", {"rows": [shop("S1")]}))
@@ -292,7 +309,7 @@ class MerchantViewRenderTest(unittest.TestCase):
     def test_conclusion_is_real_not_placeholder(self):
         a = minimal_analysis(l1=dict(self.FULL_L1),
                              redlines=[{"name": "销量 MSKU-A（店铺 1）", "deviation_pct": -35.7}])
-        md = render.render_markdown(a, {"data": {"msku_report": {"report_id": "RPT-1"}}})
+        md = render.render_markdown(a, {"data": {}})
         self.assertNotIn("自动生成占位", md)
         self.assertNotIn("需运营复核", md)
         self.assertIn("一句话结论：红线 1 条（最重：销量 MSKU-A（店铺 1））", md)
@@ -306,35 +323,55 @@ class MerchantViewRenderTest(unittest.TestCase):
                               "CAD": {"gmv": 3890.4, "gross_profit": 895.7}},
               "currency": "多币种（分组展示）"}
         a = minimal_analysis(l1=l1, redlines=[],
-                             degradations=["缺少自定义报表 report_id：分项明细口径降级。"],
-                             no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
-        md = render.render_markdown(a, {"data": {"msku_report": None}})
+                             degradations=["宽表（get_custom_report_page_list）不在本技能取数范围："
+                                           "流量（sessions/CVR）、广告点击、库龄分桶、补货建议等宽表专属指标"
+                                           "由 custom-report-analysis 技能承接，本报告固定标「⚠️ 需人工核查」，不编造数值。"])
+        md = render.render_markdown(a, {"data": {}})
         self.assertIn("一句话结论：红线 0 条；销量 1,042 件；毛利按币种分列（USD 1,210.40 等，2 个币种未折算）", md)
-        self.assertIn("主要缺口：自定义报表未配置（详见行动建议）", md)
+        self.assertIn("主要缺口：2 个币种未折算", md)
+        # 宽表是固定边界，不再作为「主要缺口」行动项
+        self.assertNotIn("主要缺口：自定义报表未配置", md)
+        self.assertNotIn("在赛狐配置自定义报表后重跑", md)
 
     def test_action_items_translate_gaps_into_actions(self):
         l1 = {"units": 1042.0, "by_currency": {c: {"gmv": 1.0, "gross_profit": 1.0}
                                                for c in ["USD", "CAD", "GBP", "EUR", "JPY", "AUD", "MXN"]}}
         a = minimal_analysis(l1=l1,
-                             degradations=["缺少自定义报表 report_id：分项明细口径降级。"],
-                             no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
-        md = render.render_markdown(a, {"data": {"msku_report": None}})
+                             degradations=["宽表（get_custom_report_page_list）不在本技能取数范围："
+                                           "由 custom-report-analysis 技能承接。"])
+        md = render.render_markdown(a, {"data": {}})
         self.assertIn("### ✅ 今日行动建议", md)
-        self.assertIn("在赛狐配置自定义报表后重跑，可解锁流量/转化、广告点击、库龄分桶、补货建议", md)
         self.assertIn("7 个币种未折算，看单一币种行做判断", md)
         self.assertNotIn("无待办，数据完整", md)
+        # 宽表已移交相邻技能，不再产生「配置自定义报表」行动项
+        self.assertNotIn("在赛狐配置自定义报表后重跑", md)
+
+    def test_wide_table_metrics_renders_fixed_handoff(self):
+        """宽表专属指标渲染为固定承接说明（ACOS/CVR 行 + STEP 02/04 文案）。"""
+        l1 = dict(self.FULL_L1, acos=None, cvr=None)
+        a = minimal_analysis(l1=l1, steps={
+            "02_sales": {"gmv": 1.0, "units": 2, "baseline_method": "slice_30d",
+                         "msku_anomalies": [], "store_baseline_available": False, "note": ""},
+            "04_inventory": {"warnings": "断货预警（availableDays/库龄分桶/补货建议）为宽表字段——"
+                                         "由 custom-report-analysis 技能承接，本节固定标「⚠️ 需人工核查」。"},
+        })
+        md = render.render_markdown(a, {"data": {}})
+        self.assertIn("由 custom-report-analysis 承接 |", md)
+        self.assertIn("MSKU 级销量环比为宽表指标（由 custom-report-analysis 技能承接）— ⚠️ 需人工核查", md)
+        self.assertIn("断货预警（availableDays/库龄分桶/补货建议）为宽表字段", md)
+        self.assertIn("基线方法：30 天切片法", md)
 
     def test_failed_step_becomes_retry_action(self):
         a = minimal_analysis(l1=dict(self.FULL_L1),
-                             degradations=["步骤 3 宽表 S1、工具 get_custom_report_page_list：步骤信封状态 failed"
+                             degradations=["步骤 3 订单样本、工具 get_order_page_list：步骤信封状态 failed"
                                            "（error_code=CONTRACT_VERSION_MISMATCH），不代表完整成功。"])
-        md = render.render_markdown(a, {"data": {"msku_report": {"report_id": "RPT-1"}}})
-        self.assertIn("宽表 S1 数据今日取数失败，稍后重试或联系赛狐支持（错误码见数据说明）", md)
-        self.assertIn("主要缺口=宽表 S1 取数失败", md)
+        md = render.render_markdown(a, {"data": {}})
+        self.assertIn("订单样本 数据今日取数失败，稍后重试或联系赛狐支持（错误码见数据说明）", md)
+        self.assertIn("主要缺口=订单样本 取数失败", md)
 
     def test_no_gap_means_all_clear_and_full_availability(self):
         a = minimal_analysis(l1=dict(self.FULL_L1))
-        md = render.render_markdown(a, {"data": {"msku_report": {"report_id": "RPT-1"}}})
+        md = render.render_markdown(a, {"data": {}})
         self.assertIn("无待办，数据完整", md)
         self.assertIn("数据可用度：核心 6 项中 6 项可用；主要缺口=无", md)
 
@@ -352,7 +389,7 @@ class MerchantViewRenderTest(unittest.TestCase):
             "03_ads": {"note": "servingStatus 字段存在，但 BUDGET_CAPPED 取值未经实测验证，不作为判定条件。"},
         }
         md = render.render_markdown(minimal_analysis(l1=dict(self.FULL_L1), steps=steps),
-                                    {"data": {"msku_report": {"report_id": "RPT-1"}}})
+                                    {"data": {}})
         self.assertIn("基线方法：窗口字段法", md)
         self.assertIn("（按窗口字段法）", md)
         self.assertNotIn("baseline=window_field", md)

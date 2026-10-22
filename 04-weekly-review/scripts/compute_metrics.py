@@ -49,22 +49,6 @@ def _sum(rows: List[Dict[str, Any]], field: Optional[str]) -> Optional[float]:
     return sum(vals) if vals else None
 
 
-def _mean(rows: List[Dict[str, Any]], field: Optional[str]) -> Optional[float]:
-    if not field:
-        return None
-    vals = [_num(r.get(field)) for r in rows]
-    vals = [v for v in vals if v is not None]
-    return (sum(vals) / len(vals)) if vals else None
-
-
-def _min_val(rows: List[Dict[str, Any]], field: Optional[str]) -> Optional[float]:
-    if not field:
-        return None
-    vals = [_num(r.get(field)) for r in rows]
-    vals = [v for v in vals if v is not None]
-    return min(vals) if vals else None
-
-
 def _unwrap(value: Any) -> Any:
     """宽表里 asin/msku 等字段常为 ``[{"key": "..."}]``；取内部标量。"""
     if isinstance(value, list) and value:
@@ -140,54 +124,6 @@ def aggregate_profit(rows: List[Dict[str, Any]], fm: Dict[str, str]) -> Dict[str
         "ad_cost_rate": (ad_cost / gmv * 100.0) if (ad_cost is not None and gmv) else None,
         "refund_rate": _weighted_rate(rows, fm["refund_rate"], fm["gmv"]),
         "avg_order_value": (gmv / sales) if (gmv is not None and sales) else None,
-    }
-
-
-def aggregate_custom_report(rows: List[Dict[str, Any]], cfm: Dict[str, str]) -> Dict[str, Any]:
-    """聚合自定义宽表（489 字段）——流量 / 广告 / 退款 / 可售天数等利润报表没有的指标。
-
-    宽表仅在配置了 ``reports.yaml → daily_ops.id`` 且取到数据时非空；缺 report_id 时
-    调用方传入空列表，这里返回「无数据」，由上层走口径降级。
-    字段名一律来自 ``weekly.yaml → custom_report_fields``（已对照 01/06 核对）。
-    """
-    if not rows:
-        return {"status": NO_DATA}
-
-    gmv = cfm.get("gmv", "salePrice")
-    ad_cost_raw = _sum(rows, cfm.get("ad_cost", "adCost"))
-    ad_cost = abs(ad_cost_raw) if ad_cost_raw is not None else None
-    gmv_sum = _sum(rows, gmv)
-
-    # ACOS：优先自算 adCost / salePrice（单位明确为 %）；拿不到再退回报表现成 acos 字段，
-    #       但报表现成值的单位未经核对，须标注「单位待核实」，且不参与自动阈值判定。
-    acos_calc = (ad_cost / gmv_sum * 100.0) if (ad_cost is not None and gmv_sum) else None
-    acos_field = _weighted_rate(rows, cfm.get("acos", "acos"), gmv)
-    if acos_calc is not None:
-        acos, acos_source = acos_calc, "自算 adCost/salePrice"
-    elif acos_field is not None:
-        acos, acos_source = acos_field, "报表现成 acos（单位待核实）"
-    else:
-        acos, acos_source = None, ""
-
-    return {
-        "status": "ok",
-        "rows": len(rows),
-        "gmv_salePrice": gmv_sum,
-        "orders": _sum(rows, cfm.get("orders", "orderNum")),
-        "sessions": _sum(rows, cfm.get("sessions", "sessions")),
-        "ad_cost": ad_cost,
-        "acos": acos,
-        "acos_source": acos_source,
-        "ad_click_rate": _weighted_rate(rows, cfm.get("ad_click_rate", "adClickRate"), gmv),
-        "ad_conversion_rate": _weighted_rate(
-            rows, cfm.get("ad_conversion_rate", "adConversionRateCpc"), gmv),
-        "ad_order_num": _sum(rows, cfm.get("ad_order_num", "adOrderNum")),
-        "conversion_rate": _weighted_rate(rows, cfm.get("conversion_rate", "conversionRate"), gmv),
-        "refund_rate": _weighted_rate(rows, cfm.get("refund_rate", "refundRate"), gmv),
-        "available_days_avg": _mean(rows, cfm.get("available_days", "availableDays")),
-        "available_days_min": _min_val(rows, cfm.get("available_days", "availableDays")),
-        "rating": _mean(rows, cfm.get("rating", "rating")),
-        "low_review_num": _sum(rows, cfm.get("low_review_num", "lowReviewNum")),
     }
 
 
@@ -372,8 +308,7 @@ def build_trend(plan: Dict[str, Any], rows: List[Dict[str, Any]], fm: Dict[str, 
 # ---------------------------------------------------------------------------
 
 def anomalies(cur: Dict[str, Any], prev: Dict[str, Any], pms: Dict[str, Any],
-              thresholds: Dict[str, Any], rank_ok: bool,
-              custom: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+              thresholds: Dict[str, Any], rank_ok: bool) -> List[Dict[str, Any]]:
     flags: List[Dict[str, Any]] = []
     th = thresholds or {}
 
@@ -409,27 +344,6 @@ def anomalies(cur: Dict[str, Any], prev: Dict[str, Any], pms: Dict[str, Any],
     if rr_rise is not None and rr_rise >= as_th.get("refund_rate_rise_pct_vs_30d", 50):
         add("yellow", "退款率上升", f"较上月同期 {_fmt_pct(rr_rise)}")
 
-    # ---- 宽表（自定义报表）指标 ----
-    # 宽表只取了本期窗口，没有与利润报表同口径的「上期/上月同期」基线，故只做
-    # 绝对阈值判定，不做环比（避免拿不同口径的基线硬比）。缺 report_id 时 cr 为「无数据」。
-    cr = custom or {}
-    if cr.get("status") == "ok":
-        ad_th2 = th.get("ad") or {}
-        acos = cr.get("acos")
-        # 仅当 ACOS 是自算值（单位明确为 %）时才做阈值判定；报表现成 acos 字段单位待核实，
-        # 不参与自动判定，只做展示。
-        if (acos is not None and cr.get("acos_source") == "自算 adCost/salePrice"
-                and acos > abs(ad_th2.get("acos_abs_max", 35))):
-            add("yellow", "ACOS 偏高", f"本期 ACOS {acos:.1f}%（阈值 {ad_th2.get('acos_abs_max')}%）")
-        inv_th = th.get("inventory") or {}
-        adm = cr.get("available_days_min")
-        if adm is not None and adm < abs(inv_th.get("available_days_critical", 15)):
-            add("red", "存在断货风险",
-                f"最短可售天数 {adm:.0f} 天（紧急线 {inv_th.get('available_days_critical')} 天）")
-        elif adm is not None and adm < abs(inv_th.get("available_days_min", 30)):
-            add("yellow", "可售天数偏低",
-                f"最短可售天数 {adm:.0f} 天（下限 {inv_th.get('available_days_min')} 天）")
-
     if not rank_ok:
         add("info", "榜单覆盖不足", "Top/Bottom 榜单行数不足或被截断，结论仅供参考")
     return flags
@@ -446,7 +360,6 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
     targets = loader.load("targets")
 
     fm = cfg["profit_report_fields"]
-    cfm = cfg.get("custom_report_fields") or {}
     d = data["data"]
     meta = dict(data["meta"])
     plan = meta["period"]
@@ -457,9 +370,6 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
         "prev_month_same_period": aggregate_profit(d.get("profit_prev_month_same_period") or [], fm),
         "month_to_date": aggregate_profit(d.get("profit_month_to_date") or [], fm),
         "yoy": aggregate_profit(d.get("profit_yoy") or [], fm),
-        # 自定义宽表（489 字段）：流量/广告/退款/可售天数等利润报表没有的指标。
-        # 未配置 report_id 时其为「无数据」，上层据此走口径降级。
-        "custom_report": aggregate_custom_report(d.get("custom_report") or [], cfm),
     }
 
     deltas = {}
@@ -501,7 +411,7 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
                         d.get("char_data"), cfg["trend"]["points_max"])
 
     flags = anomalies(agg["current"], agg["prev"], agg["prev_month_same_period"], thresholds,
-                      rank_ok, custom=agg.get("custom_report"))
+                      rank_ok)
 
     # 覆盖范围 / 披露
     disclosures = []

@@ -7,20 +7,22 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
   * **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/coverage 截断），
     并组装出与旧版完全相同形状的 `FetchResult` —— diagnose.py / render.py 零改动。
 
-本技能的核心难点（v3 不变）：**字段归属两个报表不通用**。实测确认：
-  * ``get_profit_report_by_msku``（171 字段，财务深度）：productSales / grossProfit /
-    commission / fbaFulfillmentFee / cpcCost / storageFee / refundRate / currencyList / rate …
-  * ``get_custom_report_page_list``（489 字段，含赔偿与延期结算）：purchaseCost / headTripPrice /
-    reimbursementAmount / warehouseLostAmount / missingFromInboundAmount / deferredAmount …
-    ⚠️ 上面这 6 个字段【只存在于】自定义报表，**不在** MSKU 利润报表。把它们归错表会永远取不到值。
+字段归属（实测确认）：``get_profit_report_by_msku``（171 字段，财务深度）承载
+productSales / grossProfit / commission / fbaFulfillmentFee / cpcCost / storageFee /
+refundRate / currencyList / rate 等全部归因因子。
+⚠️ 自定义报表（``get_custom_report_page_list``）已不在本技能取数范围：
+purchaseCost / headTripPrice / reimbursementAmount / warehouseLostAmount /
+missingFromInboundAmount / deferredAmount 等**只存在于自定义报表**的字段，
+本技能一律不取、不归因 —— 宽表因子归因由 `custom-report-analysis` 技能承接
+（固定口径，见 SKILL.md「诚实边界」）。赔偿**条数级**核对另走
+``get_amazon_reimbursement_report``（非自定义报表，保留）。
 
-因此本模块把「字段 → 所属工具」固化成唯一事实来源（``FIELD_SOURCES`` 与各 FIELDS 表），
+因此本模块把「字段 → 所属工具」固化成唯一事实来源（``FIELD_SOURCES`` 与 MSKU_FIELDS 表），
 下游归因脚本一律按此取值，不在别处再猜字段归属。
 
 落盘步骤名（双窗口，与取数计划一致；同一步骤按店铺分批时可落盘
 ``<step>.1.json`` / ``<step>.2.json``，本模块自动合并）：
     profit_msku_current.json / profit_msku_base.json   ← get_profit_report_by_msku（reportList）
-    custom_current.json / custom_base.json             ← get_custom_report_page_list（rows；依赖 report_id）
     profit_shop_current.json / profit_shop_base.json   ← get_profit_report_by_shop（reportList；背景源）
     reimbursement.json                                 ← get_amazon_reimbursement_report（可能 data:{} → 无数据）
 
@@ -55,7 +57,6 @@ from _bootstrap import (
     is_no_data,
     load_diagnosis,
     load_envelope,
-    load_reports,
     load_shops,
 )
 
@@ -110,6 +111,10 @@ def num(value: Any) -> Optional[float]:
 # ⚠️ 字段 → 所属工具：唯一事实来源（实测确认，见 当前 MCP 契约与共享字段字典）
 # ---------------------------------------------------------------------------
 # 归因因子字段。key 与 config/diagnosis.yaml → attribution.factors[].field 对应。
+# 自定义报表（get_custom_report_page_list）的 purchaseCost / headTripPrice /
+# reimbursementAmount / warehouseLostAmount / missingFromInboundAmount / deferredAmount
+# 已不在本技能取数范围（宽表因子归因由 custom-report-analysis 技能承接），
+# 本表只维护 get_profit_report_by_msku 侧的字段。
 MSKU_FIELDS: List[Tuple[str, Tuple[str, ...]]] = [
     # ---- 维度 / 身份 ----
     ("msku", ("msku", "mskuList")),
@@ -146,61 +151,15 @@ MSKU_FIELDS: List[Tuple[str, Tuple[str, ...]]] = [
     ("return_num", ("returnNum",)),
     # ---- 赔偿（msku 侧的汇总字段，明细在自定义报表）----
     ("compensation_fee", ("compensationFee",)),
-    # ---- 成本（msku 侧只给金额、无细分；细分在自定义报表）----
+    # ---- 成本（msku 侧只给金额、无细分；细分在自定义报表，由 custom-report-analysis 承接）----
     ("purchase_pc_fee", ("purchasePcFee",)),
     ("head_trip_pc_fee", ("headTripPcFee",)),
-]
-
-# ⚠️ 这 6 个字段【只存在于】get_custom_report_page_list，不在 get_profit_report_by_msku：
-#    purchaseCost / headTripPrice / reimbursementAmount / warehouseLostAmount /
-#    missingFromInboundAmount / deferredAmount
-CUSTOM_FIELDS: List[Tuple[str, Tuple[str, ...]]] = [
-    # ---- 维度 / 身份 ----
-    ("msku", ("msku",)),
-    ("asin", ("asin",)),
-    ("sku", ("sku",)),
-    ("shop_id", ("shopId",)),
-    ("title", ("title",)),
-    ("currency", ("currency",)),
-    # ---- 成本（归因核心，仅自定义报表有）----
-    ("purchase_cost", ("purchaseCost",)),
-    ("head_trip_price", ("headTripPrice",)),
-    ("commodity_cost", ("commodityCost",)),
-    # ---- 赔偿 / 仓损（易漏的钱，仅自定义报表有）----
-    ("reimbursement_amount", ("reimbursementAmount",)),
-    ("warehouse_lost_amount", ("warehouseLostAmount",)),
-    ("missing_from_inbound_amount", ("missingFromInboundAmount",)),
-    ("warehouse_damage_amount", ("warehouseDamageAmount",)),
-    # ---- 延期结算（易漏的钱，仅自定义报表有）----
-    ("deferred_amount", ("deferredAmount",)),
-    # ---- 仓储费细分（长期仓储费与超量费只在自定义报表）----
-    ("storage_fee_amount", ("storageFeeAmount",)),
-    ("fba_long_term_storage_fee_amount", ("fbaLongTermStorageFeeAmount",)),
-    ("fba_overage_fee_amount", ("fbaOverageFeeAmount",)),
-    # ---- 销售 / 流量（补充归因上下文）----
-    ("sale_num", ("saleNum",)),
-    ("sale_price", ("salePrice",)),
-    ("sessions", ("sessions",)),
-    ("conversion_rate", ("orderConversionRate", "conversionRate")),
-    ("buy_box_percent", ("buyBoxPercent",)),
-    # ---- 退货 ----
-    ("refund_num", ("refundNum",)),
-    ("refund_rate", ("refundRate",)),
-    ("refund_price", ("refundPrice",)),
-    ("return_sale_num", ("returnSaleNum",)),
-    # ---- 库龄（长期仓储费风险，与技能 2 联动）----
-    ("inv_age_271_365", ("invAge271To365Days",)),
-    ("inv_age_365_plus", ("invAge365PlusDays",)),
-    # ---- 利润（宽表口径，与 msku 报表口径可能不同，交叉核对用）----
-    ("profit_price", ("profitPrice",)),
-    ("profit_rate", ("profitRate",)),
 ]
 
 #: 字段 → 工具 的逆向索引，供归因表标注来源与人工核查。
 FIELD_SOURCES: Dict[str, str] = {
     canonical: "get_profit_report_by_msku" for canonical, _ in MSKU_FIELDS
 }
-FIELD_SOURCES.update({canonical: "get_custom_report_page_list" for canonical, _ in CUSTOM_FIELDS})
 
 
 def source_tool_for(canonical: str) -> str:
@@ -211,10 +170,10 @@ def source_tool_for(canonical: str) -> str:
 #: 原始 API 字段名 → 规范名。config/diagnosis.yaml 的 factors[].field 用原始字段名，
 #: 归因脚本据此映射到规范化记录里的键。
 _RAW_TO_CANONICAL: Dict[str, str] = {}
-for _canon, _cands in (*MSKU_FIELDS, *CUSTOM_FIELDS):
+for _canon, _cands in MSKU_FIELDS:
     for _raw in _cands:
         _RAW_TO_CANONICAL.setdefault(_raw, _canon)
-for _canon, _ in (*MSKU_FIELDS, *CUSTOM_FIELDS):
+for _canon, _ in MSKU_FIELDS:
     _RAW_TO_CANONICAL.setdefault(_canon, _canon)
 
 
@@ -247,26 +206,18 @@ def normalize_msku_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return _normalize(row, MSKU_FIELDS, source="msku_report")
 
 
-def normalize_custom_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """get_custom_report_page_list 行 → 规范化记录（列表字段 rows）。"""
-    return _normalize(row, CUSTOM_FIELDS, source="custom_report")
-
-
 # ---------------------------------------------------------------------------
 # 结果容器（形状与旧版一致 —— diagnose.py / render.py 零改动）
 # ---------------------------------------------------------------------------
 @dataclass
 class FetchResult:
     msku_rows: List[Dict[str, Any]] = field(default_factory=list)
-    custom_rows: List[Dict[str, Any]] = field(default_factory=list)
     shop_rows: List[Dict[str, Any]] = field(default_factory=list)
     reimbursement_rows: List[Dict[str, Any]] = field(default_factory=list)
     sources: List[str] = field(default_factory=list)
     coverage: List[str] = field(default_factory=list)     # 截断/无数据/失败披露语句
     warnings: List[str] = field(default_factory=list)
     demo_fingerprint: Optional[str] = None
-    report_id_used: Optional[str] = None
-    degraded: bool = False                                # report_id 缺失 → 降级
     caliber: str = "settlement"
     mcp_calls: int = 0                                    # v3：实际消费的落盘信封数（防「零取数却报成功」）
     # ---- 评测修复（2026-10-16）新增的三态/范围字段 ----
@@ -416,9 +367,8 @@ def _warn_period_mismatch(
         )
 
 
-#: 步骤标签 → FetchResult 行字段（msku / custom / shop）。
+#: 步骤标签 → FetchResult 行字段（msku / shop）。
 _TARGET_ATTR = {"MSKU 利润报表本期": "msku_rows", "MSKU 利润报表基期": "msku_rows",
-                "自定义报表本期": "custom_rows", "自定义报表基期": "custom_rows",
                 "店铺级利润本期": "shop_rows", "店铺级利润基期": "shop_rows"}
 
 
@@ -504,7 +454,6 @@ def _consume_step(
 # ---------------------------------------------------------------------------
 def assemble_all(
     *,
-    report_id: Optional[str],
     shop_ids: Sequence[str],
     cur_start: date,
     cur_end: date,
@@ -515,7 +464,7 @@ def assemble_all(
     result: Optional[FetchResult] = None,
     window_warnings: Sequence[str] = (),
 ) -> FetchResult:
-    """双数据源 × 双窗口：校验 ``out/raw/`` 落盘并组装 FetchResult。
+    """数据源 × 双窗口：校验 ``out/raw/`` 落盘并组装 FetchResult。
 
     窗口：本期 = [cur_start, cur_end]；基期 = [base_start, base_end]。
     每个数据源各消费两份落盘（本期 + 基期），文件名见模块 docstring 的落盘映射。
@@ -551,7 +500,7 @@ def assemble_all(
             "店铺范围：未指定店铺，按【全部店铺】查询（不传 shop_ids，服务端默认全量）。"
         )
 
-    # ---- 主源 1：MSKU 利润报表（171 字段，财务深度；reportList）----
+    # ---- 主源：MSKU 利润报表（171 字段，财务深度；reportList）----
     msku_max = int(limits.get("msku_report", 200))
     for label, stem, window in (
         ("MSKU 利润报表本期", "profit_msku_current", "current"),
@@ -569,43 +518,17 @@ def assemble_all(
                 "请按取数计划落盘后重跑；相关归因将标「⚠️ 需人工核查」。"
             )
 
-    # ---- 主源 2：自定义报表（489 字段，含成本/赔偿/延期结算；rows）----
-    if report_id:
-        result.report_id_used = report_id
-        custom_max = int(limits.get("custom_report", 200))
-        got_any = False
-        for label, stem, window in (
-            ("自定义报表本期", "custom_current", "current"),
-            ("自定义报表基期", "custom_base", "baseline"),
-        ):
-            got = _consume_step(
-                rd, stem, label, window, normalize_custom_row, result,
-                list_key="rows", max_rows=custom_max, source_tool="get_custom_report_page_list",
-                win_start=cur_start if window == "current" else base_start,
-                win_end=cur_end if window == "current" else base_end,
-            )
-            got_any = got_any or got
-            if not got:
-                result.warnings.append(
-                    f"{label}落盘缺失（out/raw/{stem}.json）：采购成本/头程/赔偿/延期结算类"
-                    "归因将标「⚠️ 需人工核查」。"
-                )
-        if not got_any:
-            # report_id 已配置但两窗口都未落盘 → 四类归因事实上不可用，必须显式说明。
-            result.warnings.append(
-                "⚠️ 自定义报表两个窗口均未落盘（out/raw/custom_current.json / custom_base.json）："
-                "采购成本(purchaseCost)/头程(headTripPrice)/赔偿(reimbursementAmount/warehouseLostAmount/"
-                "missingFromInboundAmount)/延期结算(deferredAmount) 这几类归因【不可用】，"
-                "相关因子一律标注「⚠️ 需人工核查」。"
-            )
-    else:
-        result.degraded = True
-        result.warnings.append(
-            "⚠️ 口径降级：未配置 reports.yaml → reports.profit.id，无法取 489 字段自定义报表。"
-            "本次将【只用 get_profit_report_by_msku】做归因，"
-            "采购成本(purchaseCost)/头程(headTripPrice)/赔偿(reimbursementAmount/warehouseLostAmount/"
-            "missingFromInboundAmount)/延期结算(deferredAmount) 这几类归因【不可用】，"
-            "相关因子一律标注「⚠️ 需人工核查」。"
+    # 自定义报表（custom_current.json / custom_base.json）已不在本技能取数计划内：
+    # 采购成本/头程/赔偿金额/延期结算等宽表因子归因由 custom-report-analysis 技能承接
+    #（固定口径，渲染层固定披露）；历史落盘中存在的宽表文件一并忽略、不消费。
+    stale_customs = sorted(
+        [p.name for p in rd.glob("custom_current*.json")]
+        + [p.name for p in rd.glob("custom_base*.json")]
+    )
+    if stale_customs:
+        result.coverage.append(
+            f"自定义报表落盘（{', '.join(stale_customs)}）已不在本技能取数范围，未消费；"
+            "宽表因子归因（采购成本/头程/赔偿金额/延期结算）由 custom-report-analysis 技能承接。"
         )
 
     # ---- 背景源：店铺级利润（判断是整体恶化还是个别 MSKU；reportList）----
@@ -671,7 +594,6 @@ def assemble_all(
     result.demo_fingerprint = (
         result.demo_fingerprint
         or detect_demo_environment(result.msku_rows)
-        or detect_demo_environment(result.custom_rows)
     )
 
     # 零调用防护：正常路径至少会消费主源 A 的两份信封（本期+基期）。
@@ -694,7 +616,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--end", default=None, help="本期期末日 yyyy-MM-dd（默认今天）")
     ap.add_argument("--period-days", type=int, default=None, help="本期天数（默认读 diagnosis.yaml）")
     ap.add_argument("--shop-ids", default=None, help="逗号分隔店铺 ID（默认读 shops.yaml；空=全部店铺）")
-    ap.add_argument("--report-id", default=None, help="覆盖 reports.yaml 的 reports.profit.id")
     ap.add_argument("--caliber", default=None, help="利润口径 settlement / shipment（默认读配置）")
     ap.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     ap.add_argument("--out", default=None, help="输出组装结果 JSON（FetchResult 序列化；缺省只打印摘要）")
@@ -707,12 +628,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.caliber:
         cfg.setdefault("caliber", {})["default"] = args.caliber
 
-    if args.report_id:
-        report_id = args.report_id
-    else:
-        reports = (load_reports().get("reports") or {})
-        report_id = str(((reports.get("profit") or {}).get("id") or "")).strip() or None
-
     if args.shop_ids:
         shop_ids = [s.strip() for s in args.shop_ids.split(",") if s.strip()]
     else:
@@ -723,7 +638,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     result = assemble_all(
-        report_id=report_id,
         shop_ids=shop_ids,
         cur_start=cur_start, cur_end=cur_end,
         base_start=base_start, base_end=base_end,
@@ -734,7 +648,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(
         f"✅ 组装完成：本期 {cur_start}~{cur_end} / 基期 {base_start}~{base_end}，"
-        f"msku={len(result.msku_rows)} custom={len(result.custom_rows)} "
+        f"msku={len(result.msku_rows)} "
         f"shop={len(result.shop_rows)} reimbursement={len(result.reimbursement_rows)} "
         f"（消费落盘信封 {result.mcp_calls} 份，利润口径 {result.caliber}）"
     )

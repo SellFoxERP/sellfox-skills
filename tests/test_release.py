@@ -99,7 +99,7 @@ class ReleaseTest(unittest.TestCase):
     def test_10_bulk_install_and_update(self):
         dest=Path(self.tmp.name)/'installed skills'
         self.run_script(self.root,'install.py','--skills-dir',dest)
-        self.assertEqual(len(list(dest.glob('*/SKILL.md'))),13)
+        self.assertEqual(len(list(dest.glob('*/SKILL.md'))),14)
         marker=dest/'_sellfox_shared/config/reports.yaml';marker.write_text('reports: {daily_ops: {id: "TEST-REPORT"}}\n')
         out=dest/'daily-ops-report/out/keep.txt';out.parent.mkdir();out.write_text('local report')
         self.run_script(self.root,'install.py','--skills-dir',dest,expected=1)
@@ -156,11 +156,11 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
         import zipfile
         with zipfile.ZipFile(self.root/'dist/sellfox-skills.zip') as z:
             paths=z.namelist()
-            self.assertEqual(sum(n.endswith('/SKILL.md') for n in paths),13)
+            self.assertEqual(sum(n.endswith('/SKILL.md') for n in paths),14)
             for n in paths:
                 self.assertFalse({'out','logs','_internal','__pycache__'} & set(Path(n).parts),n)
             self.assertIn('sellfox-skills/scripts/install.py',paths)
-            self.assertEqual(sum(n.endswith('/_shared/config/reports.yaml') for n in paths),1)
+
     def test_22_marketplace_bundle(self):
         import zipfile
         self.run_script(self.root,'build_release.py')
@@ -176,7 +176,7 @@ assert _convert(70,None,'USD',{},Notes(),'test') is None
         plugin=json.loads((plugin_root/'.codebuddy-plugin/plugin.json').read_text())
         self.assertEqual(entry['name'],plugin['name'])
         self.assertEqual(entry['version'],plugin['version'])
-        self.assertEqual(len(set(plugin['skills'])),13)
+        self.assertEqual(len(set(plugin['skills'])),14)
         self.assertEqual(set(plugin['skills']),{'./'+p.relative_to(self.root).as_posix()+'/SKILL.md' for p in sorted(self.root.glob('[0-9][0-9]-*'))})
         entries=['run_daily_report.py','run_inventory_health.py','fetch_listing_data.py','fetch_weekly_data.py','run_profit_diagnosis.py','optimize.py','run_governance.py','listing_launch.py','voc_insight.py']
         for path,script in zip(plugin['skills'],entries):
@@ -320,7 +320,8 @@ with tempfile.TemporaryDirectory() as d:
         self.raw(p,'online_products',envelope([PRODUCT]))
         self.run_script(p,'voc_insight.py','--days','7')
         report=(p/'out/voc-report.html').read_text()   # 报告出口仅 .html
-        self.assertIn('缺少历史基线',report)
+        self.assertIn('无历史基线',report)               # 2026-10-22 起固定口径：online 快照无基线，固定披露
+        self.assertIn('custom-report-analysis',report)  # 宽表信号（差评数/好评率环比）固定披露承接
         self.assertIn('B0DEMO00001',report)
         self.assertNotIn('未发现达标的问题 ASIN',report)
 
@@ -344,10 +345,17 @@ assert r['msku']=='MSKU-A' and r['asin']=='ASIN-A'
 """)
 
     def test_32_weekly_custom_report_still_computes(self):
-        self.run_code(self.skill(4),"""from compute_metrics import aggregate_custom_report
-r=aggregate_custom_report([{'salePrice':100,'adCost':10,'sessions':50,'orderNum':5}],{})
-assert r['status']=='ok' and r['sessions']==50 and r['orders']==5
-""")
+        # 2026-10-22 去自定义报表：aggregate_custom_report 已删除，宽表步骤残留落盘不消费、
+        # fetch 组装仍可跑（宽表指标固定标注由 custom-report-analysis 承接）。
+        p=self.skill(4)
+        self.raw(p,'profit_shop_current',envelope([PROFIT],'reportList'))
+        self.raw(p,'custom_current',envelope([{'salePrice':100,'sessions':50}],'rows'))
+        self.run_script(p,'fetch_weekly_data.py','--anchor','2026-10-12','--out','out/w.json')
+        data=json.loads((p/'out/w.json').read_text())
+        self.assertEqual(data['data'].get('custom_report'),[])           # 宽表行不消费
+        self.assertEqual(data['sources']['custom_report']['status'],'skipped')
+        self.assertIn('custom-report-analysis',data['sources']['custom_report']['note'])
+        self.run_code(p,"import compute_metrics\nassert not hasattr(compute_metrics,'aggregate_custom_report')")
 
     def test_33_upgrade_from_nine_skills(self):
         dest=Path(self.tmp.name)/'legacy-nine'
@@ -362,7 +370,7 @@ assert r['status']=='ok' and r['sessions']==50 and r['orders']==5
         self.run_script(self.root,'install.py','--skills-dir',dest,'--update')
         self.assertTrue((dest/'sellfox-business/references/finance.md').is_file())
         self.assertIn('MERCHANT-REPORT',config.read_text())
-        self.assertEqual(len(json.loads(marker.read_text())['skills']),13)
+        self.assertEqual(len(json.loads(marker.read_text())['skills']),14)
 
     def test_34_upgrade_preserves_unmanaged_collision(self):
         dest=Path(self.tmp.name)/'unmanaged-collision'

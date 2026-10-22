@@ -4,13 +4,13 @@
     {
       "id": 1,
       "prompt": "最近评分掉得厉害，帮我看看评论区都在说什么，问题出在哪",
-      "expected_output": "先用赛狐聚合指标（lowReviewNum 差评数环比、rating 下降、reviewRate 好评率下滑，来自 _shared/config/thresholds.yaml → after_sales）定位问题 ASIN，再经外部评论 MCP 取原文；只有 ≥ min_distinct_reviewers 位独立评论者印证同一主题才报「模式」，否则只列「个别反馈」；报告顶部标抽样非全量。",
+      "expected_output": "先用 online 评分快照（get_online_product_page_list 的 rating/ratingCount）筛「评分低且样本足够」的 ASIN，再经外部评论 MCP 取原文；只有 ≥ min_distinct_reviewers 位独立评论者印证同一主题才报「模式」，否则只列「个别反馈」；报告顶部标抽样非全量；如用户要「评分掉了」的环比证据，如实说明快照无历史基线、差评数/好评率环比由 custom-report-analysis 承接。",
       "files": []
     },
     {
       "id": 2,
       "prompt": "没接外部评论 MCP，能帮我做 VOC 分析吗？",
-      "expected_output": "走降级路径：只用聚合指标定位问题 ASIN，明确声明「赛狐 MCP 拿不到评论原文、无原文」；不做主题归因，输出仍结构完整并披露降级。",
+      "expected_output": "走降级路径：只用 online 评分快照定位低分 ASIN，明确声明「赛狐 MCP 拿不到评论原文、无原文」；不做主题归因，输出仍结构完整并披露降级。",
       "files": []
     },
     {
@@ -27,9 +27,9 @@
     },
     {
       "id": 5,
-      "prompt": "差评变多的是哪几个 ASIN？按环比恶化程度排个序",
-      "expected_tools": ["get_custom_report_page_list"],
-      "expected_output": "lowReviewNum/reviewNum/reviewRate 只存在于宽表 → 取当前/上一两窗口做环比定位，按恶化程度与影响面排序；report_id 未配时降级为 online 侧 rating/ratingCount 并声明「无环比基线」；空数据标「无数据」；max_flagged_asins 截断时披露「仅深挖 Top N」。",
+      "prompt": "评分比较低的 ASIN 有哪几个？帮我排个序",
+      "expected_tools": ["get_online_product_page_list"],
+      "expected_output": "用 get_online_product_page_list 评分快照：筛 rating ≤ snapshot_rating_low 且 ratingCount ≥ min_rating_count 的 ASIN，按销量降序；空数据标「无数据」；max_flagged_asins 截断时披露「仅深挖 Top N」；差评数（lowReviewNum）不在 online 侧，如实说明由 custom-report-analysis 承接，不编造差评数据。",
       "files": []
     },
     {
@@ -41,9 +41,9 @@
     },
     {
       "id": 7,
-      "prompt": "跑一次 7 天 VOC [[场景注入：get_custom_report_page_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
+      "prompt": "跑一次 7 天 VOC [[场景注入：get_online_product_page_list 的 action 返回 CONTRACT_VERSION_MISMATCH，按 RUNBOOK §场景注入 处理]]",
       "scenario": "contract_version_mismatch",
-      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败则聚合指标不可用 → 报告显式降级声明（无法定位问题 ASIN），绝不编造主题分布或差评数量；不中断到崩溃，输出带降级说明的骨架报告。",
+      "expected_output": "重取契约、按新 schema 重建参数、重试一次；仍失败则评分快照不可用 → 报告显式披露取数失败（error_code、该源按无数据处理、需人工核查），绝不编造评分/差评数据；不中断到崩溃，输出带失败披露的骨架报告。",
       "files": []
     }
   ]

@@ -12,7 +12,7 @@
 - `conversionRate < conversion.category_cvr_pct` → P2。但 **`category_cvr_pct` 默认 null**，因为赛狐 MCP **拿不到类目平均转化率基准**。
 - 因此默认行为是：**同店横向对比**——把该 ASIN 的 `conversionRate` 与**同店铺中位水平**比较，低于中位数一定幅度才提示，并**显式标注「类目基准缺失，需人工核查」**。
 
-无 report_id → 该检查标 **⚠️ 需人工核查**，不得用 `saleNum` 反推转化率。
+本技能不取宽表（sessions/conversionRate 由 custom-report-analysis 技能承接）→ 该检查标 **⚠️ 需人工核查**，不得用 `saleNum` 反推转化率；`get_product_analyze_list` 契约实测含会话/转化字段，可作替代源（以当次契约为准）。
 
 **归因方向**（只提示）：
 - 主图/标题/五点与搜索意图不匹配
@@ -36,7 +36,7 @@
 
 - 判定：`rating` 环比下降超过 `rating.drop_abs`（默认 0.2，实测样例首值 "4.5" 为字符串，取值需转 float）→ P2「评分下滑」。
 - 环比需基线：优先用历史快照（见 `workflow.md`）；无快照时只报当前值与评论数，标「无基线，无法判断趋势」。
-- `lowReviewNum`（差评数）仅宽表可得 → 无 report_id 标「需人工核查」。
+- `lowReviewNum`（差评数）仅宽表可得（custom-report-analysis 承接）→ 标「需人工核查」。
 - **拿不到评论原文/差评文本**（MCP 无接口）→ 归因方向只给假设，明确「具体差评内容需人工核查」。
 
 ## 4. 输出格式

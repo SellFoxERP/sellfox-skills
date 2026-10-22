@@ -1,12 +1,7 @@
 ---
 name: inventory-health
-description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只读，不下采购单）。逐 MSKU 计算可售天数、在途、到货周期、缺口与建议补货量，输出断货预警（P0/P1/P2）与「断货↔滞销」双向矩阵，生成含「周期来源」列的补货建议单，可写入飞书。当用户提到"库存健康""补货建议""要不要补货""断货预警""缺货风险""可售天数""还能卖几天""库存周转""滞销清理""呆滞库存""库龄""库存体检""补货单"，或询问某个 SKU/MSKU 该不该下补货、哪些货要清时，务必使用本技能，即使用户没有明确说"库存"二字。也适用于每日/每周的例行库存巡检。
+description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只读，不下采购单，报告仅本地 HTML 不外发）。逐 MSKU 按在线产品口径自算可售天数、在途、到货周期、缺口与建议补货量，输出断货预警（P0/P1/P2）与「断货↔滞销」双向矩阵，生成含「周期来源」列的补货建议单。当用户提到"库存健康""补货建议""要不要补货""断货预警""缺货风险""可售天数""还能卖几天""库存周转""滞销清理""呆滞库存""库龄""库存体检""补货单"，或询问某个 SKU/MSKU 该不该下补货、哪些货要清时，务必使用本技能，即使用户没有明确说"库存"二字。也适用于每日/每周的例行库存巡检。
 ---
-
-## 报表自动发现
-
-任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
-匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
 
 ## 运行环境与路径
 
@@ -18,13 +13,16 @@ description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
 `help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
 已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
-下文“零网络”仅指赛狐取数后的离线计算；飞书和审批通知模块会联网。
-默认输出本地报告；只有用户要求时才启用飞书或外部服务。没有原始数据时仅说明缺口或产出
-明确标识的模板，不能把空数据报告当作经营正常的结论。
+下文“零网络”指赛狐取数后的离线计算。报告仅本地 HTML，不外发
+（飞书写入能力 v1.7.0 已移除；演示数据仅加顶部水印，不外发）。
+没有原始数据时仅说明缺口或产出明确标识的模板，不能把空数据报告当作经营正常的结论。
 
 # 库存健康与补货建议
 
 逐 MSKU 体检库存、预测断货、给出补货量与清货建议。**只出建议，不下采购单**（赛狐 MCP 无采购接口）。
+v1.7.0 起**不取自定义报表宽表**（`get_custom_report_page_list` / `report_id` 依赖整体移除）：
+主源为在线产品 `get_online_product_page_list`，可售天数/建议补货量按在线产品口径**自算**，
+报告固定标「口径降级：未接入自定义报表（由 custom-report-analysis 技能承接）」。
 
 ## 为什么这样设计
 
@@ -32,9 +30,9 @@ description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只
 
 核心原则有三条，都来自实测结论：
 
-1. **不重算赛狐已经算好的指标。** `availableDays`（可售天数）、`turnoverDaysMonth`（周转天数）、
-   `isrMonth`（库存销售比）、`suggestNumSum`（补货建议量）赛狐官方已经给出。自己造一套算法只会
-   与业务方对不上账。本技能**直接采信官方口径**，把精力放在判断、归因、预警和叙述上。
+1. **在线产品口径自算，不冒充官方口径。** v1.7.0 起本技能不取宽表，
+   `availableDays` / `suggestNumSum` 等赛狐官方口径字段拿不到（由 custom-report-analysis 承接），
+   可售天数/建议量按在线产品字段自算并在报告显式标注「自算口径」，绝不冒充赛狐官方数值。
 2. **到货周期（lead_time）不猜、不硬编码。** 它按供应商/运输方式/季节变动，所以外置到
    `_shared/config/lead_time.yaml`；缺失时**一次性批量询问**并询问是否回写记忆。用到默认值必须在
    输出里显式标注 —— 使用者要能一眼看出哪些结论建立在不确定假设上。
@@ -51,7 +49,6 @@ description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只
 | `_shared/SELLFOX_CLIENT.md` | **必读**：v2 agent 调用纪律（三段式 / contract_version / 参数类型 / 错误语义 / 并发与落盘，12 条） |
 | `_shared/config/lead_time.yaml` | 解析到货周期（由使用者维护） |
 | `_shared/config/thresholds.yaml` | 读取 `inventory` 预警阈值 |
-| `_shared/config/reports.yaml` | 读取 `reports.inventory.id`（由助手自动发现，不是部署前置） |
 
 ## 如何执行
 
@@ -60,22 +57,20 @@ description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只
 python scripts/run_inventory_health.py --check-only        # 只做前置校验（含 out/raw 落盘检查）
 python scripts/run_inventory_health.py                     # 组装 → 计算 → 渲染（业务日默认今天）
 python scripts/run_inventory_health.py --date 2026-09-29 --out out/inventory.md
-python scripts/run_inventory_health.py --feishu            # 写入飞书（演示环境默认阻断）
 python scripts/run_inventory_health.py --answers '{"MOCK-SKU-001":45}' --write-back  # 本次填写并回写到货周期
 ```
 
-报告输出 `out/inventory.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试）。
+报告输出 `out/inventory.html`（主报告，HTML 即报告；`--keep-md` 可附同名 .md 供调试与测试；不外发）。
 
 ## 执行流程
 
 ### Step 0：前置校验（技能能不能跑）
 
-1. **库存报表自动发现。** 按 `ONBOARDING.md` 查找并验证 inventory 用途的报表。未取得适用报表时改用在线产品的真实销量/库存字段自算覆盖天数，标明与赛狐宽表口径的差异，缺字段标需核查；不要求商家创建报表或回填 ID。
-2. **客户端 MCP 就绪与数据环境。** Key 只在客户端 MCP 配置里，脚本零网络、不需要
+1. **客户端 MCP 就绪与数据环境。** Key 只在客户端 MCP 配置里，脚本零网络、不需要
    `SELLFOX_MCP_KEY`。数据源是沙箱还是生产由客户端配置决定；组装层扫落盘识别演示指纹
-   （`MOCK-` 前缀 / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」），命中 → 输出顶部加水印，
-   并**默认阻断写飞书**（见 Step 4）。快速自检：`python scripts/run_inventory_health.py --check-only`。
-3. 读取阈值与 lead_time 配置。阈值绝不硬编码 —— 不同类目合理值差别很大。
+   （`MOCK-` 前缀 / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」），命中 → 输出顶部加水印
+   （演示数据仅加水印、不外发）。快速自检：`python scripts/run_inventory_health.py --check-only`。
+2. 读取阈值与 lead_time 配置。阈值绝不硬编码 —— 不同类目合理值差别很大。
 
 ### Step 1：确认参数
 
@@ -83,27 +78,24 @@ python scripts/run_inventory_health.py --answers '{"MOCK-SKU-001":45}' --write-b
 |---|---|---|
 | 日期 | 今日 | 用于 lead_time 旺季系数匹配与「预计断货日」推算 |
 | 店铺范围 | 落盘数据即口径（agent 取数时定） | 取数参考 `shops.json`；`shops.yaml` 的 `default_scope` 仅作提示 |
-| 输出目标 | 本地 Markdown | 是否推送飞书、推到哪个文件夹 |
+| 输出目标 | 本地 HTML（不外发） | 报告仅本地文件 |
 | 清货营销阈值 | 读配置 | 库龄占比红线读 `thresholds.yaml → inventory` |
 
-> 本技能是**只读**技能：唯一可能的写动作是"把建议单写进飞书文档"，且需人确认。
+> 本技能是**只读**技能：不写任何赛狐数据，报告仅本地 HTML。
 
 ### Step 2：取数（agent 按取数计划落盘）与组装
 
 **v3：取数面是 agent** —— 按 `references/workflow.md` 的**取数计划**调
 `mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/<step>.json`：
 
-1. `shops.json` ← `get_shop_page_list` —— 店铺清单（分页参数 **string**），为宽表分批
-   提供 shop_id；可缓存 7 天。
-2. `msku_<shopId>.json` ← `get_custom_report_page_list` —— **主源**（489 字段宽表），
-   每店铺批一个文件，窗口 `on_date−report_window_days ~ on_date`（`yyyy-MM-dd`）。
-   report_id 缺 → **整步跳过**走降级。单次 ≤1 页（分页大小以当前契约为准）。
-3. `online_products_<batch>.json` ← `get_online_product_page_list` —— **降级 / 补充源**
+1. `shops.json` ← `get_shop_page_list` —— 店铺清单（分页参数 **string**），为在线产品
+   分批提供 shop_id；可缓存 7 天。
+2. `online_products_<batch>.json` ← `get_online_product_page_list` —— **主源**
    （`day7SaleNum`/`day30SaleNum`/`inventoryManage`）。⚠️ 顶层 `currency` 是 **USD**，
    其 `inventoryManage.currency` 是 **CNY**，跨币种不得直接相减。
-4. `fba_shipments.json` ← `get_fba_shipment_page_list` —— 在途货件明细（时间区间参数
+3. `fba_shipments.json` ← `get_fba_shipment_page_list` —— 在途货件明细（时间区间参数
    至少一组完整）。**可能返回 `data: {}` → 标注「无数据」，不是失败，不重试**。
-5. `awd_inventory.json` ← `get_awd_inventory_page_list` —— AWD 库存（`page_no`/`page_size`
+4. `awd_inventory.json` ← `get_awd_inventory_page_list` —— AWD 库存（`page_no`/`page_size`
    必填）。**可能为空**，同上处理。
 
 纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（contract_version）、参数类型按当次
@@ -111,21 +103,20 @@ inputSchema、失配重取一次、不信 has_more 信 coverage、每步落盘�
 **可并行**（v3 新网关同 session 并发安全）；**不承诺固定调用次数**（随店铺数与批次增长）。
 
 落盘完成后由 `scripts/fetch_inventory.py` 做**校验 + 组装**（零网络）：演示指纹扫落盘、
-`coverage.truncated` 转披露、`data:{}` 标「无数据」；report_id 为空且存在
-`online_products_*.json` 时组装降级数据并标「口径降级」。组装结果形状与旧版一致，
-后续计算/渲染零改动。
+`coverage.truncated` 转披露、`data:{}` 标「无数据」；组装结果固定标
+「口径降级：未接入自定义报表（由 custom-report-analysis 技能承接），按在线产品口径自算」。
+残留 `msku_*.json` 一律忽略。
 
-**基线优先用现成窗口字段**（`salesVelocityMonth`、`thirtySaleNum`、`sevenSaleNum`），
-不为算基线再发一次调用。✅ `threeSaleNum` 是真实字段（近 3 天窗口，见 `_shared/FIELD_DICTIONARY.md`），可直接用作短基线。
+**基线用在线产品现成窗口字段**（`day30SaleNum` / `day7SaleNum`，日均 = 窗口值 ÷ 天数），
+不为算基线再发一次调用。
 
 ### Step 3：计算（见 `references/replenishment-rules.md`）
 
 对每个 MSKU：
 
 ```
-日均销量 v   = salesVelocityMonth / 30        （退化：thirtySaleNum/30 → sevenSaleNum/7，并标注来源；
-                                               降级源自用 day30SaleNum/30 → day7SaleNum/7）
-可售天数 d   = 赛狐 availableDays（降级时 fbmAvailableDays，再不行用在线产品库存/自算）
+日均销量 v   = day30SaleNum / 30（退化：day7SaleNum / 7，并标注来源）
+可售天数 d   = 在线产品口径自算（inventoryManage.available / 顶层 quantity / totalInventory ÷ v）
 在途量 inb   = inboundWorking + inboundShipped + inboundReceiving + inTransit
 到货周期 L   = lead_time.yaml 三级解析（by_sku > by_supplier > by_shipping_method > default）
               解析不到 → 收集成表【一次性批量询问】→ 询问是否回写配置
@@ -141,9 +132,9 @@ ELSE                         → 健康
 
 **每个参数的来源（配置命中 / 本次填写 / 默认值）都要记录**，写进补货建议单的「周期来源」列。
 
-### Step 4：渲染与（可选）推送
+### Step 4：渲染
 
-严格按 `references/output-template.md` 输出：
+严格按 `references/output-template.md` 输出（本地 HTML，不外发）：
 
 ```
 📊 库存健康体检 | {日期}
@@ -158,13 +149,7 @@ ELSE                         → 健康
 【数据说明】← 必填：覆盖范围（含截断披露）/ 币种 / 校验口径 / 需人工核查项 / 演示水印
 ```
 
-推送飞书写入前：
-
-- 过 `feishu_writer.guard_demo()` —— 演示环境**默认阻断**：命中指纹即返回 3 拒绝写入，
-  只有显式传 `--allow-demo-write` 才放行，且文档顶部必带演示水印。绝不根据「是否命中指纹」
-  自动放行（那等于没有闸门）。
-- 本技能不含订单 PII，但仍对任何 `buyerEmail/buyerName` 走 `mask_pii` 兜底。
-- 飞书应用须被加为文档协作者，否则 403；创建接口限流 3 次/秒，同文件夹创建须串行。
+报告仅本地 HTML，不外发；演示环境命中指纹时顶部加水印（不外发）。
 
 ## 诚实边界（不可省略）
 
@@ -185,12 +170,21 @@ ELSE                         → 健康
 | 参数类型沿用旧接口全字符串 | 店铺清单分页传 integer 会被 `INVALID_PARAMS` 拒 | 类型按当次 inputSchema（shops 分页是 **string**） |
 | 信 `pagination.has_more` 翻页 | 与 coverage 矛盾导致误判 | 只信 `coverage` 与 `totalSize` |
 | 靠 `page_size` 控量 | 服务端静默降级为 20 条/页 | agent 单次 ≤1 页 + max_rows 组装侧截断并披露 |
-| 自造可售天数/周转算法 | 与业务方对不上账 | 直接用 `availableDays` / `turnoverDaysMonth` |
-| 把 `threeSaleNum` 当作「不存在」而回避 | 它是真实字段（见文档 14），绕开会少一个短基线 | 三天基线用 `threeSaleNum`，七天用 `sevenSaleNum` |
+| 自算口径不标注 | 被读成赛狐官方 availableDays/suggestNumSum | 顶部「口径降级」横幅 + 自算口径显式说明 |
+| 把宽表字段套到在线产品源 | 全部落空、误判「无数据」 | 在线产品源用 day7/day30SaleNum 与 inventoryManage 字段 |
 | 维度字段当字符串 | `msku`/`asin`/`shopId` 是**列表**（`["MSKU-..."]` 或 `[{"key":"..."}]`） | 走组装层的 `pick()` 归一化 |
 | 默认到货周期混进真实数据 | 误导补货决策 | 「周期来源」列显式标注「默认值⚠️」 |
 | USD 售价 − CNY 成本 | 结果荒谬 | 币种显式转换并标注汇率来源与日期 |
 | 空数据写 0 | 误导（"没拿到"≠0） | 标「无数据」 |
+
+## 与相邻技能的分工
+
+- 自定义报表 / 宽表字段分析（赛狐官方 `availableDays` / `suggestNumSum` / `turnoverDaysMonth` /
+  `salesVelocityMonth` / 库龄分桶官方口径、跨店铺宽表导出）→ `custom-report-analysis`。
+- 库龄官方分桶占比与宽表口径的资金占用分析 → `custom-report-analysis`（本技能的库龄自算口径仅基于
+  `inventoryManage.invAge*` 字段）。
+- 每日经营日报 → `daily-ops-report`；广告调优 → `ad-optimizer`。
+
 ## 补货情景与货件跟进
 
 遇到该主题时阅读 [决策支持](references/decision-support.md)，使用随批量包提供的情景脚本；先核对输入来源，输出假设与缺口。

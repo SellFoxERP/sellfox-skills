@@ -6,7 +6,7 @@
 ------------
 技能可能被安装到任意位置，脚本里**绝不能写死** ``../_shared/``。本模块按优先级解析
 ``shared_root``，并把 ``_shared/scripts`` 注入 ``sys.path``，让技能脚本可以直接
-``import config_loader`` / ``feishu_writer`` / ``sellfox_offline`` / ``validate_raw``
+``import config_loader`` / ``sellfox_offline`` / ``validate_raw``
 （v3 计算面组件；旧直连客户端 ``sellfox_client.py`` 已废弃，不再 import）。
 
 解析优先级：

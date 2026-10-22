@@ -2,25 +2,24 @@
 """每日经营日报 —— 渲染层（render_report.py）。
 
 输入：analysis.json（+ 可选 bundle.json 以取订单样本与店铺名）
-输出：HTML 日报（本地文件；默认只写同名 .html，--keep-md 时附 .md），可选写入飞书。
+输出：本地 HTML 日报（默认只写同名 .html，--keep-md 时附 .md）。报告仅本地产出，
+不外发（v1.7.0 起飞书写入能力已移除；演示环境仅加顶部水印，不阻断本地产出）。
 
 要点：
   * 严格使用 references/report-template.md 的结构：结论与行动 / 分项明细 / 附录 / 数据说明。
-  * 若命中演示环境指纹 → 顶部加水印，且**默认阻断写飞书**（可 --override-demo 显式覆盖）。
-  * 写飞书前对订单 PII（buyerEmail/buyerName）脱敏并标注「已脱敏」。
+  * 命中演示环境指纹 → 顶部加水印（数值不可用于业务判断；不外发）。
+  * 订单样本 PII（buyerEmail/buyerName）渲染前经 sellfox_offline.mask_pii_in_text 脱敏并标注「已脱敏」。
   * 截断披露、口径降级、无数据、需人工核查项一律显式输出（禁止静默省略）。
 
 用法::
 
     python render_report.py --analysis out/analysis.json --bundle out/bundle.json --out out/daily_report.md
-    python render_report.py --analysis out/analysis.json --feishu
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -35,10 +34,8 @@ _SHARED_ROOT = _resolve_shared_root(_SKILL_ROOT)
 if not _SHARED_ROOT.exists():
     raise SystemExit(f"_shared 路径不可用：{_SHARED_ROOT}。请设置 config/paths.yaml 的 shared_root。")
 sys.path.insert(0, str(_SHARED_ROOT / "scripts"))
-from config_loader import load_yaml_file  # noqa: E402
+from sellfox_offline import mask_pii_in_text  # noqa: E402  （PII 行级脱敏；_shared/scripts 已挂 sys.path）
 from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：默认只写同名 .html，HTML 即报告）
-
-_SKILL_CFG = load_yaml_file(_SKILL_ROOT / "config" / "daily_report.yaml")
 
 
 def _fmt(v: Any, digits: int = 2, unit: str = "") -> str:
@@ -60,7 +57,7 @@ _BODY_TEXT_TRANSLATIONS = [
     ("servingStatus 字段存在，但 BUDGET_CAPPED 取值未经实测验证，不作为判定条件。",
      "预算受限状态未验证，不作为判定条件。"),
 ]
-_BASELINE_METHOD_LABELS = {"window_field": "窗口字段法"}
+_BASELINE_METHOD_LABELS = {"window_field": "窗口字段法", "slice_30d": "30 天切片法"}
 
 
 def _plain(s: Any) -> str:
@@ -72,24 +69,23 @@ def _plain(s: Any) -> str:
 
 
 def _report_gaps(analysis: Dict[str, Any], bundle: Dict[str, Any]) -> Dict[str, Any]:
-    """识别影响判读的数据缺口：行动建议 / 数据可用度 / 一句话结论共用。"""
+    """识别影响判读的数据缺口：行动建议 / 数据可用度 / 一句话结论共用。
+
+    v1.7.0 起宽表专属指标为固定边界（由 custom-report-analysis 技能承接），
+    不再按 report_id 动态判定，也不再作为「主要缺口」行动项。
+    """
     deg = analysis.get("degradations") or []
-    nd = analysis.get("no_data_sources") or []
-    rid = ((bundle.get("data") or {}).get("msku_report") or {}).get("report_id")
     failed: List[str] = []
     for d in deg:
         if "步骤信封状态" not in d or "error_code=" not in d:
             continue
-        head = str(d).split("：", 1)[0]                      # 如「步骤 3 宽表 S1、工具 get_…」
+        head = str(d).split("：", 1)[0]                      # 如「步骤 3 订单样本、工具 get_…」
         label = head.split("、工具", 1)[0]
         label = re.sub(r"^步骤\s*\S+\s*", "", label).strip() or head
         failed.append(label)
     return {
         "failed_steps": failed[:2],
         "profit_missing": any("利润步骤缺失" in d for d in deg),
-        "wide_table_missing": (not rid) and (
-            any("缺少自定义报表 report_id" in d for d in deg)
-            or any("get_custom_report_page_list" in s for s in nd)),
         "currency_count": len((analysis.get("l1") or {}).get("by_currency") or {}),
     }
 
@@ -100,8 +96,6 @@ def _main_gap_phrase(gaps: Dict[str, Any]) -> str:
         return f"{gaps['failed_steps'][0]} 取数失败（错误码见数据说明）"
     if gaps["profit_missing"]:
         return "店铺级利润缺失（GMV/毛利不可用）"
-    if gaps["wide_table_missing"]:
-        return "自定义报表未配置（流量/转化、广告点击、库龄分桶、补货建议不可用）"
     if gaps["currency_count"] > 1:
         return f"{gaps['currency_count']} 个币种未折算（GMV/毛利总额不可用）"
     return ""
@@ -112,8 +106,6 @@ def _action_items(gaps: Dict[str, Any]) -> List[str]:
     acts: List[str] = []
     for label in gaps["failed_steps"]:
         acts.append(f"{label} 数据今日取数失败，稍后重试或联系赛狐支持（错误码见数据说明）")
-    if gaps["wide_table_missing"]:
-        acts.append("在赛狐配置自定义报表后重跑，可解锁流量/转化、广告点击、库龄分桶、补货建议")
     if gaps["currency_count"] > 1:
         acts.append(f"{gaps['currency_count']} 个币种未折算，看单一币种行做判断")
     if gaps["profit_missing"]:
@@ -227,8 +219,8 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     if l1.get("by_currency"):
         for currency, values in l1["by_currency"].items():
             L.append(f"| 销售额 / 毛利（{currency}） | {_fmt(values.get('gmv'))} / {_fmt(values.get('gross_profit'))} | {currency} |")
-    L.append(f"| ACOS | {_fmt(l1.get('acos'), 2, '%')} | 报表口径（adCost/adSalePrice） |")
-    L.append(f"| CVR | {_fmt(l1.get('cvr'), 2, '%')} | orderNum/sessions |")
+    L.append(f"| ACOS | {_fmt(l1.get('acos'), 2, '%')} | 宽表口径（adCost/adSalePrice）——由 custom-report-analysis 承接 |")
+    L.append(f"| CVR | {_fmt(l1.get('cvr'), 2, '%')} | orderNum/sessions——宽表字段，由 custom-report-analysis 承接 |")
     L.append("")
     L.append(f"> 一句话结论：{_one_line_conclusion(l1, reds, gaps, cur)}")
     L.append("")
@@ -264,7 +256,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
         for a in msku_an[:10]:
             L.append(f"  - {a.get('msku')}（店铺 {a.get('shopId')}）：{_fmt(a.get('current'),0)} vs 近7日均 {_fmt(a.get('baseline'),2)}，偏离 {a.get('deviation_pct'):+.1f}%")
     else:
-        L.append("- 无 MSKU 销量异常（或宽表无数据）。")
+        L.append("- MSKU 级销量环比为宽表指标（由 custom-report-analysis 技能承接）— ⚠️ 需人工核查。")
     L.append("")
 
     _step_header("03", "广告")
@@ -327,13 +319,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     if not orders:
         L.append("- 无数据")
     else:
-        try:
-            from feishu_writer import mask_pii_in_text
-
-            _mask = mask_pii_in_text
-        except Exception:  # 兜底：无 _shared 时用简单掩码
-            def _mask(t: str) -> str:  # type: ignore
-                return t
+        _mask = mask_pii_in_text  # _shared/scripts/sellfox_offline（模块顶部已 import）
         shown = 0
         for o in orders:
             if shown >= 10:
@@ -393,7 +379,8 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append(f"- 利润口径：{cfg.get('profit_caliber_type','settlement')}（结算/发货口径二者结果不同）")
     L.append(f"- 币种：聚合币种 {cur}（以返回行币种核验；请求参数不代表折算已成功）")
     L.append(f"- 业务日边界：{cfg.get('date_mode')}（时区参考 {cfg.get('timezone','—')}）；数据截止 {iso} 23:59")
-    L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / get_custom_report_page_list / get_order_page_list / get_sp_campaign_list）")
+    L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / get_order_page_list / get_sp_campaign_list / get_multiplatform_sale_stats）；"
+             "宽表（get_custom_report_page_list）不在本技能取数范围，由 custom-report-analysis 技能承接")
     meta = bundle.get("meta") or {}
     if isinstance(meta.get("shops_total"), int):
         regions = meta.get("shop_regions") or meta.get("sites_returned") or []
@@ -443,8 +430,6 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append(f"| 预警阈值 | thresholds.yaml | 配置命中 |")
     caliber_src = "CLI --caliber 覆盖" if cfg.get("profit_caliber_source") == "cli" else "配置命中"
     L.append(f"| 利润口径 | {cfg.get('profit_caliber_type','settlement')} | {caliber_src} |")
-    rid = ((bundle.get("data") or {}).get("msku_report") or {}).get("report_id")
-    L.append(f"| daily_ops report_id | {rid or '缺失（已降级）'} | {'配置命中' if rid else '默认值 ⚠️'} |")
     L.append("")
 
     return "\n".join(L)
@@ -453,32 +438,13 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
 HUMAN_TEXT = "⚠️ 需人工核查"
 
 
-def push_feishu(markdown: str, analysis: Dict[str, Any], bundle: Dict[str, Any], *, override_demo: bool = False) -> str:
-    """写入飞书文档。演示环境默认阻断；写前 PII 脱敏（markdown_to_blocks 内自动处理）。"""
-    from feishu_writer import FeishuWriter
-
-    folder = (os.environ.get("FEISHU_FOLDER_TOKEN")
-              or _SKILL_CFG.get("output", {}).get("feishu_folder_token") or None)
-    fw = FeishuWriter(folder_token=folder)
-
-    # 演示环境闸门：对所有取数结果扫描指纹
-    fw.guard_demo(bundle.get("data") or {}, override=override_demo)
-
-    iso = (analysis.get("report_date") or {}).get("iso", "?")
-    doc_id = fw.create_doc(f"每日经营日报 {iso}")
-    fw.write_blocks(doc_id, fw.markdown_to_blocks(markdown))
-    return doc_id
-
-
 def main(argv: Optional[List[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="每日经营日报 - 渲染/写入")
+    ap = argparse.ArgumentParser(description="每日经营日报 - 渲染（仅本地 HTML，不外发）")
     ap.add_argument("--analysis", default="out/analysis.json")
     ap.add_argument("--bundle", default="out/bundle.json")
     ap.add_argument("--out", default="out/daily_report.md")
     ap.add_argument("--keep-md", action="store_true",
                     help="额外写出同名 .md（调试/测试用；默认只写 .html）")
-    ap.add_argument("--feishu", action="store_true", help="写入飞书文档")
-    ap.add_argument("--override-demo", action="store_true", help="演示环境也强制写入飞书（仍需水印）")
     args = ap.parse_args(argv)
 
     def _path(p: str) -> Path:
@@ -499,14 +465,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"✅ 日报已渲染：{html_path}（md 留档：{_path(args.out)}）")
     else:
         print(f"✅ 日报已渲染：{html_path}")
-
-    if args.feishu:
-        try:
-            doc_id = push_feishu(md, analysis, bundle, override_demo=args.override_demo)
-            print(f"✅ 已写入飞书文档：{doc_id}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"❌ 写飞书失败：{exc}", file=sys.stderr)
-            return 3
     return 0
 
 

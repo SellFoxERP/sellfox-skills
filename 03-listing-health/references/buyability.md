@@ -25,13 +25,12 @@
 
 ## 2. 丢购物车
 
-**字段（二选一，按 report_id 是否就绪）**：
+**字段（v1.7.0：宽表已移交 custom-report-analysis，本技能固定用 buyBoxWinner 退化信号）**：
 
 | 场景 | 字段 | 来源 | 判定 |
 |---|---|---|---|
-| 有 report_id | `buyBoxPercent` | `get_custom_report_page_list` | `< buybox.min_pct`（默认 90）→ P1 |
-| 无 report_id | `buyBoxWinner` | `get_online_product_page_list` | `false` → P1（退化信号） |
-| 无 report_id | — | — | **只有布尔值，没有占比** → 报告标注「口径降级」 |
+| `buyBoxWinner` | `get_online_product_page_list` | `false` → P1（退化信号） |
+| — | `buyBoxPercent`（宽表，custom-report-analysis 承接） | **只有布尔值，没有占比** → 报告标注「口径降级」 |
 
 **判定口径说明**：
 - `buyBoxPercent` 是占比（实测样例 92.5），越高越好。低于阈值说明相当比例的展示没拿到购物车。
@@ -50,7 +49,7 @@
 
 ```
 [P1] ASIN B0XXXX：购物车占比 78%（阈值 90%）
-     字段来源：get_custom_report_page_list.buyBoxPercent
+     字段来源：get_online_product_page_list.buyBoxWinner（buyBoxPercent 为宽表字段，custom-report-analysis 承接）
      建议：检查是否被跟卖、价格是否有竞争力、库存是否充足；竞品 BuyBox 价需人工核查
 ```
 

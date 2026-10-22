@@ -18,7 +18,7 @@
 
 ## 1. 输入字段
 
-全部来自 `get_custom_report_page_list`（主源），降级时取自 `get_online_product_page_list.inventoryManage`。
+v1.7.0 起全部取自 `get_online_product_page_list`（主源，inventoryManage 与顶层窗口字段）——本技能不取自定义报表宽表（由 custom-report-analysis 技能承接），可售天数/建议补货量为自算口径。
 字段名以 `_shared/FIELD_DICTIONARY.md` 为准。
 
 | 用途 | 字段 | 实测样例 |

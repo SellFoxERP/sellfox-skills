@@ -8,7 +8,7 @@
 **字段**：`sessions`、`pageViews`（来源：`get_custom_report_page_list`，**仅宽表可得**）。
 
 - 判定：`sessions` 连续 `sessions.zero_days` 天（默认 7）为 0 → P1「无流量」。
-- **无 report_id 时拿不到 sessions** → 该检查标 **⚠️ 需人工核查**，不得用 `saleNum=0` 之类字段冒充（销量为 0 可能是转化问题，不等于无流量）。
+- **本技能不取宽表，拿不到 sessions**（由 custom-report-analysis 技能承接）→ 该检查标 **⚠️ 需人工核查**，不得用 `saleNum=0` 之类字段冒充（销量为 0 可能是转化问题，不等于无流量）；`get_product_analyze_list` 契约实测含会话字段，可作替代源（以当次契约为准）。
 - 空数据（`data:{}`）→ 标「无数据」，**不写 0**，不触发重试。
 
 **归因方向**（仅提示，不改 Listing）：
@@ -25,7 +25,7 @@
 
 判定：
 - 取 `bsrRank[].rank`（名次数字**变小=变好，变大=变差**）。名次变差超过 `bsr.rank_drop_pct`（默认 30%）→ P2「BSR 恶化」。
-- 无 report_id 时只用 `bsrRank`；类目名次恶化标「需人工核查」。
+- 本技能只用 `bsrRank`；类目名次（宽表字段，custom-report-analysis 承接）恶化标「需人工核查」。
 - ⚠️ 环比需要**基线**。优先用接口现成窗口字段；若只有单期快照，则无法算环比 → 标「仅单期，无法判断趋势，需历史快照」。
 
 **为什么关注 BSR**：BSR 是自然搜索权重的代理指标，恶化通常早于销量下滑显现。
@@ -39,8 +39,8 @@
 
 ## 4. 断货拖累排名
 
-- 有 report_id：用 `availableDays`（来源：`get_custom_report_page_list`），低于 `_shared/config/thresholds.yaml → inventory.available_days_min` 提示断货风险。
-- 无 report_id：退化为 `quantity`（来源：`get_online_product_page_list`）接近 0 → 标「疑似断货，可用天数需人工核查」。具体补货逻辑属**技能 2（库存健康）**范围，本技能只提示「断货可能拖累排名」。
+- `availableDays` 为宽表字段（custom-report-analysis 承接）：本技能固定标「需人工核查」。
+- 退化用 `quantity`（来源：`get_online_product_page_list`）接近 0 → 标「疑似断货，可用天数需人工核查」。具体补货逻辑属**技能 2（库存健康）**范围，本技能只提示「断货可能拖累排名」。
 
 ## 5. 输出与边界
 

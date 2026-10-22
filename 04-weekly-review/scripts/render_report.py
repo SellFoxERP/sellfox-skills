@@ -172,25 +172,7 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
     L.append(f"| 件均售价（销售额/销量） | {cur_cell(_n(cur.get('avg_order_value')))} | "
              f"{_n(agg['prev'].get('avg_order_value'))} | — | "
              f"{_n(agg['prev_month_same_period'].get('avg_order_value'))} | — |")
-
-    # ---- 宽表指标（自定义报表，489 字段）：利润报表没有的流量/广告/库存维度 ----
-    # 宽表只取本期窗口，没有同口径的历史基线，故除「本期」外其余列用 —。
-    cr = agg.get("custom_report") or {}
-    if cr.get("status") == "ok":
-        def _cn(val: Optional[float], unit: str = "") -> str:
-            return NA if val is None else f"{val:,.2f}{unit}"
-        acos_note = ""
-        if cr.get("acos") is not None and "单位待核实" in (cr.get("acos_source") or ""):
-            acos_note = "（报表现成，单位待核实）"
-        L.append(f"| 会话数 | {_cn(cr.get('sessions'))} | — | — | — | — |")
-        L.append(f"| ACOS | {_cn(cr.get('acos'), ' %')}{acos_note} | — | — | — | — |")
-        L.append(f"| 广告点击率 | {_cn(cr.get('ad_click_rate'), ' %')} | — | — | — | — |")
-        L.append(f"| 广告转化率 | {_cn(cr.get('ad_conversion_rate'), ' %')} | — | — | — | — |")
-        L.append(f"| 可售天数（平均） | {_cn(cr.get('available_days_avg'), ' 天')} | — | — | — | — |")
-        L.append(f"| 可售天数（最短） | {_cn(cr.get('available_days_min'), ' 天')} | — | — | — | — |")
-        L.append(f"| 评分 | {_cn(cr.get('rating'))} | — | — | — | — |")
-        L.append(f"| 差评数 | {_cn(cr.get('low_review_num'))} | — | — | — | — |")
-        L.append("> 宽表指标仅本期、无同口径历史基线，故不参与环比/同比。")
+    # 流量/广告/退款等 489 字段宽表指标已由 custom-report-analysis 技能承接，本表不再输出。
 
     L.append("")
 
@@ -266,8 +248,9 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
     L.append(f"- 币种：{meta['currency']}")
     L.append(f"- 业务日边界：以赛狐 bizDay 为准（{plan.get('timezone_mode','bizday')}）")
     L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / _msku"
-             + (" / get_custom_report_page_list" if meta.get("report_id_present") else "")
-             + " / get_product_analyze_detail）")
+             " / get_product_analyze_detail）")
+    L.append("- 口径说明：流量（sessions）/ACOS/广告点击率/转化率/可售天数等宽表指标"
+             "由 custom-report-analysis 技能承接，本报告不含。")
     cov = computed["coverage"]
     if cov.get("mixed_currency"):
         L.append(f"- ⚠️ **多币种且未折算**（{', '.join(cov.get('currencies') or [])}）："
@@ -276,8 +259,6 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
         L.append("- 取数覆盖与降级：")
         for line in cov["disclosures"]:
             L.append(f"  - {line}")
-    if not meta.get("report_id_present"):
-        L.append("- ⚠️ 口径降级：未配置 custom report_id，流量/广告/退款等 489 字段不可用。")
 
     L.append("")
     L.append("### ⚠️ 本报告未能覆盖（赛狐 MCP 无对应数据源）")
@@ -300,14 +281,14 @@ def _main() -> None:
     ap.add_argument("--in", dest="inp", default="computed.json")
     ap.add_argument("--out", default="weekly_report.md")
     ap.add_argument("--keep-md", action="store_true",
-                    help="额外写出同名 .md（飞书通道载荷/调试/测试用；默认只写 .html）")
+                    help="额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--no-mermaid", action="store_true")
     args = ap.parse_args()
 
     computed = json.loads(Path(args.inp).read_text(encoding="utf-8"))
     md = render(computed, include_mermaid=not args.no_mermaid)
     out_path = Path(args.out)
-    # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md（供 push_feishu.py 通道）
+    # HTML 即报告：--out 仅作命名基准，默认只写 .html；--keep-md 时额外写 .md（纯调试/测试开关）
     html_path = write_html_report(md, out_path, keep_md=args.keep_md)
     if args.keep_md:
         print(f"✅ 渲染完成 → {html_path}（md 留档：{out_path}，{len(md.splitlines())} 行）")

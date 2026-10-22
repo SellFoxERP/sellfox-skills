@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import SKILL_ROOT, load_analysis_config  # noqa: E402
 from report_html import write_html_report  # noqa: E402  # HTML 主报告出口（_bootstrap 已挂 _shared/scripts）
 
-try:  # 订单明细脱敏用（共享底座）；无底座时渲染利润行不受影响
-    from feishu_writer import mask_pii_in_text  # noqa: E402
+try:  # 订单明细脱敏用（共享底座 sellfox_offline）；无底座时渲染利润行不受影响
+    from sellfox_offline import mask_pii_in_text  # noqa: E402
 except Exception:  # pragma: no cover
     def mask_pii_in_text(text: str) -> str:
         return text
@@ -260,7 +260,7 @@ def main() -> int:
     ap.add_argument("--analysis", default="out/analysis.json")
     ap.add_argument("--out", default="out/report.md")
     ap.add_argument("--keep-md", action="store_true",
-                    help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
+                    help="额外留档同名 .md（默认只写 .html，仅供调试）")
     args = ap.parse_args()
     ap_path = Path(args.analysis)
     if not ap_path.is_absolute():

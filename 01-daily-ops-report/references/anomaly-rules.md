@@ -1,5 +1,9 @@
 # 异常判定与归因规则（anomaly-rules.md）
 
+> **v1.7.0**：本技能不再取自定义报表宽表（get_custom_report_page_list）。
+> 涉及宽表字段（sessions/CVR/广告点击、库龄分桶、补货建议、MSKU 级销量环比）的判定
+> 固定标「⚠️ 需人工核查——由 custom-report-analysis 技能承接」；下文相关规则仅作字段归属备查。
+
 > SKILL.md 判定红线、生成归因线索时读本文件。
 > **阈值一律读 `_shared/config/thresholds.yaml`，绝不硬编码。**
 

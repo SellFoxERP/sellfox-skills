@@ -23,7 +23,7 @@
 
 ```
 ⓪ agent 按取数计划调 mcp__Sellfox-MCP__{search,action}，信封落盘 out/raw/（便宜，零外部依赖）
-① fetch_signals.py 校验落盘 + 组装 → lowReviewNum 环比↑ / rating↓ / reviewRate↓ 定位问题 ASIN
+① fetch_signals.py 校验落盘 + 组装 → online 评分快照筛「评分低且样本足够」的 ASIN
 ② 外部评论 MCP 取评论原文（贵，需授权；先过成本闸；由 agent 按 adapter 契约执行）
 ③ 主题聚类归因（质量/尺寸/色差/物流/描述不符/其他）
 ④ 只在多个独立评论印证时 → 报「模式」；否则只列「个别反馈」
@@ -35,37 +35,36 @@
 → `render_report.py`（⑤输出）→ `build_optimization_brief.py`（⑥可选）。
 编排入口：`voc_insight.py`（启动先做**落盘检查**，缺步骤给指引）。
 
-> **为什么先聚合后下钻**：赛狐报表分页硬上限 20 条/页，外部评论源又按次/按条收费。
+> **为什么先快照后下钻**：赛狐报表分页硬上限 20 条/页，外部评论源又按次/按条收费。
 > 只有**先用便宜的聚合指标收敛范围**，才可能把成本和耗时控制在合理区间。
-> （赛狐网关同 session 并发安全，多步取数**可并行**发起；外部评论源并发能力未知，默认串行。）
+> （赛狐网关同 session 并发安全；外部评论源并发能力未知，默认串行。）
+
+> **固定口径（2026-10-22 起）**：自定义报表（489 宽表）已移出本技能，
+> 差评数（lowReviewNum）/评论数（reviewNum）/好评率（reviewRate）及其环比由
+> `custom-report-analysis` 技能承接；主源为 online 评分快照（无历史基线，不做评分环比）。
 
 ---
 
 ## 2. 取数计划（agent 执行）
 
 已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`；action 必带当次
-`contract_version`，参数类型以当次 inputSchema 为准。窗口计算（与 `fetch_signals.py` 一致）：
-当前窗口 = `[end-N+1, end]`，上一窗口 = `[end-2N+1, end-N]`（`N=--days`，默认取
-`config/voc.yaml → stat_windows.short_days`；`end` 默认今天）。
+`contract_version`，参数类型以当次 inputSchema 为准。窗口口径（与 `fetch_signals.py`
+一致）：当前窗口 = `[end-N+1, end]`（`N=--days`，默认取
+`config/voc.yaml → stat_windows.short_days`；`end` 默认今天）；快照路径不消费上一窗口。
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/custom_current.json` | `get_custom_report_page_list` | `report_id`；`start/end_date=当前窗口`（`yyyy-MM-dd`）；`shop_ids`（可选，逗号分隔） | `rows` | 200 | 当前窗口宽表 → lowReviewNum/reviewNum/reviewRate/rating 环比 |
-| 2 | `out/raw/custom_previous.json` | 同上 | `start/end_date=上一窗口` | `rows` | 200 | 环比基线窗口；依赖 report_id，缺 → 跳过 1/2，只做步骤 3 |
-| 3 | `out/raw/online_products.json` | `get_online_product_page_list` | `online_status_list=["active"]`；`shop_id_list`（可选） | `rows` | 200 | 降级源：仅 rating/ratingCount（**无差评数、无好评率、无历史基线**） |
+| 1 | `out/raw/online_products.json` | `get_online_product_page_list` | `online_status_list=["active"]`；`shop_id_list`（可选） | `rows` | 200 | **唯一必选步骤**：评分快照（rating/ratingCount）。无差评数、无好评率、无历史基线 |
 
-步骤选择：
+> 历史落盘中的 `custom_current.json` / `custom_previous.json` 已不在取数计划内；
+> `fetch_signals` 会忽略它们并在披露语中说明「宽表信号由 custom-report-analysis 承接」。
 
-- **`report_id` 已配置**（`_shared/config/reports.yaml → daily_ops.id`）→ 落盘步骤 1+2（两窗口环比）；
-  步骤 3 可选（仅作 rating/ratingCount 交叉核对，默认不取）。
-- **`report_id` 为空** → 跳过 1/2（调了也会被拒），落盘步骤 3，报告走降级路径。
-
-**落盘纪律**（详见 SELLFOX_CLIENT.md §7）：
+**落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
 - 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；
-  步骤 1/2 两窗口、多店铺批次**可并行发起**，但落盘文件名不冲突、每步单独核对 status；
+  多店铺批次**可并行发起**，但落盘文件名不冲突、每步单独核对 status；
 - `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」；
@@ -74,13 +73,12 @@
 落盘后可先跑共享校验器做确定性检查：
 
 ```bash
-python _shared/scripts/validate_raw.py --dir out/raw \
-    --step custom_current:rows --step custom_previous:rows --window <当前窗口>
+python _shared/scripts/validate_raw.py --dir out/raw --step online_products:rows
 ```
 
 ---
 
-## 3. Step 1 定位问题 ASIN（脚本：校验+组装）
+## 3. Step 1 定位低分 ASIN（脚本：校验+组装）
 
 `scripts/fetch_signals.py`（v3 改造，零网络）：校验 `out/raw/` 落盘（存在性/status/
 空数据/演示指纹/coverage 截断），组装出与旧版相同形状的 `signals.json`。
@@ -89,43 +87,38 @@ python _shared/scripts/validate_raw.py --dir out/raw \
 
 | 字段 | 所属工具 | 备注 |
 |---|---|---|
-| `lowReviewNum` | **仅** `get_custom_report_page_list` | 差评数 —— VOC 核心信号 |
-| `reviewNum` | **仅** `get_custom_report_page_list` | 评论总数 |
-| `reviewRate` | **仅** `get_custom_report_page_list` | 好评率/评分率 |
-| `rating` | `get_custom_report_page_list` + `get_online_product_page_list` | 两个工具都有 |
-| `ratingCount` | `get_custom_report_page_list` + `get_online_product_page_list` | 两个工具都有 |
+| `rating` | `get_online_product_page_list` | 评分快照 —— 本技能主源 |
+| `ratingCount` | `get_online_product_page_list` | 评分数；小样本保护的下界依据 |
+| `lowReviewNum` | **仅** `get_custom_report_page_list` | 差评数 —— 已由 custom-report-analysis 承接 |
+| `reviewNum` | **仅** `get_custom_report_page_list` | 评论总数 —— 同上 |
+| `reviewRate` | **仅** `get_custom_report_page_list` | 好评率 —— 同上 |
 
 ⚠️ **`lowReviewNum`/`reviewNum`/`reviewRate` 不在在线产品（79 字段）里** ——
-以为「online 也有」会导致恒取空值且不报错。
+以为「online 也有」会导致恒取空值且不报错。需要这些字段时转 `custom-report-analysis`。
 
-### 3.2 环比口径
+### 3.2 快照口径（无环比基线，固定）
 
-赛狐报表按**日期范围聚合**，`rating` 等字段**不是时间序列**。所以环比的做法是：
+赛狐 online 报表是**当前时点快照**，`rating` 等字段**不是时间序列**，online 侧也没有历史窗口：
 
-- 对比落盘的 `custom_current`（近 N 天）与 `custom_previous`（前 N 天）两段信封，逐 ASIN 相减；
-- 主键用 `shopId + asin`（同 ASIN 跨店是不同对象）。
+- 筛选条件：快照 `rating` ≤ `snapshot_rating_low` **且** `ratingCount` ≥ `min_rating_count`
+  （小样本不判，避免 3 条评论 1 星就把 ASIN 拉进清单）；
+- 主键用 `shopId + asin` 去重（同 ASIN 跨店是不同对象）；按销量降序（影响面粗排）；
+- **不得说「评分掉了」** —— 无基线；需要环比（评分下降/差评数上升）转 `custom-report-analysis`
+  的宽表两窗口分析。
 
-`fetch_signals.py` 的 `--days` 决定 N（默认 `config/voc.yaml → stat_windows.short_days`）。
-
-> ⚠️ **无 report_id 的降级**：online 侧没有差评数字段，且 online **无历史基线**，
-> 因此无法做环比。此时技能如实标注「无环比基线」，**不拿别的字段冒充环比**。
+`fetch_signals.py` 的 `--days` 决定报告窗口标签 N（默认 `config/voc.yaml → stat_windows.short_days`）。
 
 ### 3.3 阈值
 
 | 参数 | 单一真源 |
 |---|---|
-| 评分环比下降绝对值 | `_shared/config/thresholds.yaml → after_sales.rating_drop_abs` |
-| 单日新增差评上限 | `_shared/config/thresholds.yaml → after_sales.low_review_daily_max` |
-| 参与判定的信号开关 | `config/voc.yaml → discovery.signals` |
-| 小样本保护（评论数下限） | `config/voc.yaml → discovery.min_rating_count` |
-| 差评数入选下限 | `config/voc.yaml → discovery.min_low_review_num` |
+| 快照「低分」阈值 | `config/voc.yaml → discovery.snapshot_rating_low` |
+| 小样本保护（评分数下限） | `config/voc.yaml → discovery.min_rating_count` |
 | 一次最多深挖 ASIN 数 | `config/voc.yaml → discovery.max_flagged_asins` |
-
-**本技能不重复定义 `rating_drop_abs`**，只读 `_shared`，避免与底座分叉。
 
 ### 3.4 排序
 
-候选 ASIN 按「影响面权重 = 销量 × 命中信号数」降序，**仅为排序**。
+候选 ASIN 按「影响面权重 = 销量」降序，**仅为排序**。
 截断时**必须披露**「本次仅深挖 Top N，其余未纳入」（禁止静默截断）。
 
 ---
@@ -215,16 +208,16 @@ mention  ： 未达线 → 只作「个别反馈」列出，明确标注「不�
 
 | 情况 | 行为 | 报告标注 |
 |---|---|---|
-| `out/raw/` 为空 / 关键步骤落盘缺失 | `fetch_signals.py` 停止并提示按取数计划落盘（`voc_insight.py` 落盘检查先行拦截） | — |
-| 无 `report_id` | 只用 online_products.json（agent 落盘步骤 3）：仅 rating/ratingCount，**无差评数、无环比基线**，不报问题 ASIN | 「口径降级」横幅 + 需人工核查 |
+| `out/raw/` 为空 / `online_products.json` 落盘缺失 | `fetch_signals.py` 停止并提示按取数计划落盘（`voc_insight.py` 落盘检查先行拦截） | — |
+| 差评数/好评率环比（宽表信号） | **固定口径**：由 `custom-report-analysis` 技能承接，本技能不取 | 固定口径横幅 + 需人工核查 |
 | 某信封 `status=failed` | 该源按无数据处理并记录 error_code，其余照常 | 数据说明记录 error_code |
 | 信封 data 空（status=complete） | 标「无数据」，**不写 0**，不重试 | 数据说明 |
 | 信封 `coverage.truncated` | 披露「已达 max_rows，仅覆盖 N 行，其余未纳入统计」 | 数据说明段 |
 | flagged 超过 `max_flagged_asins` | 仅深挖 Top N，其余不纳入 | 「本次仅深挖 Top N，其余未纳入」 |
-| 外部源未接入 / 未确认 / 超预算 / 失败 | **聚合指标模式**：定位问题 ASIN，但**不做主题归因** | 顶部横幅 + 第 2 节显式声明 |
-| 演示环境命中指纹 | 顶部水印，默认阻断写飞书 | 水印 |
+| 外部源未接入 / 未确认 / 超预算 / 失败 | **快照模式**：定位低分 ASIN，但**不做主题归因** | 顶部横幅 + 第 2 节显式声明 |
+| 演示环境命中指纹 | 顶部水印 | 水印 |
 
-> 降级不等于失真：**没有原文时，你仍能知道「哪些 ASIN 出了问题」，但不知道「为什么」**。
+> 降级不等于失真：**没有原文时，你仍能知道「哪些 ASIN 评分偏低」，但不知道「为什么」**。
 > 技能绝不会在没有原文时编造主题分布。
 
 ---
@@ -233,9 +226,9 @@ mention  ： 未达线 → 只作「个别反馈」列出，明确标注「不�
 
 | 现象 | 可能原因 | 处理 |
 |---|---|---|
-| `fetch_signals.py` 报「缺少取数计划落盘」 | agent 未按第 2 节取数计划落盘（或 report_id 与落盘步骤不匹配） | 按取数计划补齐 `out/raw/` 再重跑；先跑 `validate_raw.py` 核对 |
-| 所有字段恒空 | 用 `rows` 解析利润报表 | 本技能用 `get_custom_report_page_list`，列表键是 `rows`；确认 tool 名 |
-| `lowReviewNum` 总是「无数据」 | 没配 `report_id`，字段只在宽表 | 助手按共享 ONBOARDING.md 自动查找适用报表；无可用报表时仅展示评分快照 |
+| `fetch_signals.py` 报「缺少取数计划落盘」 | agent 未按第 2 节取数计划落盘 | 按取数计划补齐 `out/raw/online_products.json` 再重跑；先跑 `validate_raw.py` 核对 |
+| 所有字段恒空 | 列表键用错 | 本技能用 `get_online_product_page_list`，列表键是 `rows`；确认 tool 名 |
+| 需要 `lowReviewNum`/差评数环比 | 字段只在 489 宽表，本技能已不再取 | 转 `custom-report-analysis` 技能；本技能只出评分快照 |
 | `action` 被 `CONTRACT_VERSION_MISMATCH` 拒 | 契约已变更 | 重 `search` 一次、按新 schema 重建参数、重试一次（只一次） |
 | `action` 被 `INVALID_PARAMS` 拒 | 参数类型/字段与当次契约不符 | 按 `field_errors[{path,rule}]` 修正；只传契约 properties 里的字段 |
 | 外部评论源调用挂起/超时 | 外部 MCP 并发能力未知 | 外部源默认串行调用；赛狐取数走 agent 元工具（并发安全），无此问题 |

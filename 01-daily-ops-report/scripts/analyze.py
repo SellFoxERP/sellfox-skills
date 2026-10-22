@@ -7,9 +7,10 @@
 原则：
   * 阈值一律读 ``thresholds.yaml``，**不硬编码**。
   * 空数据标「无数据」，**不写 0**；拿不到标「需人工核查」，**不编造**。
-  * 基线优先用报表现成窗口字段 ``sevenSaleNum`` / ``thirtySaleNum``（方案 A）。
-  * ACOS 归因只用字段字典确认存在的字段（``adConversionRateCpc`` / ``adClickRate`` / ``cpc``）；
-    ``servingStatus=BUDGET_CAPPED`` 不作为判定条件。
+  * v1.7.0 起不取自定义报表宽表：宽表专属指标（流量/CVR、广告点击、库龄分桶、
+    补货建议、MSKU 级销量环比、退款/退货全量计数）固定标
+    「⚠️ 需人工核查——由 custom-report-analysis 技能承接」。
+  * 店铺级基线优先用 30 天切片（profit_shop_range），按日切片算均值。
 
 用法::
 
@@ -37,6 +38,9 @@ _SKILL_CFG = load_yaml_file(_SKILL_ROOT / "config" / "daily_report.yaml")
 
 NO_DATA = "无数据"
 HUMAN = "⚠️ 需人工核查"
+
+#: 宽表专属指标固定口径（v1.7.0 起不取自定义报表，由 custom-report-analysis 技能承接）
+WIDE_TABLE_NOTE = "宽表字段（由 custom-report-analysis 技能承接）— ⚠️ 需人工核查"
 
 
 # --- 数值安全 ---------------------------------------------------------------
@@ -178,15 +182,11 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
 
     store = data.get("store_profit") or {}
     store_rows: List[Dict[str, Any]] = store.get("reportList") or []
-    msku = data.get("msku_report") or {}
-    msku_rows: List[Dict[str, Any]] = msku.get("rows") or []
     campaigns = (data.get("campaigns") or {}).get("itemList") or []
     orders = (data.get("orders_sample") or {}).get("rows") or []
 
     if not store_rows:
         analysis["no_data_sources"].append("get_profit_report_by_shop（店铺级利润）")
-    if not msku_rows:
-        analysis["no_data_sources"].append("get_custom_report_page_list（自定义报表宽表）")
     if not campaigns:
         analysis["no_data_sources"].append("get_sp_campaign_list（SP 广告活动）")
 
@@ -205,12 +205,8 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
         gmv = gross = None
         analysis["degradations"].append("返回多种币种，未统一折算；金额按返回币种分别展示，不计算跨币种总金额。")
     gpr = (gross / gmv * 100.0) if (gmv and gross is not None) else None
-    ad_cost = _sum(msku_rows, "adCost")
-    ad_sales = _sum(msku_rows, "adSalePrice")
-    acos = (ad_cost / ad_sales * 100.0) if (ad_cost is not None and ad_sales) else None
-    sessions = _sum(msku_rows, "sessions")
-    orders_cnt = _sum(msku_rows, "orderNum")
-    cvr = (orders_cnt / sessions * 100.0) if (orders_cnt is not None and sessions) else None
+    # 宽表（get_custom_report_page_list）已不在取数范围：ACOS/CVR 为宽表字段，固定不可用
+    ad_cost = ad_sales = acos = sessions = orders_cnt = cvr = None
 
     analysis["l1"] = {
         "gmv": gmv, "gross_profit": gross, "gross_profit_rate": gpr,
@@ -221,48 +217,23 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # ---------- STEP 01 账户 / 订单（P0，覆盖最低）----------
-    refunds = _sum(msku_rows, "refundNum")
-    refund_amt = _sum(msku_rows, "refundPrice")
-    returns = _sum(msku_rows, "returnSaleNum")
+    # 退款/退货全量计数（refundNum/refundPrice/returnSaleNum）为宽表字段 → 固定需人工核查
     analysis["steps"]["01_account"] = {
-        "refund_num": refunds,
-        "refund_amount": refund_amt,
-        "return_num": returns,
+        "refund_num": None,
+        "refund_amount": None,
+        "return_num": None,
         "anomaly_orders_sampled": len(orders),
         "manual": [
             "账户健康 / 绩效通知 — MCP 无接口，需人工登录 Seller Central",
             "买家消息 / 待回工单 — MCP 无客服接口",
             "停售 / 抑制原因 — 仅能以 onlineStatus 近似，拿不到原因",
+            "退款/退货全量计数（refundNum/returnSaleNum）— 宽表字段，由 custom-report-analysis 技能承接",
         ],
     }
-    if refunds is None and not msku_rows:
-        analysis["steps"]["01_account"]["refund_num"] = NO_DATA
 
     # ---------- STEP 02 销售（P0）----------
+    # MSKU 级销量环比（saleNum/sevenSaleNum）为宽表字段 → 固定需人工核查，仅保留店铺级
     sales_anoms: List[Dict[str, Any]] = []
-    msku_anoms: List[Dict[str, Any]] = []
-    for r in msku_rows:
-        sale = num(r.get("saleNum"))
-        b7 = num(r.get("sevenSaleNum"))
-        b30 = num(r.get("thirtySaleNum"))
-        avg7 = (b7 / 7.0) if b7 is not None else None
-        avg30 = (b30 / 30.0) if b30 is not None else None
-        dev7 = pct_dev(sale, avg7)
-        a = _anomaly(
-            "销量", sale, avg7, dev7,
-            (th.get("sales") or {}).get("drop_pct_vs_7d"),
-            "down",
-            "拆：订单量跌 vs 客单价跌 → 再看 Sessions 跌还是 CVR 跌",
-        )
-        if a:
-            label = r.get("msku") or r.get("sku") or r.get("asin") or "?"
-            a["msku"] = label
-            a["shopId"] = r.get("shopId")
-            a["name"] = f"销量 {label}（店铺 {r.get('shopId')}）"
-            msku_anoms.append(a)
-        if dev7 is not None and avg30:
-            pass  # 30 天偏离在红线排序时一并体现（此处保留 avg30 备扩展）
-    sales_anoms.extend(sorted(msku_anoms, key=lambda x: abs(x["deviation_pct"]), reverse=True)[:10])
 
     # 店铺级：有 slice_30d 才有基线，否则标「无基线」
     rng = (data.get("store_profit_range") or {}).get("reportList") or []
@@ -294,7 +265,7 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
         "msku_anomalies": sales_anoms,
         "store_anomalies": store_anoms,
         "store_baseline_available": bool(rng),
-        "note": "" if rng else "未取 30 天基线数据（baseline=window_field），店铺级偏离度不可用",
+        "note": "" if rng else "未取 30 天基线切片（profit_shop_range），店铺级偏离度不可用；MSKU 级环比为宽表指标（custom-report-analysis 承接）",
     }
     anomalies.extend(store_anoms)
     anomalies.extend(sales_anoms)
@@ -304,93 +275,42 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
     for c in campaigns:
         st = str(c.get("state") or "").lower()
         states[st if st in states else "unknown"] += 1
-    acos_anom = None
-    if acos is not None:
-        acos_anom = _anomaly(
-            "ACOS", acos, None, 0.0,
-            (th.get("ad") or {}).get("acos_abs_max"), "abs_up",
-            "查 cpc（竞价涨？）+ adClickRate（素材衰退？）+ adConversionRateCpc（转化跌？）",
-            unit="%",
-        )
-    ad_zero = []
-    for r in msku_rows:
-        cost = num(r.get("adCost"))
-        if cost is None:
-            continue
-        adord = num(r.get("adOrderNum"))
-        if adord == 0 and cost >= (th.get("ad") or {}).get("zero_order_cost_min", 1e9):
-            ad_zero.append({"msku": r.get("msku") or r.get("asin"), "adCost": cost})
+    # 广告花费/销售额/ACOS（adCost/adSalePrice）与高花费零转化（adOrderNum）为宽表字段
+    # → 固定需人工核查（由 custom-report-analysis 承接）；本步仅保留活动结构状态。
+    ad_zero: List[Dict[str, Any]] = []
     analysis["steps"]["03_ads"] = {
-        "ad_cost": ad_cost, "ad_sales": ad_sales, "acos": acos,
+        "ad_cost": None, "ad_sales": None, "acos": None,
         "campaign_states": states,
-        "acos_anomaly": acos_anom,
+        "acos_anomaly": None,
         "high_cost_zero_order": ad_zero[:10],
-        "note": "servingStatus 字段存在，但 BUDGET_CAPPED 取值未经实测验证，不作为判定条件。",
+        "note": ("广告花费/销售额/ACOS 为宽表字段（由 custom-report-analysis 技能承接）— ⚠️ 需人工核查；"
+                 "servingStatus 字段存在，但 BUDGET_CAPPED 取值未经实测验证，不作为判定条件。"),
     }
-    if acos_anom:
-        anomalies.append(acos_anom)
-    if not campaigns:
-        analysis["steps"]["03_ads"]["campaign_states"] = NO_DATA
 
     # ---------- STEP 04 库存 ----------
-    inv_th = th.get("inventory") or {}
-    inv_warn: List[Dict[str, Any]] = []
-    for r in msku_rows:
-        days = num(r.get("availableDays"))
-        if days is None:
-            continue
-        crit = days < inv_th.get("available_days_critical", 0)
-        warn = days < inv_th.get("available_days_min", 0)
-        if crit or warn:
-            inv_warn.append({
-                "msku": r.get("msku") or r.get("sku") or r.get("asin"),
-                "shopId": r.get("shopId"),
-                "availableDays": days,
-                "level": "紧急" if crit else "预警",
-                "inbound": {
-                    "inboundWorking": num(r.get("inboundWorking")),
-                    "inboundShipped": num(r.get("inboundShipped")),
-                    "inTransit": num(r.get("inTransit")),
-                },
-                "clue": "availableDays + 在途（inboundWorking/inboundShipped）能否救急；suggestNumSum 为赛狐补货建议量",
-            })
-    inv_warn.sort(key=lambda x: x["availableDays"])
+    # 可售天数（availableDays）/库龄分桶/补货建议（suggestNumSum）为宽表字段 → 固定需人工核查
     analysis["steps"]["04_inventory"] = {
-        "warnings": inv_warn[:20],
-        "warn_count": len(inv_warn),
-        "critical_count": sum(1 for x in inv_warn if x["level"] == "紧急"),
+        "warnings": "断货预警（availableDays/库龄分桶/补货建议）为宽表字段——由 custom-report-analysis 技能承接，本节固定标「⚠️ 需人工核查」。",
+        "warn_count": 0,
+        "critical_count": 0,
     }
-    if not msku_rows:
-        analysis["steps"]["04_inventory"]["warnings"] = NO_DATA
 
     # ---------- STEP 05 转化 ----------
-    buybox_bad = []
-    for r in msku_rows:
-        bb = num(r.get("buyBoxPercent"))
-        if bb is not None and bb < (th.get("listing") or {}).get("buybox_pct_min", 0):
-            buybox_bad.append({"msku": r.get("msku") or r.get("asin"), "buyBoxPercent": bb})
     analysis["steps"]["05_conversion"] = {
         "sessions": sessions, "orders": orders_cnt, "cvr": cvr,
-        "buybox_below": buybox_bad[:10],
-        "note": "STEP 02 与 STEP 05 数据重叠：02 看结果（销售额/订单），05 看过程（流量/转化/购物车）。",
+        "buybox_below": [],
+        "note": "sessions/conversionRate/buyBoxPercent 为宽表字段（由 custom-report-analysis 技能承接）— ⚠️ 需人工核查；"
+                "本步在无宽表数据时不可判定。02 看结果（销售额/订单），05 看过程（流量/转化/购物车）。",
     }
-    if not msku_rows:
-        analysis["steps"]["05_conversion"]["cvr"] = NO_DATA
 
     # ---------- STEP 06 售后 ----------
-    ref_rate = None
-    rr_vals = [num(r.get("refundRate")) for r in msku_rows]
-    rr_vals = [v for v in rr_vals if v is not None]
-    if rr_vals:
-        ref_rate = sum(rr_vals) / len(rr_vals)
-    low_reviews = _sum(msku_rows, "lowReviewNum")
+    # 退款率/差评数（refundRate/lowReviewNum）为宽表字段 → 固定需人工核查
     analysis["steps"]["06_after_sales"] = {
-        "refund_rate": ref_rate, "refund_num": refunds, "return_num": returns,
-        "low_review_num": low_reviews,
-        "manual": ["评论原文 — MCP 仅有聚合指标（好评率 / 差评数），无评论内容"],
+        "refund_rate": None, "refund_num": None, "return_num": None,
+        "low_review_num": None,
+        "manual": ["评论原文 — MCP 仅有聚合指标（好评率 / 差评数），无评论内容",
+                   "退款率/差评数（refundRate/lowReviewNum）— 宽表字段，由 custom-report-analysis 技能承接"],
     }
-    if not msku_rows:
-        analysis["steps"]["06_after_sales"]["refund_rate"] = NO_DATA
 
     # ---------- STEP 07 政策（完全无法自动化）----------
     analysis["steps"]["07_policy"] = {
@@ -398,23 +318,15 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
         "manual": ["政策合规 — MCP 无此接口", "绩效风险 — MCP 无此接口"],
     }
 
-    # ---------- 跨平台销量（可选步骤 6；多币种不跨币种合计）----------
+    # ---------- 跨平台销量（可选步骤 5；多币种不跨币种合计）----------
     analysis["multiplatform"] = _multiplatform_summary(data)
 
     # ---------- 今日红线（按 |偏离度| 排序，≤5）----------
+    # 库存紧急项属宽表字段（availableDays）→ 已移交 custom-report-analysis，不再进红线
     max_items = int((th.get("redline") or {}).get("max_items", 5))
     positives = [a for a in anomalies if a.get("deviation_pct") is not None]
     positives.sort(key=lambda x: abs(x["deviation_pct"]), reverse=True)
     redlines = positives[:max_items]
-    # 库存紧急项也进红线（按紧急度）
-    for w in [x for x in inv_warn if x["level"] == "紧急"][:max_items]:
-        if len(redlines) >= max_items:
-            break
-        redlines.append({
-            "name": f"库存紧急 {w['msku']}",
-            "current": w["availableDays"], "baseline": None, "deviation_pct": None,
-            "direction": "down", "clue": w["clue"], "unit": "天",
-        })
     analysis["redlines"] = redlines
     analysis["redline_max_items"] = max_items
 

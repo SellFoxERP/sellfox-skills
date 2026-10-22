@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """评论 VOC 归因 —— 主编排脚本（v3：落盘检查 → 校验组装 → 归因 → 渲染）。
 
-把「定位问题 ASIN → 取评论原文 → 主题归因 → 行动建议 → 渲染 →（可选）写飞书」串起来。
+把「定位问题 ASIN → 取评论原文 → 主题归因 → 行动建议 → 渲染」串起来。
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 - **取数面 = agent**：先按 `references/workflow.md` 的**取数计划**调
@@ -14,7 +14,7 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 用法示例::
 
     # 0) agent 先按 references/workflow.md 取数计划把信封落盘到 out/raw/
-    # 1) 只跑赛狐侧（零外部依赖）：定位问题 ASIN
+    # 1) 只跑赛狐侧（零外部依赖）：online 评分快照定位低分 ASIN
     python3 scripts/voc_insight.py --days 7
 
     # 2) 已接入外部评论源：先看成本闸，人工确认后喂入原文
@@ -24,7 +24,9 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 设计要点：
 - **只读 + 外部 MCP**：本编排不调用任何赛狐写工具。
 - **落盘缺失/无外部源也能定位失败**：落盘检查给指引；子步骤显式降级可继续，失败则中断，避免读取旧产物。
-- **演示环境**：命中指纹即加水印，并默认阻断写飞书。
+- **演示环境**：命中指纹即加水印。
+- **固定口径**：自定义报表（489 宽表）已移出本技能，差评数/好评率环比由
+  `custom-report-analysis` 技能承接；主源为 online 评分快照（无历史基线）。
 """
 
 from __future__ import annotations
@@ -40,9 +42,7 @@ RAW_DIR = SKILL_DIR / "out" / "raw"
 
 #: 落盘检查关注的取数计划步骤（与 references/workflow.md 取数计划一致）。
 RAW_STEPS = (
-    ("custom_current.json", "get_custom_report_page_list（当前窗口 → rows）"),
-    ("custom_previous.json", "get_custom_report_page_list（上一窗口 → rows）"),
-    ("online_products.json", "get_online_product_page_list（降级源 → rows）"),
+    ("online_products.json", "get_online_product_page_list（评分快照主路径 → rows）"),
 )
 
 
@@ -71,18 +71,15 @@ def check_raw() -> int:
     if not present:
         print(
             "\n❌ out/raw/ 为空：取数面尚未完成。请按 references/workflow.md 的「取数计划」执行：\n"
-            "   1) search 拿契约（get_custom_report_page_list / get_online_product_page_list）→\n"
+            "   1) search 拿契约（get_online_product_page_list）→\n"
             "      action 必带当次 contract_version，参数类型按当次 inputSchema；\n"
-            "   2) 把每步完整信封（status/data/coverage/pagination/trace_id）落盘：\n"
-            "      out/raw/custom_current.json、custom_previous.json（report_id 已配置时），\n"
-            "      或 out/raw/online_products.json（无 report_id 的降级源）；\n"
+            "   2) 把完整信封（status/data/coverage/pagination/trace_id）落盘：\n"
+            "      out/raw/online_products.json（评分快照主路径）；\n"
             "   3) 每步落盘后核对 status，空 data=无数据；然后重跑本编排。\n"
-            "   调用纪律见 _shared/SELLFOX_CLIENT.md。"
+            "   调用纪律见 _shared/SELLFOX_CLIENT.md。\n"
+            "   （自定义报表宽表已移出本技能：差评数/好评率环比由 custom-report-analysis 承接。）"
         )
         return 2
-    if "custom_current.json" not in present or "custom_previous.json" not in present:
-        print("\n⚠️ 宽表两窗口落盘不全：若 report_id 已配置，fetch_signals 将因缺步骤停止"
-              "（主路径必须 custom_current + custom_previous）；仅有 online_products.json 时走降级路径。")
     return 0
 
 
@@ -97,8 +94,6 @@ def run(args: argparse.Namespace) -> int:
     end_date = getattr(args, "end_date", None)  # 兼容旧调用方手搓的 Namespace
     if end_date:
         fetch_argv += ["--end-date", end_date]
-    if args.report_id:
-        fetch_argv += ["--report-id", args.report_id]
     fetch_argv += ["--out", "out/signals.json"]
 
     steps = [
@@ -111,9 +106,7 @@ def run(args: argparse.Namespace) -> int:
                                "--out", "out/voc_analysis.json"]
          + (["--llm-themes", args.llm_themes] if args.llm_themes else [])),
         ("render_report.py", ["--signals", "out/signals.json", "--analysis", "out/voc_analysis.json",
-                              "--out", "out/voc-report.md"]
-         # 报告出口仅 .html；--keep-md 只在需要飞书 md 载荷（--feishu）时附加
-         + (["--keep-md"] if args.feishu else [])),
+                              "--out", "out/voc-report.md"]),
     ]
 
     for script, argv in steps:
@@ -130,24 +123,18 @@ def run(args: argparse.Namespace) -> int:
             return rc
 
     print("\n✅ 完成。报告：out/voc-report.html")
-    if args.feishu:
-        return _run("write_feishu.py", ["--report", "out/voc-report.md"]
-             + (["--override-demo"] if args.override_demo else []))
     return 0
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description="评论 VOC 归因（主编排，v3：先落盘检查再计算）")
     p.add_argument("--days", type=int, default=None)
-    p.add_argument("--end-date", default=None, help="窗口结束日 YYYY-MM-DD（默认今天；透传 fetch_signals 固定环比窗口）")
-    p.add_argument("--report-id", default=None, help="自定义报表 ID（默认读 _shared/config/reports.yaml）")
+    p.add_argument("--end-date", default=None, help="窗口结束日 YYYY-MM-DD（默认今天；透传 fetch_signals 固定窗口）")
     p.add_argument("--reviews-json", default=None, help="外部 MCP 取回的评论原文（已落盘）")
     p.add_argument("--adapter-file", default=None, help="评论源 adapter 声明（md）")
     p.add_argument("--llm-themes", default=None, help="AI 助手 语义归因结果 JSON（可选）")
     p.add_argument("--confirm-external", action="store_true", help="确认外部调用与成本")
     p.add_argument("--with-optimization", action="store_true", help="产出优化素材需求单（可选）")
-    p.add_argument("--feishu", action="store_true", help="写入飞书（演示环境默认阻断）")
-    p.add_argument("--override-demo", action="store_true", help="显式覆盖演示环境阻断（仍加水印）")
     return run(p.parse_args())
 
 

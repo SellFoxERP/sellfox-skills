@@ -107,19 +107,18 @@ def render_report(
                f"｜ ❓ 数据不足：**{c.get('未知', 0)}** 项")
     out.append(f"- 滞销清理：**{c.get('③ 滞销清理', 0)}** 项")
     if fetch_meta.get("no_valid_data"):
-        # 主源与降级源均不可用：全 0 结论不可采信，绝不静默空报告
+        # 主源不可用：全 0 结论不可采信，绝不静默空报告
         out.append(
-            f"- ⚠️ **主源与降级源均不可用，本报告无有效数据项**（{fetch_meta.get('degrade_reason') or '原因未知'}，"
-            "降级源 online_products 亦未取回）——核心结论按 0 计仅表示无数据，不可作为「全部健康」的依据。"
+            f"- ⚠️ **主源不可用，本报告无有效数据项**（{fetch_meta.get('degrade_reason') or '原因未知'}）"
+            "——核心结论按 0 计仅表示无数据，不可作为「全部健康」的依据。"
         )
     elif fetch_meta.get("degraded"):
-        # 降级横幅按真实原因表述（组装层给的 degrade_reason）：未配置 / 报表发现被拒（带
-        # error_code）/ 主源取数失败（带 error_code）——不硬编码「未配置报表 ID」。
-        reason = fetch_meta.get("degrade_reason") or "未配置报表 ID"
+        # 降级横幅（v1.7.0 固定口径：未接入自定义报表，由 custom-report-analysis 技能承接）
+        reason = fetch_meta.get("degrade_reason") or "未接入自定义报表（由 custom-report-analysis 技能承接）"
         out.append(
-            f"- ⚠️ **口径降级**：{reason}，改用在线的产品数据（day30SaleNum / inventoryManage）；"
-            "可售天数与建议补货量均为**自算口径**（非赛狐 availableDays / suggestNumSum），"
-            "缺失字段的行标「需人工核查」。"
+            f"- ⚠️ **口径降级**：{reason}，本报告按在线产品数据"
+            "（day30SaleNum / inventoryManage）自算；可售天数与建议补货量均为**自算口径**"
+            "（非赛狐 availableDays / suggestNumSum），缺失字段的行标「需人工核查」。"
         )
     out.append("")
 

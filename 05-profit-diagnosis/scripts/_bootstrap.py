@@ -4,7 +4,7 @@
 所有技能内脚本都从这里导入，避免各自写死 ``../_shared/``：
 
     from _bootstrap import (SKILL_ROOT, load_diagnosis,
-                            load_thresholds, load_reports, load_shops)
+                            load_thresholds, load_shops)
 
 v3 分工（见 _shared/SELLFOX_CLIENT.md）：取数面 = agent 调客户端元工具
 ``mcp__Sellfox-MCP__{help,search,action}`` 并落盘 ``out/raw/``；计算面脚本**零网络**，
@@ -65,12 +65,11 @@ if str(_SHARED_SCRIPTS) not in sys.path:
 def _require_shared() -> None:
     """确认 _shared 底座就位，给出可操作的修复提示。
 
-    v3 只依赖离线组件：``sellfox_offline``（信封解析/演示指纹/空数据）、
-    ``config_loader``（YAML 读取）、``feishu_writer``（可选写飞书）。
-    旧直连客户端 ``sellfox_client.py`` 不再是依赖。
+    v3 只依赖离线组件：``sellfox_offline``（信封解析/演示指纹/空数据）与
+    ``config_loader``（YAML 读取）。旧直连客户端 ``sellfox_client.py`` 不再是依赖。
     """
     missing = [
-        p for p in ("sellfox_offline.py", "config_loader.py", "feishu_writer.py")
+        p for p in ("sellfox_offline.py", "config_loader.py")
         if not (_SHARED_SCRIPTS / p).exists()
     ]
     if missing:
@@ -114,11 +113,6 @@ def load_shops() -> Dict[str, Any]:
     return loader().load("shops")
 
 
-def load_reports() -> Dict[str, Any]:
-    """读 _shared/config/reports.yaml（report_id 自动发现缓存）。"""
-    return loader().load("reports")
-
-
 def load_diagnosis() -> Dict[str, Any]:
     """读本技能 config/diagnosis.yaml。"""
     return load_yaml_file(CONFIG_DIR / "diagnosis.yaml")
@@ -146,7 +140,7 @@ def demo_banner(payload: Any) -> str:
     if fp:
         return (
             f"⚠️ 演示数据，非真实经营数据（指纹：{fp}）。"
-            "本技能默认阻断写飞书，且数值不可用于任何业务口径验证。"
+            "数值不可用于任何业务口径验证。"
         )
     return ""
 

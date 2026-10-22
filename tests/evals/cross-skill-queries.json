@@ -30,10 +30,10 @@
     "weekly-review"
    ],
    "expected_tools": [
-    "get_profit_report_by_shop",
-    "get_custom_report_page_list"
+    "get_profit_report_by_shop"
    ],
-   "expected_output": "识别为「日报为主 + 周对比补充」：日报按昨日窗口出，周对比引用周报口径并标注两者口径差异；不混用窗口。"
+   "expected_output": "识别为「日报为主 + 周对比补充」：日报按昨日窗口出，周对比引用周报口径并标注两者口径差异；不混用窗口。",
+   "note": "get_custom_report_page_list 查询自 v1.7.0 起归属 custom-report-analysis"
   },
   {
    "id": 3,
@@ -59,10 +59,10 @@
    ],
    "expected_tools": [
     "get_profit_report_by_shop",
-    "get_custom_report_page_list",
     "get_fba_shipment_page_list"
    ],
-   "expected_output": "双技能协作：周报主体 + 断货预警段落；两段落分别声明口径与覆盖范围；断货判定标注 lead_time 来源。"
+   "expected_output": "双技能协作：周报主体 + 断货预警段落；两段落分别声明口径与覆盖范围；断货判定标注 lead_time 来源。",
+   "note": "get_custom_report_page_list 查询自 v1.7.0 起归属 custom-report-analysis"
   },
   {
    "id": 5,
@@ -74,11 +74,11 @@
    ],
    "expected_tools": [
     "get_profit_report_by_msku",
-    "get_custom_report_page_list",
     "get_sp_keyword_list",
     "get_sp_campaign_list"
    ],
-   "expected_output": "先利润归因（3~5 条、逐字段标注来源工具）→ 广告侧只出 dry-run 提案（停词属写操作，必须审批）；不直接执行。"
+   "expected_output": "先利润归因（3~5 条、逐字段标注来源工具）→ 广告侧只出 dry-run 提案（停词属写操作，必须审批）；不直接执行。",
+   "note": "get_custom_report_page_list 查询自 v1.7.0 起归属 custom-report-analysis"
   },
   {
    "id": 6,
@@ -89,10 +89,10 @@
     "listing-health"
    ],
    "expected_tools": [
-    "get_custom_report_page_list",
     "get_online_product_page_list"
    ],
-   "expected_output": "先用聚合指标定位（lowReviewNum 环比）再 listing 分诊；「评分→转化」只作假设性归因提示，不下因果结论（无类目基准）。"
+   "expected_output": "先用聚合指标定位（lowReviewNum 环比）再 listing 分诊；「评分→转化」只作假设性归因提示，不下因果结论（无类目基准）。",
+   "note": "get_custom_report_page_list 查询自 v1.7.0 起归属 custom-report-analysis"
   },
   {
    "id": 7,
@@ -177,12 +177,11 @@
    "category": "降级与演示",
    "prompt": "看下最近的流量和转化数据",
    "expected_skills": [
-    "daily-ops-report"
+    "custom-report-analysis"
    ],
-   "expected_tools": [
-    "get_custom_report_page_list"
-   ],
-   "expected_output": "流量/转化字段只在宽表：report_id 未配置时触发首轮引导（建报表、给字段清单）并降级标注「流量/转化不可用」，不用别的字段冒充。"
+   "expected_tools": [],
+   "expected_output": "流量/转化字段只在宽表：report_id 未配置时触发首轮引导（建报表、给字段清单）并降级标注「流量/转化不可用」，不用别的字段冒充。",
+   "note": "get_custom_report_page_list 查询自 v1.7.0 起归属 custom-report-analysis"
   },
   {
    "id": 15,
@@ -222,11 +221,11 @@
     "inventory-health"
    ],
    "expected_tools": [
-    "get_custom_report_page_list",
     "get_fba_shipment_page_list",
     "get_shop_page_list"
    ],
-   "expected_output": "只走库存技能（明确排除广告域）；补货建议含缺口计算与「周期来源」列；在途/AWD 空数据标「无数据」不写 0。"
+   "expected_output": "只走库存技能（明确排除广告域）；补货建议含缺口计算与「周期来源」列；在途/AWD 空数据标「无数据」不写 0。",
+   "note": "get_custom_report_page_list 查询自 v1.7.0 起归属 custom-report-analysis"
   },
   {
    "id": 19,

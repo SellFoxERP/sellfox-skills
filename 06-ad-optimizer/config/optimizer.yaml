@@ -7,16 +7,15 @@
 # ============================================================================
 
 # ---------- 数据源 ----------
-# Amazon 广告没有「按 campaign 直接查绩效」的只读工具，绩效数据有两条路：
-#   ① download_task（推荐，L1 只读性质的写）：create_ad_download_task → 轮询
-#      get_ad_download_task_page_list 拿 downloadUrl → 下载 xlsx 解析。
-#   ② custom_report（兜底）：get_custom_report_page_list 的广告字段，但那是
-#      MSKU/商品维度，无法归因到 campaign，只用于店铺级汇总与人工排查。
+# Amazon 广告没有「按 campaign 直接查绩效」的只读工具，绩效数据走下载任务链：
+#   download_task（唯一主源，L1 只读性质的写）：create_ad_download_task → 轮询
+#   get_ad_download_task_page_list 拿 downloadUrl → 下载 xlsx 解析。
+#   （v1.7.0 起移除 custom_report 兜底：不再查询自定义报表宽表。）
 # v3：下载任务链（创建/轮询/下载）由 agent 按取数计划执行并把 xlsx 落盘
 #     out/raw/perf_campaign_<end>.xlsx 等；poll_interval_sec / max_polls 仅作为
 #     agent 轮询的建议节奏，脚本不再读取（脚本只解析已落盘的本地 xlsx）。
 data_source:
-  perf_primary: "download_task"            # download_task | custom_report | none
+  perf_primary: "download_task"            # download_task | none
   download_task:
     ad_type_code: "sp"                     # sp | sb | sd
     campaign_report_type: "adCampaignReport"   # 活动级绩效
@@ -24,9 +23,6 @@ data_source:
     time_unit: "summary"                   # summary | daily
     poll_interval_sec: 10                  # 轮询进度间隔（agent 轮询建议值）
     max_polls: 30                          # 最多轮询次数（约 5 分钟，agent 建议值）
-  custom_report:
-    report_id: ""                          # 可选：含 adCost/adClicks 等字段的自定义报表 ID
-    purpose: "广告指标兜底（MSKU 级，仅店铺汇总，不用于 campaign 归因）"
 
 # ---------- 绩效字段映射 ----------
 # xlsx 的列名以「实际导出文件」为准；此处给出候选名，脚本按顺序做归一化匹配。
@@ -71,7 +67,5 @@ safety:
   # ⚠️ 加否定词需要关键词/搜索词级数据支撑，且在哪个广告组落地需人工判断，默认关闭。
   allow_negative_keyword_create: false
 
-# ---------- 审批路由 ----------
-approval:
-  owner_open_id: ""               # 广告负责人飞书 open_id（@ 人用）；留空则只出提案不 @
-  folder_token: ""                # 审批文档所在飞书文件夹 token（留空用环境变量 FEISHU_FOLDER_TOKEN）
+# v1.7.0 起审批为会话内人工确认，飞书审批路由（owner_open_id / folder_token）已随
+# 飞书能力一并移除；操作人标识在 optimize.py execute --operator 传入并落变更日志。

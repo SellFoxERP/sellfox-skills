@@ -24,10 +24,9 @@
 | `adId` / `asin` / `sku` / `state` | `get_sp_ad_product_list` | `itemList` | 广告产品结构 |
 | `targetId` / `bid` / `expression` / `resolvedExpression` | `get_sp_product_targeting_list` | `itemList` | 商品投放结构 |
 | `cost` / `sales` / `orders` / `clicks` / `impressions` / `acos` / `roas` / `click_rate` | `create_ad_download_task`（`adCampaignReport` / `adTargetReport`）→ xlsx | — | 绩效；列名映射见 `config/optimizer.yaml` |
-| `adCost` / `adClicks` / `adImpressions` / `acos` / `roas` / `adOrderNum` / `adClickRate` | `get_custom_report_page_list` | `rows` | **兜底**绩效（MSKU 级，不可归因 campaign） |
 
-> 兜底源与主源**不可混用**：`get_custom_report_page_list` 是 MSKU/商品维度，
-> 把它当成活动级绩效会得到错误的归因。启用兜底时，活动级/关键词级诊断降级为「人工核查」。
+> 绩效唯一主源是下载任务链（MSKU 级宽表**不再作为兜底**，v1.7.0 起移除自定义报表查询）。
+> 绩效缺失时降级为「仅结构与状态诊断」并披露，不编造绩效。
 
 ---
 
@@ -86,8 +85,6 @@
 - 账户健康 / 绩效通知 / 政策合规 / 评论原文：MCP 拿不到 → 一律标「需人工核查」，绝不编造。
 - 回溯基线：需要「上一期点击率/ACOS」时，若绩效数据只导出了一期，则环比类规则
   （规则 4）自动跳过并标注，**不用本期值冒充基线**。
-- `adConversionRateCpc`（广告转化率）经字段字典 06 确认存在于 `get_custom_report_page_list`
-  （489 字段，样例 2.33），可用于人工排查转化端，但它是 MSKU 级，**不用于 campaign 级自动判定**。
 
 ---
 

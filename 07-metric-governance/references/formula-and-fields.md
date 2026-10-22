@@ -33,8 +33,9 @@
 
 1. **字段属于哪个工具**。两个报表字段不通用（实测确认）：
    `reimbursementAmount` / `warehouseLostAmount` / `missingFromInboundAmount` /
-   `deferredAmount` / `purchaseCost` / `headTripPrice` **只在 `get_custom_report_page_list`（489 字段）**，
-   **不在 `get_profit_report_by_msku`**。
+   `deferredAmount` / `purchaseCost` / `headTripPrice` **只在自定义报表宽表（489 字段）**，
+   **不在 `get_profit_report_by_msku`**。（宽表查询/字段核对转 custom-report-analysis 技能；
+   本技能只治理指标定义，不查询宽表数据。）
 2. **列表字段名因工具而异**：分页类 `rows` / 利润报表 `reportList` / 广告类 `itemList`+`nextToken`。
 3. **币种**：`get_online_product_page_list.currency` 是 **USD**，
    其 `inventoryManage.currency` 是 **CNY**；自定义报表顶层 `currency` 是 USD（可配置）。
@@ -42,19 +43,22 @@
 
 ### 已核对存在的常用字段（节选，供 `desired_indices` 填写）
 
+> 下表「自定义报表宽表」指赛狐 489 字段宽表；查询与字段核对由 custom-report-analysis
+> 技能承接（本技能不查询宽表，仅引用字段口径写 `index_formula` / `index_comment`）。
+
 | 指标 | 字段 | 出现在 |
 |---|---|---|
 | 销售额 | `productSales` | `get_profit_report_by_*` |
-| 销售额（报表） | `salePrice` / `revenueAmount` | `get_custom_report_page_list` |
-| 订单数 | `orderNum` | `get_custom_report_page_list` |
+| 销售额（报表） | `salePrice` / `revenueAmount` | 自定义报表宽表 |
+| 订单数 | `orderNum` | 自定义报表宽表 |
 | 毛利率 | `grossProfitRate` | `get_profit_report_by_shop` / `_msku` |
 | 广告花费 | `cpcCost`（负数费用） | `get_profit_report_by_*` |
-| 广告转化率 | `adConversionRateCpc` | `get_custom_report_page_list`（489 字段，字段字典 06 确认） |
-| ACOS | `acos` / `spAcos` / `sbAcos` / `sdAcos` | `get_custom_report_page_list` |
-| 退款率 | `refundRate` | `get_custom_report_page_list` / 利润报表 |
-| 周转天数 | `turnoverDaysMonth` | `get_custom_report_page_list` |
-| 可售天数 | `availableDays` | `get_custom_report_page_list` |
-| 补货建议量 | `suggestNumSum` | `get_custom_report_page_list` |
+| 广告转化率 | `adConversionRateCpc` | 自定义报表宽表（489 字段，字段字典 06 确认） |
+| ACOS | `acos` / `spAcos` / `sbAcos` / `sdAcos` | 自定义报表宽表 |
+| 退款率 | `refundRate` | 自定义报表宽表 / 利润报表 |
+| 周转天数 | `turnoverDaysMonth` | 自定义报表宽表 |
+| 可售天数 | `availableDays` | 自定义报表宽表 |
+| 补货建议量 | `suggestNumSum` | 自定义报表宽表 |
 | 汇率 | `rate` / `currencyList` | `get_profit_report_by_msku`（171 字段，实测确认） |
 
 > ⚠️ **示例条目里的公式一律留空**（`formula: ""` + `formula_status: needs_human`），

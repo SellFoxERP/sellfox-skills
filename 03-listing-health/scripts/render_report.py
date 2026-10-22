@@ -2,11 +2,11 @@
 """Listing 健康体检 —— 渲染脚本。
 
 把 problems.json 渲染成 Markdown（按 references/report-template.md 的模板），
-可选推送到飞书（写入前自动 PII 脱敏 + 演示环境阻断）。
+输出本地 HTML 报告（HTML 即报告），不外发（飞书写入能力 v1.7.0 已移除；
+演示数据仅加顶部水印）。
 
 用法：
     python scripts/render_report.py --in problems.json --out report.md
-    python scripts/render_report.py --in problems.json --push-feishu --folder <token>
 """
 
 from __future__ import annotations
@@ -61,24 +61,9 @@ def render(result: Dict[str, Any]) -> str:
                  f"{', '.join(meta.get('statuses_scanned') or []) or '未记录'}")
     lines.append(f"- 时间窗口：{_window_text(meta.get('window'))}")
     lines.append("- 数据源：`get_online_product_page_list`（主）；`get_product_analyze_list`（可选）")
-    # 宽表状态三态如实（与 data.json 的 meta.wide_table 一致）：
-    # 启用成功 / 取数失败（error_code）/ 未配置或发现失败（含发现被拒错误码）
-    wide = meta.get("wide_table") or {}
-    wide_status = wide.get("status") or ("enabled" if meta.get("report_configured") else "not_configured")
-    wide_codes = "、".join(wide.get("error_codes") or [])
-    if wide_status == "enabled":
-        lines.append(f"- 数据源：`get_custom_report_page_list`（daily_ops 宽表）已启用（{wide.get('rows', 0)} 行）")
-    elif wide_status == "fetch_failed":
-        suffix = f"（error_code：{wide_codes}）" if wide_codes else "（详见取数失败项）"
-        lines.append(f"- ⚠️ **宽表取数失败**{suffix}：sessions / conversionRate / buyBoxPercent / "
-                     "类目排名 / 差评数**不可用**，标「需人工核查」")
-    elif wide_status == "discovery_failed":
-        suffix = f"（error_code：{wide_codes}）" if wide_codes else ""
-        lines.append(f"- ⚠️ **口径降级**：报表发现失败{suffix}，未启用宽表 → sessions / conversionRate / "
-                     "buyBoxPercent / 类目排名 / 差评数**不可用**，标「需人工核查」")
-    else:
-        lines.append("- ⚠️ **口径降级**：缺少自定义报表（report_id）→ "
-                     "sessions / conversionRate / buyBoxPercent / 类目排名 / 差评数**不可用**，标「需人工核查」")
+    # v1.7.0：宽表（get_custom_report_page_list）不在本技能取数范围，固定承接说明
+    lines.append("- ⚠️ **口径降级**：未接入自定义报表（由 custom-report-analysis 技能承接）→ "
+                 "sessions / conversionRate / buyBoxPercent / 类目排名 / 差评数**不可用**，标「需人工核查」")
     discs = meta.get("disclosures") or []
     if discs:
         for d in discs:
@@ -167,45 +152,12 @@ def render(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def push_feishu(markdown: str, result: Dict[str, Any], folder: str, title: str) -> int:
-    """可选：推送到飞书。演示环境默认阻断；写入前经 mask_pii。"""
-    try:
-        from feishu_writer import FeishuWriter  # type: ignore
-    except Exception as exc:
-        print(f"✗ 无法加载 feishu_writer：{exc}", file=sys.stderr)
-        return 2
-    try:
-        writer = FeishuWriter()
-    except Exception as exc:
-        print(f"✗ 飞书凭证缺失或初始化失败：{exc}", file=sys.stderr)
-        return 3
-    # 演示环境默认阻断写入
-    fp = (result.get("meta") or {}).get("demo_fingerprint")
-    try:
-        writer.guard_demo(result, override=False)  # 命中演示指纹 → 抛错阻断
-    except Exception as exc:
-        print(f"✗ 演示环境阻断写入（{fp}）：{exc}", file=sys.stderr)
-        return 4
-    try:
-        doc_id = writer.create_doc(title, folder_token=folder or None)
-        blocks = writer.markdown_to_blocks(markdown)  # 内部自动 PII 脱敏，并标注「已脱敏」
-        writer.write_blocks(doc_id, blocks)
-    except Exception as exc:
-        print(f"✗ 飞书写入失败：{exc}", file=sys.stderr)
-        return 5
-    print(f"✓ 已写入飞书文档：{doc_id}（PII 已脱敏）")
-    return 0
-
-
 def main(argv: Optional[List[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="Listing 健康体检报告渲染")
+    ap = argparse.ArgumentParser(description="Listing 健康体检报告渲染（仅本地 HTML，不外发）")
     ap.add_argument("--in", dest="inp", required=True)
     ap.add_argument("--out", default="report.md")
     ap.add_argument("--keep-md", action="store_true",
                     help="额外写出同名 .md（调试/测试用；默认只写 .html）")
-    ap.add_argument("--push-feishu", action="store_true")
-    ap.add_argument("--folder", default="")
-    ap.add_argument("--title", default="")
     args = ap.parse_args(argv)
 
     result = lc.read_json(args.inp)
@@ -219,10 +171,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"✓ 报告已渲染 → {html_path}（md 留档：{out_path}）")
     else:
         print(f"✓ 报告已渲染 → {html_path}")
-
-    if args.push_feishu:
-        title = args.title or f"Listing 健康体检报告 {_dt.date.today().isoformat()}"
-        return push_feishu(markdown, result, args.folder, title)
     return 0
 
 

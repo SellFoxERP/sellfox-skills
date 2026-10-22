@@ -1,6 +1,6 @@
 ---
 name: sellfox-business
-description: 通过 Sellfox-MCP 完成跨境电商的日常业务查询、跨域分析及明确授权的操作。适用于店铺、销售、订单、产品、库存物流、利润结算、广告和自定义报表需求，尤其是没有固定报告模板的临时问题或跨业务域任务。
+description: 通过 Sellfox-MCP 完成跨境电商的日常业务查询、跨域分析及明确授权的操作。适用于店铺、销售、订单、产品、库存物流、利润结算、广告和统计指标查询需求，尤其是没有固定报告模板的临时问题或跨业务域任务。
 ---
 
 # 赛狐通用业务助手
@@ -25,7 +25,7 @@ description: 通过 Sellfox-MCP 完成跨境电商的日常业务查询、跨域
 | FBA 货件、AWD 库存、在途、头程分摊、装箱、物流商 | [库存与物流](references/logistics.md) | logistics |
 | 利润、成本费用、赔偿、收款、各平台结算明细 | [财务与结算](references/finance.md) | finance |
 | 广告结构、绩效报告、下载任务、竞价预算和否定投放 | [广告](references/advertising.md) | advertising |
-| 自定义报表、report_id、统计指标、自定义公式治理 | [报表与指标](references/reports.md) | reports |
+| 统计指标目录、自定义公式增改（治理配合 metric-governance）；自定义报表分析转 custom-report-analysis | [统计指标与自定义公式](references/reports.md) | reports |
 
 ## 跨域路由
 
@@ -40,6 +40,7 @@ description: 通过 Sellfox-MCP 完成跨境电商的日常业务查询、跨域
 ## 主题与决策路由
 
 - 退款率、退货费用或售后侵蚀利润：已安装时使用 returns-loss；不把退款量与退货量相加。
+- 自定义报表读取、按报表字段分组或报表期间对比：已安装时使用 custom-report-analysis；本技能不在通用域内做报表目录发现与宽表查询，未安装时按内置域降级并披露缺口。
 - 新品上架后阶段表现及是否继续投入：使用 new-product-review；上线前内容仍用 listing-launch。
 - 销量下降：结合产品分析与 listing-health 的专项排查；补货/货件跟进用 inventory-health；活动保本测算用 profit-diagnosis。
 - 情景计算使用 `scripts/scenarios.py`，输入规范见 [数据处理](references/data-processing.md)；脚本不调用 MCP 或修改业务。

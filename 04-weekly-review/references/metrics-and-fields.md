@@ -20,28 +20,21 @@
 | 指标 | 字段名 | 来源工具 | 列表字段 | 备注 |
 |---|---|---|---|---|
 | GMV / 销售额 | `productSales` | `get_profit_report_by_shop` / `_msku` | `reportList` | 赛狐订单口径 |
-| 销售额（报表宽表） | `salePrice` | `get_custom_report_page_list` | `rows` | 与 `productSales` 口径是否一致需业务确认 |
-| 销量 | `salesNum` | `get_profit_report_by_*` | `reportList` | 宽表侧字段名是 `saleNum`，**勿混** |
-| 订单数 | `orderNum` | `get_custom_report_page_list` | `rows` | 需 report_id |
+| 销量 | `salesNum` | `get_profit_report_by_*` | `reportList` | — |
 | 毛利 | `grossProfit` | `get_profit_report_by_*` | `reportList` | 口径由 `profit_caliber_type` 决定 |
 | 毛利率 | `grossProfitRate` | `get_profit_report_by_shop` / `_msku` | `reportList` | 小数（0.2364） |
 | 广告花费 | `cpcCost` | `get_profit_report_by_*` | `reportList` | **为负数**；展示取绝对值 |
 | 广告成本占比 | 自算 | — | — | `|cpcCost| / productSales` |
-| ACOS | `acos`（报表现成）/ 自算 | `get_custom_report_page_list` | `rows` | 优先自算 `|adCost| / salePrice`（单位明确，用于阈值判定）；报表现成 `acos` 单位待核实，仅展示 |
-| 广告转化率 | `adConversionRateCpc` | `get_custom_report_page_list` | `rows` | ACOS 归因用；`06` 确认。`adOrderConversionRate` 亦为真实字段，可替代使用 |
-| 广告订单数 | `adOrderNum` | `get_custom_report_page_list` | `rows` | `06` 确认 |
-| 广告点击率 | `adClickRate` | `get_custom_report_page_list` | `rows` | 素材衰退判定 |
-| 退款率 | `refundRate` | `get_custom_report_page_list` / `get_profit_report_by_*` | `rows` / `reportList` | 直接用赛狐算法 |
-| 会话数 | `sessions` | `get_custom_report_page_list` | `rows` | 流量 |
-| 可售天数 | `availableDays` | `get_custom_report_page_list` | `rows` | 赛狐算法 |
-| 评分 | `rating` | `get_custom_report_page_list` | `rows` | 字符串，需转 float |
-| 差评数 | `lowReviewNum` | `get_custom_report_page_list` | `rows` | — |
+| 退款率 | `refundRate` | `get_profit_report_by_*` | `reportList` | 直接用赛狐算法 |
 | 汇率 | `rate` | `get_profit_report_by_msku` | `reportList` | `rate` 在利润报表中（`06` 备注）；`currencyList` 未在 `01/06` 确认，勿用 |
-| 标识（宽表） | `msku` / `asin` / `sku` / `title` | `get_custom_report_page_list` | `rows` | 宽表榜单展示；`asin`/`parentAsin` 形如 `[{"key":"..."}]` |
 | 标识（MSKU 利润报表） | **字段名未确认** | `get_profit_report_by_msku` | `reportList` | ⚠️ `06` 的 `msku`/`asin`/`sku`/`title`「出现于」均不含该工具，`01` 亦未列；须用真实响应核实后回填 `weekly.yaml → rank_identifiers`，取不到即标「需人工核查」 |
 
-> ⚠️ **`cvr` 不是宽表字段**：`06` 中 `cvr` 只出现在 walmart/temu 报表。
-> 亚马逊侧的转化率请用报表现成的 `conversionRate` / `orderConversionRate`（宽表），
+> 宽表专属指标（订单数 `orderNum`、ACOS `acos`、广告转化率 `adConversionRateCpc`、
+> 广告点击率 `adClickRate`、会话数 `sessions`、可售天数 `availableDays`、评分 `rating`、
+> 差评数 `lowReviewNum` 等）来自 `get_custom_report_page_list`，已不在本技能取数范围，
+> 由 `custom-report-analysis` 技能承接。
+> ⚠️ **`cvr` 不是宽表字段**：`06` 中 `cvr` 只出现在 walmart/temu 报表；
+> 亚马逊侧的转化率请用报表现成的 `conversionRate` / `orderConversionRate`，
 > 或自算 `orderNum / sessions`；**不要臆造 `cvr` 字段**。
 
 ## 二、列表字段名（因工具而异）
@@ -61,7 +54,6 @@
 |---|---|
 | `get_online_product_page_list.currency` | **USD**（售价口径） |
 | `get_online_product_page_list.inventoryManage.currency` | **CNY**（成本口径） |
-| `get_custom_report_page_list.currency` | 报表币种，可配置 |
 | `get_profit_report_by_*` 的 `currency` 参数 | 可选，按指定币种折算 |
 
 规则：
@@ -73,11 +65,7 @@
 ## 四、时间窗与基线
 
 - 利润报表：`date_type=2`（按日），`start_date/end_date` 格式 **`yyyyMMdd`**，按日查询限最近 6 个月。
-- 自定义报表：`start_date/end_date` 格式 **`yyyy-MM-dd`**。
 - 业务日边界以赛狐 `bizDay`（`yyyyMMdd`）为准；多站点时区不同，「昨日/本周」边界会不同。
-- 基线优先用**现成窗口字段** `sevenSaleNum`（近 7 天）/ `thirtySaleNum`（近 30 天）
-  （`get_custom_report_page_list`，`06` 确认）—— 不需要自己拼时间窗；需要逐日趋势时才拉一次多天数据本地切片。
-  > ✅ `threeSaleNum` 是真实字段（近 3 天窗口，见 `_shared/FIELD_DICTIONARY.md`），可用作短基线。
 - **不要**为 7 天/30 天基线各发一次调用；用 `get_profit_report_by_shop` 一次取回窗口内数据本地聚合。
 - 对比方式：`get_product_analyze_list` 的 `compare_type_list`：**1 环比 / 2 同比 / 3 自定义**。
 

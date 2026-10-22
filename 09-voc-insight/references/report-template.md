@@ -17,8 +17,8 @@
 
 ```
 # 评论 VOC 归因报告（<日期>）
-## 0. 数据说明              ← 覆盖范围/窗口/字段来源/降级/截断/演示水印
-## 1. 问题 ASIN             ← 来自赛狐聚合指标，零外部依赖
+## 0. 数据说明              ← 覆盖范围/窗口/字段来源/固定口径横幅/截断/演示水印
+## 1. 问题 ASIN             ← online 评分快照，零外部依赖
 ## 2. 差评主题归因          ← pattern（已印证） vs mention（个别反馈）
 ## 3. 行动建议              ← 主题 → 动作 → 归属
 ## 4. 需人工核查清单
@@ -31,12 +31,15 @@
 
 ```
 > 演示环境：⚠️ 演示数据，非真实经营数据（命中指纹 <fp>）｜ 未命中
-> 降级：⚠️ 口径降级：缺少 report_id … ｜ ⚠️ 未接入外部评论源，无原文 … ｜ 无
+> 固定口径：⚠️ 自定义报表（489 宽表）已移出本技能，lowReviewNum/reviewNum/reviewRate
+>           及其环比由 custom-report-analysis 技能承接；本报告基于 online 评分快照
+>           （无历史基线，不做评分环比）。
+> 外部源：⚠️ 未接入外部评论源，无原文 … ｜ 已接入
 - 覆盖范围：店铺 …
-- 时间窗口：近 N 天（当前 …；基线 前一窗口 …）
+- 时间窗口：近 N 天（当前 …；基线 前一窗口 …，快照路径不消费）
 - 数据源（字段归属）：
-    - lowReviewNum / reviewNum / reviewRate — get_custom_report_page_list（489 宽表）
-    - rating / ratingCount — get_custom_report_page_list、get_online_product_page_list
+    - rating / ratingCount — get_online_product_page_list（快照，无历史基线）
+    - lowReviewNum / reviewNum / reviewRate — 489 宽表，由 custom-report-analysis 承接，本报告不含
     - 评论原文 — 外部评论 MCP（已接入 / 未接入）
 - 截断披露：本次仅覆盖 Top N … ｜ 未触发截断
 - 币种：本报告只涉及评论数与评分（计数/评分，与币种无关），未做跨币种相减
@@ -46,15 +49,16 @@
 
 | 列 | 来源字段（工具） |
 |---|---|
-| ASIN | `asin`（custom/online） |
+| ASIN | `asin`（online） |
 | 店铺 | `shopId` |
 | 标题 | `title` |
-| 差评数(前→今) | `lowReviewNum`（**custom**） |
-| 评分(前→今) | `rating`（custom/online） |
-| 好评率(前→今) | `reviewRate`（**custom**） |
-| 命中信号 | `discovery.signals` |
+| 评分 | `rating`（online 快照） |
+| 评分数 | `ratingCount`（online 快照，小样本下界） |
+| 销量 | online 侧销量字段（影响面排序） |
+| 命中信号 | `low_rating_snapshot`（快照评分 ≤ `snapshot_rating_low` 且评分数达下界） |
 
-缺失值写 **「无数据」**，**不写 0**。排序依据注明「仅排序，非精确指标」。
+缺失值写 **「无数据」**，**不写 0**。排序依据注明「仅排序，非精确指标」；
+空清单时展示评分快照表并注明「无历史基线，无法判断评分是否下降」。
 
 ## 4. 主题归因段
 
@@ -70,7 +74,7 @@
 - [色差/外观] 1 条 —— 独立评论 1 条 < 阈值 3；独立评论者 1 人 < 阈值 2
 ```
 
-**无原文时**（降级）：整段替换为显式声明「未接入外部评论源 → 不做主题归因」，
+**无原文时**（未接入外部源）：整段替换为显式声明「未接入外部评论源 → 不做主题归因」，
 **绝不输出任何编造的主题分布**。
 
 ## 5. 行动建议段
@@ -85,8 +89,8 @@
 
 至少列出：
 
+- ⚠️ `lowReviewNum`/`reviewNum`/`reviewRate` 及评分环比（由 custom-report-analysis 承接）
 - ⚠️ 评论原文与主题归因（未接入外部源时）
-- ⚠️ `lowReviewNum`/`reviewNum`/`reviewRate`（无 `report_id` 时）
 - ⚠️ 评论原文的完整性与代表性（外部源抽样可能偏倚）
 - ⚠️ 外部评论源的合规性（ToS/授权/法律）
 
@@ -96,7 +100,8 @@
 本技能不做全量评论归因（外部源多为抽样，结论不代表总体）。
 不把单条差评当普遍问题（未达多源印证阈值的只列「个别反馈」）。
 赛狐官方 MCP 拿不到评论原文，只有聚合指标；原文靠外部 MCP，可用性取决于是否接入。
+不做评分环比与差评数分析：online 快照无历史基线，宽表信号由 custom-report-analysis 承接。
 不修改任何 Listing、不反馈供应链系统，只出建议。
 外部评论源按次/按条计费，抓取型源可能有 ToS/法律风险，由使用者自行确认。
-空数据标「无数据」，未写 0；降级口径已在上方标注。
+空数据标「无数据」，未写 0；口径边界已在上方标注。
 ```

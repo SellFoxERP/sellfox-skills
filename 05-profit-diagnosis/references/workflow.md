@@ -11,7 +11,7 @@
 ## 目录
 
 - [1. 前置校验：技能能不能跑](#1-前置校验技能能不能跑)
-- [2. report_id 首轮引导与降级路径](#2-report_id-首轮引导与降级路径)
+- [2. 宽表因子的固定分工（自定义报表不在取数范围）](#2-宽表因子的固定分工自定义报表不在取数范围)
 - [3. 取数计划（agent 执行）](#3-取数计划agent-执行)
 - [4. 环比窗口的选取](#4-环比窗口的选取)
 - [5. 店铺分批与 20 条/页硬上限](#5-店铺分批与-20-条页硬上限)
@@ -31,7 +31,7 @@
    数值可能内部不自洽（沙箱曾实测 `quantity` 与 `totalInventory` 矛盾），
    仅可用于验证字段名与分页，**不可用于验证任何利润口径**。命中演示指纹
    （`MOCK-` / `demo.example.com` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」）就在输出顶部
-   加水印，并默认阻断写飞书（仅显式传 `--allow-demo-write` 才放行，且水印保留）。
+   加水印。
    快速自检：`python scripts/run_profit_diagnosis.py --check-only`。
 2. **利润口径是否确认。** `get_profit_report_by_msku` / `_shop` 都有 `profit_caliber_type`：
    `settlement`（结算口径，赛狐默认）vs `shipment`（发货口径）。**同一时间段两者结果不同。**
@@ -41,43 +41,47 @@
 3. **阈值配置是否存在。** 读 `_shared/config/thresholds.yaml → profit`（毛利率下限、毛利环比跌幅）。
    缺失项不得静默用内置值，按 `config_loader.ensure_params` 的批量询问流程补全，并在输出标注来源。
 
-## 2. report_id 自动发现与降级路径
+## 2. 宽表因子的固定分工（自定义报表不在取数范围）
 
-按共享 `ONBOARDING.md` 自动提取关联报表 ID，核对 profit 用途及成本/赔偿/延期/仓储等所需字段。未取得适用报表时继续内置利润查询，并标注当前不可用的归因；不要求商家提供 ID 或创建新报表。
+自定义报表（`get_custom_report_page_list`，489 字段）已不在本技能取数与归因范围。
+`purchaseCost` / `headTripPrice` / `reimbursementAmount` / `warehouseLostAmount` /
+`missingFromInboundAmount` / `deferredAmount` 这几类**只存在于自定义报表**的因子（实测确认，
+msku 报表拿不到）由 `custom-report-analysis` 技能承接：
 
-降级时**明确不可用的归因**（这些字段**只存在于自定义报表**，实测确认，msku 报表拿不到）：
-
-| 不可用因子 | 字段 | 归属 |
+| 因子类别 | 字段 | 承接方 |
 |---|---|---|
-| 采购成本上涨 | `purchaseCost` | 自定义报表 |
-| 头程运费上涨 | `headTripPrice` | 自定义报表 |
-| 赔偿/仓损漏领 | `reimbursementAmount` / `warehouseLostAmount` / `missingFromInboundAmount` | 自定义报表 |
-| 延期结算 | `deferredAmount` | 自定义报表 |
+| 采购成本上涨 | `purchaseCost` | custom-report-analysis |
+| 头程运费上涨 | `headTripPrice` | custom-report-analysis |
+| 赔偿/仓损**金额** | `reimbursementAmount` / `warehouseLostAmount` / `missingFromInboundAmount` | custom-report-analysis |
+| 延期结算**金额** | `deferredAmount` | custom-report-analysis |
 
 > ⚠️ 绝不可把上面这些字段名套到 `get_profit_report_by_msku` 上 —— 该工具不返回它们，
-> 套了只会全部落空、把有数据的行误判成「无数据」。降级时这些因子一律标「⚠️ 需人工核查」。
+> 套了只会全部落空、把有数据的行误判成「无数据」。
 >
 > msku 报表侧**有**对应的汇总费用字段可参考（`purchasePcFee` / `headTripPcFee` / `compensationFee`），
-> 但它们是**汇总口径**，与自定义报表的明细字段口径不同，不可互相替代；归因表须注明用的是哪个。
+> 但它们是**汇总口径**，与宽表明细口径不同，不可互相替代。
+>
+> 赔偿**条数级**核对（是否漏领）仍属本技能：`get_amazon_reimbursement_report`（非自定义报表）。
 
 ## 3. 取数计划（agent 执行）
 
 按顺序取数；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。
 参数类型以当次契约为准（⚠️ 标注处为实测差异）。各步骤**可并行发起**
 （新网关同 session 并发安全），但每步都要落盘并核对 status。
-为做环比，**主源 A/B 各取两次**（本期 + 基期）——文件名按窗口区分，绝不能互相覆盖。
+为做环比，**MSKU 主源取两次**（本期 + 基期）——文件名按窗口区分，绝不能互相覆盖。
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/profit_msku_current.json` | `get_profit_report_by_msku` | `date_type=2`；`start_date`/`end_date`=**本期窗口**（`yyyyMMdd`）；`profit_caliber_type` **显式**；`page_no`/`page_size` 为 **integer** | **`reportList`** | 200 | 主源 A（本期）：171 字段财务深度 |
-| 2 | `out/raw/profit_msku_base.json` | 同上 | 同上，但日期=**基期窗口** | `reportList` | 200 | 主源 A（基期） |
-| 3 | `out/raw/custom_current.json` | `get_custom_report_page_list` | `report_id`；`start_date`/`end_date`=本期（**`yyyy-MM-dd`**，与利润报表不同）；`shop_ids` 逗号分隔 | `rows` | 200 | 主源 B（本期）：489 字段，含成本/赔偿/延期。**缺 report_id → 整步跳过**（降级） |
-| 4 | `out/raw/custom_base.json` | 同上 | 同上，但日期=基期 | `rows` | 200 | 主源 B（基期） |
-| 5 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | 同步骤 1（`yyyyMMdd` + `date_type=2` + `profit_caliber_type`；分页 **integer**） | `reportList` | 60 | 背景源：判断整体恶化 vs 个别 MSKU（本期） |
-| 6 | `out/raw/profit_shop_base.json` | 同上 | 同上，但日期=基期 | `reportList` | 60 | 背景源（基期） |
-| 7 | `out/raw/reimbursement.json` | `get_amazon_reimbursement_report` | `start_time`=基期起点、`end_time`=本期终点（**`yyyy-MM-dd HH:mm:ss`**，按契约；范围 ≤1 年） | `rows` | 100 | 交叉核对赔偿漏领。**可能返回 `data:{}`** → 落盘原样保留，标「无数据」，不重试 |
+| 1 | `out/raw/profit_msku_current.json` | `get_profit_report_by_msku` | `date_type=2`；`start_date`/`end_date`=**本期窗口**（`yyyyMMdd`）；`profit_caliber_type` **显式**；`page_no`/`page_size` 为 **integer** | **`reportList`** | 200 | 主源（本期）：171 字段财务深度 |
+| 2 | `out/raw/profit_msku_base.json` | 同上 | 同上，但日期=**基期窗口** | `reportList` | 200 | 主源（基期） |
+| 3 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | 同步骤 1（`yyyyMMdd` + `date_type=2` + `profit_caliber_type`；分页 **integer**） | `reportList` | 60 | 背景源：判断整体恶化 vs 个别 MSKU（本期） |
+| 4 | `out/raw/profit_shop_base.json` | 同上 | 同上，但日期=基期 | `reportList` | 60 | 背景源（基期） |
+| 5 | `out/raw/reimbursement.json` | `get_amazon_reimbursement_report` | `start_time`=基期起点、`end_time`=本期终点（**`yyyy-MM-dd HH:mm:ss`**，按契约；范围 ≤1 年） | `rows` | 100 | 交叉核对赔偿漏领。**可能返回 `data:{}`** → 落盘原样保留，标「无数据」，不重试 |
 
-**落盘纪律**（详见 SELLFOX_CLIENT.md §7）：
+> 历史落盘中的 `custom_current.json` / `custom_base.json` 已不在取数计划内；
+> `fetch_profit` 会忽略它们并在覆盖语中披露「宽表因子由 custom-report-analysis 承接」。
+
+**落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
 - 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
@@ -131,16 +135,16 @@
 
 ## 6. 字段裁剪
 
-两个主源分别是 **171 字段**与 **489 字段**的宽表，全量塞进上下文会撑爆。
-agent 落盘的是完整信封（行字段原样），`fetch_profit.py` 的 `MSKU_FIELDS` / `CUSTOM_FIELDS`
-把需要字段归一化成扁平记录，其余丢弃。**新增字段时改这两张映射表**，不要在下游到处 `.get()`。
+主源是 **171 字段**的宽表，全量塞进上下文会撑爆。
+agent 落盘的是完整信封（行字段原样），`fetch_profit.py` 的 `MSKU_FIELDS`
+把需要字段归一化成扁平记录，其余丢弃。**新增字段时改这张映射表**，不要在下游到处 `.get()`。
 
 > 💡 相比「全字段搬运」，**归一化同时完成了归类** —— 下游归因只认规范名，
-> 不再关心它来自哪个报表；「字段→工具」的归属固化在 `fetch_profit.FIELD_SOURCES`。
+> 「字段→工具」的归属固化在 `fetch_profit.FIELD_SOURCES`（全部指向 msku 报表）。
 
 ## 7. 维度字段的列表格式
 
-⚠️ 最容易踩的隐性坑：两个宽表的**维度字段是列表**，不是字符串。
+⚠️ 最容易踩的隐性坑：宽表的**维度字段是列表**，不是字符串。
 
 | 字段 | 实测样例 |
 |---|---|
@@ -165,7 +169,7 @@ agent 落盘的是完整信封（行字段原样），`fetch_profit.py` 的 `MSK
 
 ## 9. 币种
 
-- 利润报表 / 自定义报表的 `currency` 是**报表币种**（可配置，默认 USD）；`get_profit_report_by_*`
+- 利润报表的 `currency` 是**报表币种**（可配置，默认 USD）；`get_profit_report_by_*`
   传 `currency` 参数可按指定币种折算。
 - `get_online_product_page_list.inventoryManage.currency` 是 **CNY**（成本口径），顶层 `currency` 是 **USD**。
 - 利润报表自带 `rate` / `currencyList` 字段（汇率）。**本技能不做跨币种合并** ——
@@ -180,10 +184,10 @@ agent 落盘的是完整信封（行字段原样），`fetch_profit.py` 的 `MSK
 
 | 缺失项 | 影响 | 降级做法 | 必须标注 |
 |---|---|---|---|
-| `reports.profit.id` 为空 | 主源 B（489 字段宽表）不可用 | 只用主源 A；采购成本/头程/赔偿/延期结算四类归因不可用 | 「⚠️ 口径降级：缺少自定义报表」，四类因子标「需人工核查」 |
+| 宽表因子（采购成本/头程/赔偿金额/延期结算） | 不在本技能范围 | 固定由 `custom-report-analysis` 技能承接 | 报告「利润口径」区固定披露口径分工 |
 | `out/raw/` 为空 | 无法组装 | 停止并提示按 §3 取数计划落盘 | — |
-| 主源 A 某窗口落盘缺失 | 该窗口无 MSKU 记录 | 照常组装，相关归因标「⚠️ 需人工核查」 | 数据说明记录缺失文件名 |
+| 主源某窗口落盘缺失 | 该窗口无 MSKU 记录 | 照常组装，相关归因标「⚠️ 需人工核查」 | 数据说明记录缺失文件名 |
 | 某步骤信封 `status=failed` | 该源缺失 | 记 warning、不消费其行，其余照常 | 数据说明记录 error_code |
-| 背景/交叉源缺失（步骤 5~7） | 背景判断 / 赔偿核对降级 | 跳过，记录 warnings | 「店铺级利润缺失」「赔偿漏领核对不可用」 |
+| 背景/交叉源缺失（步骤 3~5） | 背景判断 / 赔偿核对降级 | 跳过，记录 warnings | 「店铺级利润缺失」「赔偿漏领核对不可用」 |
 | `reimbursement` 返回 `data:{}` | 赔偿无数据 | 标「无数据」，不写 0，不重试 | — |
 | 本期天数超 `max_lookback_days` 上限 | 窗口被截短 | 本期与基期**一并等长截短**（`resolve_windows`） | 「窗口夹取」告警写入数据说明 |

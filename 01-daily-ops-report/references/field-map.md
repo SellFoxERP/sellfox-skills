@@ -3,6 +3,12 @@
 > 字段名**以此为准**，不凭记忆书写。权威来源：`_shared/FIELD_DICTIONARY.md`（字段 → 工具）；
 > 工具参数以网关当次 `search` 返回的契约为准。
 > SKILL.md 需要核对字段时读本文件。
+>
+> ⚠️ **v1.7.0 起本技能不再调用 `get_custom_report_page_list`（自定义报表宽表）**，
+> 也不依赖 `report_id`。下文凡标注「宽表」的字段（sessions/conversionRate/buyBoxPercent、
+> adCost/adSalePrice/adClicks、availableDays/库龄分桶/suggestNumSum、MSKU 级销量窗口字段、
+> refundNum/returnSaleNum 等）在本日报中固定标
+> 「⚠️ 需人工核查——由 custom-report-analysis 技能承接」；相关章节仅作字段归属备查。
 
 ## 目录
 
@@ -19,16 +25,18 @@
 
 ---
 
-## 一、六个数据源与列表字段名
+## 一、本技能数据源与列表字段名
 
 | # | 工具 | 列表字段 | 分页 | 本技能用途 |
 |---|---|---|---|---|
 | 1 | `get_shop_page_list` | `data.rows` | 页码（硬上限 20） | 店铺清单（可缓存） |
-| 2 | `get_profit_report_by_shop` | **`data.reportList`** | 页码 | 店铺级利润 → 结论速览 |
-| 3 | `get_custom_report_page_list` | `data.rows` | 页码 | 489 字段宽表 → 分项明细主力 |
-| 4 | `get_order_page_list` | `data.rows` | 页码 | 订单异常下钻样本 |
-| 5 | `get_sp_campaign_list` | **`data.itemList`** + `data.nextToken` | **游标** | 广告活动状态 |
-| 6 | `get_multiplatform_sale_stats` | `data.rows` | 页码（`page_size<=1000`） | 跨平台销量 |
+| 2 | `get_profit_report_by_shop` | **`data.reportList`** | 页码 | 店铺级利润 → 结论速览（含 30 天基线切片） |
+| 3 | `get_order_page_list` | `data.rows` | 页码 | 订单异常下钻样本 |
+| 4 | `get_sp_campaign_list` | **`data.itemList`** + `data.nextToken` | **游标** | 广告活动状态 |
+| 5 | `get_multiplatform_sale_stats` | `data.rows` | 页码（`page_size<=1000`） | 跨平台销量 |
+
+> `get_custom_report_page_list`（489 字段宽表）不在本技能取数范围——
+> 宽表字段分析由 `custom-report-analysis` 技能承接。
 
 > ⚠️ 用 `rows` 解析利润报表会拿到空结果且不报错。`sellfox_client` 已按工具自动识别，
 > 显式传入时务必用 `list_key="reportList"` / `"itemList"`。
@@ -38,7 +46,6 @@
 | 工具 | 必填参数 | 日期格式 |
 |---|---|---|
 | `get_profit_report_by_shop` | `start_date`、`end_date`、`date_type=2`（按日） | **`yyyyMMdd`** |
-| `get_custom_report_page_list` | `report_id`、`start_date`、`end_date` | **`yyyy-MM-dd`** |
 | `get_order_page_list` | `date_type`（如 `purchase`）、`date_start`、`date_end` | `yyyy-MM-dd HH:mm:ss` |
 | `get_sp_campaign_list` | `shop_id` | 游标 `next_token` |
 | `get_multiplatform_sale_stats` | `currency`、`group_type`、`page_no`、`page_size`、`stat_time_type`、`type` | `yyyy-MM-dd` |
@@ -87,9 +94,9 @@
 
 ---
 
-## 四、STEP 02 销售 / 流量
+## 四、STEP 02 销售 / 流量（宽表字段，已移交 custom-report-analysis）
 
-宽表 `get_custom_report_page_list.rows[]`（一行一 MSKU）：
+宽表 `get_custom_report_page_list.rows[]`（一行一 MSKU）字段归属备查：
 
 | 指标 | 字段 | 备注 |
 |---|---|---|
@@ -101,7 +108,7 @@
 | 浏览量 | `pageViews` | — |
 | 转化率 | `conversionRate`、`orderConversionRate` | 报表现成口径 |
 
-**基线窗口字段（推荐方案 A，无需自拼时间窗）**：
+**基线窗口字段（宽表字段，本技能不再使用；店铺级基线走 30 天切片）**：
 `sevenSaleNum`（近 7 天）、`thirtySaleNum`（近 30 天）；
 另有 `fourteenSaleNum` / `sixtySaleNum` / `ninetySaleNum`、`avgSaleNum`、`dayNum`。
 （`threeSaleNum` / `sevenSaleNum` / `fourteenSaleNum` / `thirtySaleNum` / `sixtySaleNum` / `ninetySaleNum` 均为真实窗口字段，见 `_shared/FIELD_DICTIONARY.md`。）
@@ -110,9 +117,9 @@
 
 ---
 
-## 五、STEP 03 广告
+## 五、STEP 03 广告（花费/转化为宽表字段，已移交）
 
-宽表字段（花费/转化）：
+宽表字段归属备查：
 
 | 指标 | 字段 |
 |---|---|
@@ -134,9 +141,9 @@
 
 ---
 
-## 六、STEP 04 库存
+## 六、STEP 04 库存（宽表字段，已移交 custom-report-analysis）
 
-宽表字段：
+宽表字段归属备查：
 
 | 指标 | 字段 |
 |---|---|
@@ -153,7 +160,7 @@
 
 ---
 
-## 七、STEP 05 转化
+## 七、STEP 05 转化（宽表字段，已移交 custom-report-analysis）
 
 | 指标 | 字段 |
 |---|---|
@@ -167,7 +174,7 @@
 
 ---
 
-## 八、STEP 06 售后
+## 八、STEP 06 售后（计数/率为宽表字段，已移交）
 
 | 指标 | 字段 |
 |---|---|
@@ -197,7 +204,7 @@ MCP **无**任何政策 / 合规 / 申诉 / 绩效工具 → STEP 07 必须人�
 
 | 位置 | 币种 | 说明 |
 |---|---|---|
-| `get_custom_report_page_list.currency` | USD（可配置） | 报表币种；本技能用 `report.currency` 显式指定 |
+| `get_custom_report_page_list.currency` | USD（可配置） | 宽表币种（已移交 custom-report-analysis） |
 | `get_online_product_page_list.currency` | **USD** | 售价口径 |
 | `get_online_product_page_list.inventoryManage.currency` | **CNY** | **成本口径** |
 | `get_profit_report_by_*` 的 `currency` 参数 | 可选 | 可按指定币种折算 |

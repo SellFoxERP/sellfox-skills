@@ -64,7 +64,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--verify-file", action="append", default=None,
                    help="指定回读落盘文件（可多次；默认自动发现 custom_indices_verify_*.json）")
     p.add_argument("--keep-md", action="store_true",
-                   help="报告额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
+                   help="报告额外留档同名 .md（默认只写 .html，仅供调试）")
     return p.parse_args(argv)
 
 
@@ -206,13 +206,13 @@ def main(argv=None) -> int:
     raw_dir = _resolve_to(args.raw_dir, out_dir / "raw")
 
     # 报表过滤提示（实际过滤在取数面：agent 调用时传 report_id_list）。
-    reports = gov.load_shared_reports()
-    report_ids, missing_reports = gov.target_report_ids(cfg, reports)
+    report_ids, missing_reports = gov.target_report_ids(cfg)
     if missing_reports:
         print(
             "⚠️ 以下报表 report_id 为空，取数计划将按无报表过滤执行"
             "（口径降级：治理范围=全部「我的」指标）：\n"
-            f"   {', '.join(missing_reports)} → 助手可自动发现报表；当前仅按已声明的只读范围分析。"
+            f"   {', '.join(missing_reports)} → 请从赛狐网页端确认 report_id 后回填 "
+            "config/metric_governance.yaml 的 report_ids（不猜 ID）。"
             "不能因目标报表缺失扩大批准的写入范围。"
         )
 

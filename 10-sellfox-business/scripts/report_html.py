@@ -5,7 +5,7 @@
 
     from report_html import write_html_report
     html_path = write_html_report(md_text, report_base_path)          # 只写 .html
-    html_path = write_html_report(md_text, md_path, keep_md=True)     # 调试/飞书载荷需要 md 时
+    html_path = write_html_report(md_text, md_path, keep_md=True)     # 调试留档需要 md 时
 
 支持的 Markdown 子集（本仓库渲染层实际使用的全部形态）：
 标题 #~###### ｜ 表格 |a|b|（第二行为 --- 分隔行）｜ 无序/有序列表 ｜ **加粗** ｜
@@ -209,7 +209,7 @@ def write_html_report(md: str, md_path: Path, title: Optional[str] = None,
     """以 md_path 的名字为基准写同名 .html（唯一报告出口），返回 HTML 路径。
 
     默认**不写 .md 文件**（HTML 即报告）；`keep_md=True` 时额外写出 .md，
-    仅供飞书通道载荷与测试断言使用。
+    仅供调试留档与测试断言使用。
     """
     html_path = md_path.with_suffix(".html")
     html_path.parent.mkdir(parents=True, exist_ok=True)

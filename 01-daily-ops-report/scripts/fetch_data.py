@@ -18,10 +18,13 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
     shops.json                 get_shop_page_list          → rows
     profit_shop.json           get_profit_report_by_shop   → reportList
     profit_shop_range.json     （可选，30 天基线切片）       → reportList
-    msku_<shopId>.json         get_custom_report_page_list → rows（每店铺批一个文件）
     orders.json                get_order_page_list         → rows（含 PII，渲染前脱敏）
     campaigns_<shopId>.json    get_sp_campaign_list        → itemList（游标）
     multiplatform_<metric>.json get_multiplatform_sale_stats → rows（可选）
+
+v1.7.0 起**不再取自定义报表宽表**（get_custom_report_page_list / report_id 依赖整体移除）：
+流量（sessions/CVR）、广告点击、库龄分桶、补货建议等宽表专属指标固定标
+「⚠️ 需人工核查——由 custom-report-analysis 技能承接」（见 WIDE_TABLE_DEGRADATION）。
 """
 
 from __future__ import annotations
@@ -61,6 +64,13 @@ from sellfox_offline import (  # noqa: E402
 _LOADER = ConfigLoader(shared_root=_SHARED_ROOT)
 _SKILL_CFG = load_yaml_file(_SKILL_ROOT / "config" / "daily_report.yaml")
 
+#: 宽表专属指标固定降级说明（v1.7.0 起本技能不取自定义报表，移交 custom-report-analysis）。
+WIDE_TABLE_DEGRADATION = (
+    "宽表（get_custom_report_page_list）不在本技能取数范围：流量（sessions/CVR）、"
+    "广告点击、库龄分桶、补货建议等宽表专属指标由 custom-report-analysis 技能承接，"
+    "本报告固定标「⚠️ 需人工核查」，不编造数值。"
+)
+
 
 def _cfg(*keys: str, default: Any = None) -> Any:
     node: Any = _SKILL_CFG
@@ -73,11 +83,6 @@ def _cfg(*keys: str, default: Any = None) -> Any:
 
 def _thresholds() -> Dict[str, Any]:
     return _LOADER.load("thresholds")
-
-
-def _report_id() -> str:
-    reports = (_LOADER.load("reports").get("reports") or {})
-    return str((reports.get("daily_ops") or {}).get("id") or "").strip()
 
 
 # --- 日期口径（与旧版一致）---------------------------------------------------
@@ -144,7 +149,7 @@ def _load(raw_dir: Path, name: str) -> Optional[RawEnvelope]:
 
 
 def _merge_pattern(raw_dir: Path, prefix: str) -> List[RawEnvelope]:
-    """合并 msku_*.json / campaigns_*.json / multiplatform_*.json 等批次文件。"""
+    """合并 campaigns_*.json / multiplatform_*.json 等批次文件。"""
     out: List[RawEnvelope] = []
     for p in sorted(raw_dir.glob(f"{prefix}_*.json")):
         try:
@@ -303,37 +308,18 @@ def run(
             "truncated": bool(_cov_truncation(env, "get_profit_report_by_shop(range)")),
         }
 
-    # 4) 宽表（每店铺批一文件；无 report_id → 降级）
-    report_id = _report_id()
-    msku_envs = _merge_pattern(raw_dir, "msku")
-    # 失败/截断披露与 report_id 无关：即使降级，error_code 与覆盖缺口也要可见（不静默丢弃）
-    for env_ in msku_envs:
-        _scan(env_.obj, f"步骤 3 宽表 {env_.path.stem.replace('msku_', '')}")
-        t = _cov_truncation(env_, "get_custom_report_page_list")
-        if t:
-            trunc_store.append(t)
-    if not report_id:
-        note = str(_cfg("degradation", "no_report_id_note", default="") or "")
-        if not note or note.startswith((">", "|")):  # YAML 块标量被朴素解析时的兜底
-            note = "尚未取得适用报表，明细层口径降级；助手可自动发现关联报表，当前先展示已有数据。"
-        degradations.append(note)
-        bundle["data"]["msku_report"] = None
-    elif msku_envs:
-        rows: List[Dict[str, Any]] = []
-        for env_ in msku_envs:
-            sid = env_.path.stem.replace("msku_", "")
-            for r in env_.rows("rows"):
-                r.setdefault("shopId", "" if sid == "ALL" else sid)
-                rows.append(r)
-        bundle["data"]["msku_report"] = {"rows": rows, "report_id": report_id, "batches": len(msku_envs)}
-    else:
-        bundle["data"]["msku_report"] = None
-        degradations.append("宽表落盘缺失（out/raw/msku_*.json）：分项明细降级。")
+    # 4) 宽表步骤已移除（v1.7.0）：不再取 get_custom_report_page_list，
+    #    宽表专属指标固定降级披露（由 custom-report-analysis 技能承接）；
+    #    若落盘目录仍有历史 msku_*.json，一律忽略（不消费、不采信）。
+    degradations.append(WIDE_TABLE_DEGRADATION)
+    bundle["data"]["msku_report"] = None
 
     # 5) 订单异常样本（PII：渲染前脱敏由 render 层负责）
     env = _load(raw_dir, "orders")
+    if env is not None and (env.status != "complete" or not is_no_data(env.data)):
+        # failed/partial 信封必须扫出 error_code（失败可见性），不能静默当缺失
+        _scan(env.obj, "步骤 3 订单样本")
     if env is not None and not is_no_data(env.data):
-        _scan(env.obj, "步骤 4 订单样本")
         t = _cov_truncation(env, "get_order_page_list")
         bundle["data"]["orders_sample"] = {
             "rows": env.rows("rows"),
@@ -351,7 +337,7 @@ def run(
     items: List[Dict[str, Any]] = []
     for env_ in camp_envs:
         sid = env_.path.stem.replace("campaigns_", "")
-        _scan(env_.obj, f"步骤 5 广告 {sid}")
+        _scan(env_.obj, f"步骤 4 广告 {sid}")
         t = _cov_truncation(env_, "get_sp_campaign_list")
         if t:
             trunc_store.append(t)
@@ -369,7 +355,7 @@ def run(
         multi_row_total = 0
         for env_ in multi_envs:
             metric = env_.path.stem.replace("multiplatform_", "")
-            _scan(env_.obj, f"步骤 6 跨平台 {metric}")
+            _scan(env_.obj, f"步骤 5 跨平台 {metric}")
             t = _cov_truncation(env_, "get_multiplatform_sale_stats")
             if t:
                 trunc_store.append(t)
@@ -377,7 +363,7 @@ def run(
             multi_row_total += len(metrics[metric])
         bundle["data"]["multiplatform"] = {"metrics": metrics}
         if not multi_row_total:
-            degradations.append("跨平台销量缺失（已跳过）：步骤 6 信封无数据或取数失败。")
+            degradations.append("跨平台销量缺失（已跳过）：步骤 5 信封无数据或取数失败。")
 
     bundle["demo_fingerprint"] = demo_fingerprint
     bundle["meta"] = {
@@ -387,7 +373,6 @@ def run(
         "marketplace_filter": marketplace_filter or None,
         "sites_returned": sites_returned,
         "profit_step_missing": bundle["data"].get("store_profit") is None,
-        "msku_rows": len((bundle["data"].get("msku_report") or {}).get("rows") or []),
         "campaign_rows": len(items),
         "demo_hit": demo_fingerprint,
         "raw_dir": str(raw_dir),

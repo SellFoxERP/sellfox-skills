@@ -14,7 +14,6 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md` 与 `references/workflow.md`）：
   | `targetings_<shopId>.json` | `get_sp_product_targeting_list` | `itemList` |
   | `download_tasks.json` | `get_ad_download_task_page_list` | `rows` |
   | `perf_campaign_<date>.xlsx` / `perf_target_<date>.xlsx` | agent 下载 `downloadUrl` 后放入 | — |
-  | `perf_custom_<shopId>.json`（可选兜底） | `get_custom_report_page_list` | `rows` |
 
 * **本脚本 = 计算面**：只读落盘文件——校验（存在性/status/空数据/演示指纹/截断），
   组装出与旧版**完全相同形状**的 `AdData`，`diagnose.py` 零改动。
@@ -63,8 +62,8 @@ class AdData:
     product_targetings: List[Dict[str, Any]] = field(default_factory=list)
     perf_campaign: List[Dict[str, Any]] = field(default_factory=list)
     perf_keyword: List[Dict[str, Any]] = field(default_factory=list)
-    perf_source: str = "none"          # download_task | custom_report | none
-    perf_scope: str = "none"           # campaign | msku | none
+    perf_source: str = "none"          # download_task | none
+    perf_scope: str = "none"           # campaign | none
     truncations: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     demo_fingerprint: Optional[str] = None
@@ -81,11 +80,6 @@ class AdData:
         lines: List[str] = []
         for t in self.truncations:
             lines.append(f"- {t}")
-        if self.perf_source == "custom_report":
-            lines.append(
-                "- ⚠️ 绩效来源为自定义报表（MSKU 级），**无法归因到单个广告活动**，"
-                "故活动级/关键词级诊断降级为「人工核查」。"
-            )
         if self.perf_source == "none":
             lines.append("- ⚠️ 未取得绩效数据，仅能输出结构与状态诊断。")
         return "\n".join(lines) if lines else "- 数据完整覆盖，未发生截断。"
@@ -111,8 +105,8 @@ def parse_xlsx(path: Path) -> List[Dict[str, Any]]:
         from openpyxl import load_workbook  # type: ignore
     except Exception as exc:  # pragma: no cover - 环境无 openpyxl
         raise AdFetchError(
-            "解析 xlsx 需要 openpyxl：请执行 `pip install openpyxl`，"
-            "或改用 data_source.perf_primary=custom_report。"
+            "解析 xlsx 需要 openpyxl：请执行 `pip install openpyxl`；"
+            "装不上则本次降级为「仅结构与状态诊断」并披露。"
         ) from exc
 
     wb = load_workbook(io.BytesIO(path.read_bytes()), read_only=True, data_only=True)
@@ -349,19 +343,10 @@ def load_from_raw(
                     f"绩效 xlsx 落盘缺失（out/raw/perf_campaign_{end_date}.xlsx 等，窗口 "
                     f"{start_date}~{end_date}）：请由 agent 按 workflow.md 取数计划下载任务链取回。"
                 )
-        elif primary == "custom_report":
-            p = raw / f"perf_custom_{shop_id}.json"
-            if not p.exists():
-                data.warnings.append(
-                    f"落盘缺失 out/raw/perf_custom_{shop_id}.json（custom_report 兜底），跳过绩效取数。"
-                )
-            else:
-                rows = _merge_envelopes([p], "rows", "perf_custom", max_perf, sink=data)
-                data.perf_campaign = rows
-                data.perf_source = "custom_report"
-                data.perf_scope = "msku"
         else:
-            data.warnings.append("data_source.perf_primary=none，跳过绩效取数。")
+            hint = "" if primary == "none" else \
+                f"（非法值 {primary}，合法值：download_task | none；custom_report 兜底已移除）"
+            data.warnings.append(f"data_source.perf_primary={primary}{hint}，跳过绩效取数。")
 
     # 演示环境识别（铁律 11：跨全部落盘内容扫描）
     payload = {

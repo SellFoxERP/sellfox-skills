@@ -1,28 +1,30 @@
 # ============================================================================
 # 库存健康与补货 —— 本技能特有配置（inventory.yaml）
 # ============================================================================
-# 通用配置（阈值 / 到货周期 / 报表 ID / 店铺）一律引用 _shared/config/，本文件不重复：
+# 通用配置（阈值 / 到货周期 / 店铺）一律引用 _shared/config/，本文件不重复：
 #   - 预警阈值（可售天数、库龄占比、周转天数上限） → _shared/config/thresholds.yaml → inventory
 #   - 到货周期                                   → _shared/config/lead_time.yaml
-#   - report_id                                  → _shared/config/reports.yaml → inventory
 #   - 店铺与负责人                                → _shared/config/shops.yaml
 #
 # 本文件只放【本技能专属】的取数上限与判定补充参数。使用者可维护。
+# v1.7.0 起本技能不取自定义报表宽表（get_custom_report_page_list / report_id 已移除，
+# 宽表字段分析由 custom-report-analysis 技能承接）：主源 = get_online_product_page_list，
+# 可售天数/建议补货量按在线产品口径自算，报告固定标「口径降级」。
 # ============================================================================
 
 # ---------- 取数安全阀（客户端硬截断，触达即披露覆盖范围）----------
 # ⚠️ 服务端分页硬上限恒为 20 条/页，这些 max_rows 是技能侧总量上限，防止上下文爆炸。
 #    触达上限时输出必须写明「本次仅覆盖 Top N，其余未纳入统计」。
 max_rows:
-  custom_report: 200        # 主源：单次技能运行的 MSKU 行数上限
-  online_product: 200       # 降级源上限
-  fba_shipment: 100         # 在途货件明细上限
-  awd_inventory: 100        # AWD 库存上限
+  shops: 40                # 店铺清单上限
+  online_product: 200      # 主源：单次技能运行的 MSKU 行数上限
+  fba_shipment: 100        # 在途货件明细上限
+  awd_inventory: 100       # AWD 库存上限
 
 # 店铺分批：按 shop_ids 分批取数，每批店铺数。批越小越不容易被单页 20 条上限截断。
 shop_batch_size: 3
 
-# 自定义报表取数窗口（天）。库存是快照，但周转/销量速率字段需要一个时间窗才有值。
+# 取数窗口（天）。库存是快照，但周转/销量速率字段需要一个时间窗才有值。
 report_window_days: 30
 
 # ---------- 双向矩阵分界（销量轴）----------
@@ -40,7 +42,7 @@ dead_stock:
 # ---------- 币种（铁律 7：跨币种必须显式处理）----------
 currency:
   sales_currency: "USD"     # get_online_product_page_list 顶层 currency
-  cost_currency: "CNY"      # inventoryManage.currency / 自定义报表成本口径
+  cost_currency: "CNY"      # inventoryManage.currency（成本口径；宽表成本字段已移交 custom-report-analysis）
   # 处理原则：售价类与成本类字段【不同时相减】；确需合并时按此汇率来源折算并标注日期。
   fx_rate: null             # 例：{"USD_CNY": 7.15, "as_of": "2026-09-29"}；null → 标注「需人工核查汇率」
 

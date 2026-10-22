@@ -46,7 +46,7 @@
   {
    "id": 8,
    "prompt": "赛狐里面能统计的指标都有哪些？我自己建的自定义指标也能看到吗",
-   "expected_output": "走 reports 域只读发现：get_custom_report_stat_index_list 查可用统计指标、get_custom_report_index_page_list 查自定义指标，均按当次契约；指标目录可能树状，按当前输出结构遍历，无总数/翻页依据时标覆盖未知，不把节点数上限当完整性证明；关联路径提取真实 reportId/reportName 并按 ID 去重，关联清单不是完整目录（未关联自定义指标的报表可能不出现）；部分页失败保留成功页候选及警告，不宣称「全部报表」或「没有报表」；读取报表与编辑指标是两类授权，本例只读、不触发 add/update_custom_report_index；先判断内置统计/财务查询是否已够用，只有需要自定义字段时才进入报表读取。",
+   "expected_output": "走 reports 域只读发现：get_custom_report_stat_index_list 查可用统计指标、get_custom_report_index_page_list 查自定义指标，均按当次契约；指标目录可能树状，按当前输出结构遍历，无总数/翻页依据时标覆盖未知，不把节点数上限当完整性证明；indexId 是指标标识不是报表标识，不互换、不把指标关联信息当报表目录或据此宣称报表清单；部分页失败保留成功页与警告，不宣称「全部指标」或「没有指标」；读取指标与编辑指标是两类授权，本例只读、不触发 add/update_custom_report_index；口径校准与公式固化的完整治理转 metric-governance；先判断内置统计/财务查询是否已够用，只有需要自定义字段口径时才进入指标读取。",
    "files": []
   },
   {
@@ -64,7 +64,7 @@
   {
    "id": 11,
    "prompt": "读一下我的自定义经营报表，把上个月的销量和利润拉出来 [[场景注入：action 调 get_custom_report_page_list 返回 failed：HTTP 400 / 上游业务码 40019（RESULT_BUDGET_EXCEEDED）；retryable 线上实测存在 true（建议缩小分页后重试）与 false 两种形态]]",
-   "expected_output": "failed 页不当业务数据、不进入统计、不编造报表数据；保留完整诊断证据：HTTP 状态、上游业务码、消息、retryable、建议动作与 trace_id（存本地忽略目录，不写密钥）；按真实信封的 retryable 与建议动作处理（线上实测存在 true 建议缩小分页与 false 两种形态）：retryable=true 按建议修正参数（如缩小 page_size）只重试一次，retryable=false 不自动重试，重试仍失败即停止并保留诊断，不做无界重试；不据此断言权限、限流或数据有误（上游根因未确认）；按 reports 域降级路径继续 analytics/finance 等内置可得数据并披露「宽表不可得」缺口，不要求商家手填 report_id、不用历史候选冒充成功；离线处理时失败页纳入 inputs 清单，全部 dataset 不可用则输出诊断且退出码 2，不生成虚构零值或空报告冒充完成。",
+   "expected_output": "识别为自定义报表分析需求并路由：已安装 custom-report-analysis 技能时转交该技能（发现候选报表→page_size=1 验证读→正式取数→处理计划→报告），本技能不在通用域内做报表目录发现或宽表查询；RESULT_BUDGET_EXCEEDED 的体积三步处置由承接方执行：retryable=true 时按建议缩小 page_size 只重试一次，仍超则减少请求字段（只选已发布字段）再试一次，再失败即停止并保留诊断，不做无界重试；failed 页不当业务数据、不进入统计、不编造报表数据，保留 HTTP 状态、上游业务码、retryable、建议动作与 trace_id（存本地忽略目录，不写密钥）；不据此断言权限、限流或数据有误（上游根因未确认）；未安装该技能或宽表最终不可得时按 reports 域路由降级 analytics/finance 等内置数据并披露「宽表不可得」缺口，不要求商家手填 report_id、不用历史候选冒充成功；离线处理时失败页纳入 inputs 清单，全部 dataset 不可用则输出诊断且退出码 2，不生成虚构零值或空报告冒充完成。",
    "files": []
   },
   {

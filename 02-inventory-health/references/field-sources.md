@@ -1,12 +1,16 @@
 # 字段与数据源索引（field-sources.md）
 
+> **v1.7.0**：本技能不再调用 `get_custom_report_page_list`（宽表字段分析由
+> `custom-report-analysis` 技能承接）。下表该工具行与宽表字段仅作归属备查；
+> 本技能运行时只用 `get_online_product_page_list` 等在线产品字段自算。
+
 字段名一律以 `_shared/FIELD_DICTIONARY.md` 为准，**不得凭记忆书写**。本文件是本技能用到的字段的核对快照。
 
 ## 涉及工具
 
 | 工具 | 角色 | 列表字段 | 关键参数 |
 |---|---|---|---|
-| `get_custom_report_page_list` | 主源（489 字段宽表） | `data.rows` | `report_id`(必填)、`start_date`/`end_date`(必填, `yyyy-MM-dd`)、`shop_ids`(逗号分隔字符串)、`page_no`/`page_size` |
+| `get_custom_report_page_list` | ~~已移交 custom-report-analysis~~（本技能不调用） | `data.rows` | `report_id`(必填)、`start_date`/`end_date`(必填, `yyyy-MM-dd`)、`shop_ids`(逗号分隔字符串)、`page_no`/`page_size` |
 | `get_online_product_page_list` | 降级/补充 | `data.rows` | `shop_id_list`(数组)、`page_no`/`page_size`、`start_time`/`end_time` |
 | `get_fba_shipment_page_list` | 在途货件 | `data.rows` | `shop_ids`(数组)、`create_time_start/end` 或 `update_time_start/end`（至少一组完整区间，≤360 天）、`status`(数组) |
 | `get_awd_inventory_page_list` | AWD 库存 | `data.rows` | `page_no`(必填)、`page_size`(必填)、`shop_id` |
@@ -43,7 +47,7 @@
 | `msku` / `sku` / `spu` | `get_custom_report_page_list` | `["MSKU-DEMO-001"]`（**列表**） |
 | `asin` / `parentAsin` / `fnsku` / `shopId` / `marketplaceId` / `title` | `get_custom_report_page_list`、`get_online_product_page_list` | `[{"key": "..."}]`（**列表**） |
 
-> ✅ `threeSaleNum` 是真实字段（近 3 天窗口，`get_custom_report_page_list`）。本技能基线仍以 `salesVelocityMonth` /
+> ✅ `threeSaleNum` 是真实字段（近 3 天窗口，属宽表，已移交 custom-report-analysis）。本技能基线以在线产品 `day30SaleNum` /
 > `thirtySaleNum` / `sevenSaleNum`（降级源用 `day30SaleNum` / `day7SaleNum`）。
 >
 > ⚠️ **降级源 `get_online_product_page_list` 不返回** `availableDays` / `fbmAvailableDays` /

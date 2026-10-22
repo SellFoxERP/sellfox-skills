@@ -19,7 +19,8 @@
   references/asset-brief-spec.md 的适配器契约执行，且必须先过「成本确认闸」。
 - **缺落盘也能跑**：`out/raw/` 缺信封时降级为「需人工核查」，仍产出结构完整的上架包
   （沿袭旧「无 Key 离线骨架」语义）。
-- **演示环境**：命中指纹即在包顶加水印，并默认阻断写飞书。
+- **演示环境**：命中指纹即在包顶加水印，并默认阻断外部生成（guard_demo，显式
+  ``--allow-demo-write`` 才放行且仍加水印）。
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from _common import Notes, SKILL_ROOT, LaunchError, load_skill_yaml
+from _common import Notes, SKILL_ROOT, LaunchError, ensure_shared_path, load_skill_yaml
 from build_asset_brief import build_brief, count_assets, estimate_generation
 from check_compliance import check_compliance, validate_copy_against_spec
 from estimate_pricing import estimate_pricing
@@ -142,6 +143,19 @@ def run(args: argparse.Namespace) -> int:
     estimate = estimate_generation(brief, notes)
     gate = check_cost_gate(estimate, confirmed=bool(args.confirm_assets), notes=notes)
 
+    # 外部生成闸（08 保留生图/生视频外部 MCP 能力，故闸门保留；v1.7.0 前为飞书写入闸）：
+    # 成本闸已 PROCEED 时再过 guard_demo——演示数据默认阻断外部生成（RuntimeError），
+    # 显式 --allow-demo-write 才放行（输出仍须加水印）。
+    if gate["action"] == "PROCEED":
+        try:
+            if ensure_shared_path():
+                from sellfox_offline import guard_demo  # type: ignore  # 由 _shared 提供
+                guard_demo(baseline, override=bool(args.allow_demo_write))
+        except RuntimeError as exc:
+            gate["action"] = "HOLD"
+            gate["demo_blocked"] = True
+            notes.warn(f"⏸ 外部生成闸：{exc}")
+
     # 合规检查（永不写入）+ 字符校验。
     compliance = check_compliance(copy=copy, brief=brief, notes=notes)
     spec_check = validate_copy_against_spec(
@@ -170,8 +184,6 @@ def run(args: argparse.Namespace) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = Path(args.out) if args.out else out_dir / f"listing-package-{stamp}.md"
     # HTML 主报告出口：仅同名 .html（--keep-md 才附 .md；_common 挂 _shared/scripts）。
-    from _common import ensure_shared_path  # 局部导入（与写飞书分支同模式）
-
     if ensure_shared_path():
         from report_html import write_html_report  # type: ignore  # 由 _shared 提供
 
@@ -192,23 +204,8 @@ def run(args: argparse.Namespace) -> int:
 
     print(md)
     print(f"\n---\n已写入：{html_path or out_path}\n素材需求单：{brief_path}")
-    print(f"成本闸：{gate['action']}（需确认={gate['required']}，已确认={gate['confirmed']}）")
-
-    # 可选：写飞书（演示环境默认阻断）。
-    if args.write_feishu:
-        try:
-            from _common import add_shared_to_path, resolve_shared_root  # 局部导入
-            add_shared_to_path(resolve_shared_root(args.shared_root))
-            from feishu_writer import FeishuWriter  # type: ignore
-
-            writer = FeishuWriter()
-            writer.guard_demo(baseline, override=bool(args.allow_demo_write))  # 命中演示→默认抛错
-            doc_id = writer.create_doc(f"Listing Package: {args.name} {args.marketplace}")
-            writer.write_blocks(doc_id, writer.markdown_to_blocks(md))
-            print(f"已写入飞书文档：{doc_id}")
-        except Exception as exc:
-            notes.warn(f"写飞书失败/被拦截：{exc}")
-            print(f"⚠️ 写飞书未完成：{exc}")
+    print(f"生成闸：{gate['action']}（需确认={gate['required']}，已确认={gate['confirmed']}"
+          + ("，演示数据默认阻断外部生成" if gate.get("demo_blocked") else "") + "）")
 
     return 0
 
@@ -226,11 +223,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--copy-json", default=None, help="AI 助手 生成后的文案 JSON（可选）")
     ap.add_argument("--out", default=None, help="上架包输出路径")
     ap.add_argument("--keep-md", action="store_true",
-                    help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
+                    help="额外留档同名 .md（默认只写 .html，仅供调试）")
     ap.add_argument("--confirm-assets", action="store_true", help="已确认素材数量与成本，放行生成")
-    ap.add_argument("--write-feishu", action="store_true")
-    ap.add_argument("--allow-demo-write", action="store_true", help="演示环境强制写飞书（危险）")
-    ap.add_argument("--shared-root", default=None)
+    ap.add_argument("--allow-demo-write", action="store_true",
+                    help="演示环境强制放行外部生成（危险；仍加水印）")
     return ap
 
 

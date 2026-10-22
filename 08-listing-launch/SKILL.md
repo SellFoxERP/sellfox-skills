@@ -3,11 +3,6 @@ name: listing-launch
 description: 为跨境电商新品生成「上架素材包」（Listing Package）：用赛狐/SellFox ERP 的成本、类目与价格数据，产出可直接拿去亚马逊后台刊登的标题、五点、搜索词、A+ 文案，以及交给生图/生视频 MCP 的「素材需求单 asset-brief.json」，并附合规检查与定价利润测算。当用户提到"商品上架""上架素材""新品刊登""Listing 文案""写标题/五点/搜索词""主图/场景图/A+图""生图/生视频做素材""素材需求单""asset-brief""上架包""listing package""给新品做素材"时，务必使用本技能，即使用户没有明确说"上架"二字。注意：本技能不做一键上架（赛狐 MCP 无刊登接口），最后一公里由人工在后台完成；已有链接的问题排查（不可售/丢购物车/无流量）请用 Listing 体检技能。
 ---
 
-## 报表自动发现
-
-任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
-匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
-
 ## 运行环境与路径
 
 以本文件所在目录为技能根目录，执行脚本前切换到该目录，使用 Python 3.10+。
@@ -18,8 +13,8 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
 `help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
 已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
-下文“零网络”仅指赛狐取数后的离线计算；飞书和审批通知模块会联网。
-默认输出本地报告；只有用户要求时才启用飞书或外部服务。没有原始数据时仅说明缺口或产出
+下文“零网络”仅指赛狐取数后的离线计算；本技能不接入飞书等外部推送（v1.7.0 起移除），
+交付为本地 HTML 报告。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
 
 # 商品上架素材包（Listing Package）
@@ -54,7 +49,6 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 | `references/listing-package-template.md` | 渲染上架包时（严格照此结构） |
 | `adapters/README.md` | 接入/更换生图生视频 MCP 时 |
 | `_shared/SELLFOX_CLIENT.md` | **必读**：MCP 调用约定（contract_version、参数类型按契约、错误语义、并发、落盘纪律） |
-| `_shared/config/reports.yaml` | 商品行 `headTripCost` 缺值、需要宽表头程（`headTripPrice`）时——宽表是补充源 |
 
 > `_shared/` 是专项技能（01~09）的共用底座，**不是技能**。脚本通过本技能 `config/paths.yaml`
 > 定位它；优先使用包内 `_shared/`，源码布局回退到同级共享目录。
@@ -68,7 +62,7 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
   `SELLFOX_MCP_KEY`，计算面零网络）。缺落盘 → 降级为「离线骨架」，实时字段标
   「需人工核查」，不崩。
 - **演示环境**：命中指纹（`MOCK-` / `demo.example.com` / `SHOP-DEMO-` / `B0DEMO` /
-  店铺名含「演示」）→ 上架包顶部加水印，**默认阻断写飞书**。
+  店铺名含「演示」）→ 上架包顶部加水印，**默认阻断对外写出与外部生成**。
 - **配置完整性**：`config/listing_spec.yaml` / `config/fx.yaml` / `config/launch.yaml`
   未配置项一律标「⚠️ 需人工核查」，**不编造**。
 
@@ -128,7 +122,9 @@ python3 scripts/fetch_baseline.py --raw-dir out/raw
 
 - `estimate_generation` 统计数量并按 `estimator` 单价估算；
 - 单价未配置 → 标「需人工核查」，**不按 0 元估算**；
-- 未传 `--confirm-assets` → 闸门 `HOLD`，**不生成**；确认后才 `PROCEED`。
+- 未传 `--confirm-assets` → 闸门 `HOLD`，**不生成**；确认后才 `PROCEED`；
+- 成本确认后还要过**演示数据闸**（`sellfox_offline.guard_demo`）：命中演示指纹默认
+  **阻断外部生成**（闸门回到 `HOLD`），显式 `--allow-demo-write` 才放行且仍加水印。
 
 ### 阶段 6：合规检查（永不写入）
 
@@ -148,16 +144,16 @@ python3 scripts/fetch_baseline.py --raw-dir out/raw
 | 佣金 | `referralFee` | get_online_product_page_list | 售价口径 |
 | FBA | `fbaFees` | get_online_product_page_list | 售价口径 |
 | 变动结算费 | `variableClosingFee` | get_online_product_page_list | 售价口径 |
-| 头程 | `headTripCost`（商品行，首选）/ `headTripPrice`（宽表补充） | get_online_product_page_list / get_custom_report_page_list | 成本口径 |
+| 头程 | `headTripCost`（商品行） | get_online_product_page_list | 成本口径 |
 
 - 跨币种必须经 `config/fx.yaml` 换算，并标注**汇率来源 + 日期**；未配置 → 「需人工核查」。
-- 头程优先取商品行 `headTripCost`（来源标注「商品行」）；缺值再走宽表/人工，标「需人工核查」。
+- 头程优先取商品行 `headTripCost`（来源标注「商品行」）；缺值需人工核查（宽表口径转 custom-report-analysis 技能）。
 - 费用不完整时**不给**「精确」利润，只标「估算、仅供参考」。
 
 ### 阶段 8：渲染与交付
 
 `scripts/render_package.py` 严格按 `references/listing-package-template.md` 渲染 1~7 区块 +
-诚实边界 + 数据说明。可选写飞书：`FeishuWriter.guard_demo` 在演示环境默认**阻断**。
+诚实边界 + 数据说明。交付为本地 HTML（v1.7.0 起飞书写入已移除）；演示环境默认阻断对外写出。
 
 ### 阶段 9：外部 MCP 生成（可插拔）
 
@@ -204,7 +200,7 @@ python3 scripts/listing_launch.py ... --confirm-assets
 - **字符/字节限制未验证** —— 按目标站点最新官方要求核对，未配置则标「需人工核查」。
 - **商标/专利/资质** —— 本技能无相关数据源，仅提示、不下结论。
 - **评论原文** —— 赛狐仅有聚合指标（`rating`/`ratingCount`），无评论内容。
-- **头程成本** —— 优先取商品行 `headTripCost`；缺值时需接自定义报表宽表（`headTripPrice`）或人工核查。
+- **头程成本** —— 优先取商品行 `headTripCost`；缺值需人工核查（宽表口径转 custom-report-analysis 技能）。
 - **竞品/关键词情报** —— 需外部 MCP（Tavily/Sorftime/Keepa）或人工调研，否则标「需人工核查」。
 - 空数据（`data:{}`）标「无数据」，**不写 0**；演示环境数据必须警示。
 
@@ -230,4 +226,3 @@ python3 scripts/listing_launch.py ... --confirm-assets
 1. 文案是否符合品类调性？（可回填 `--copy-json` 迭代）
 2. 素材数量/规格是否合适？（调整 `config/launch.yaml → asset_plan`）
 3. 是否要把某次填写的字符限制/单价回写到配置，供下次复用？（渐进式记忆）
-4. 是否需要把上架包写入飞书供协作审阅？（演示环境默认阻断）

@@ -1,18 +1,19 @@
-"""05-profit-diagnosis 修复回归测试（2026-10-16 评测问题）。
+"""05-profit-diagnosis 修复回归测试（2026-10-16 评测问题；2026-10-22 去飞书/去自定义报表改写）。
 
 直测九条修复的行为（零网络，只喂合成落盘信封）：
   1. [P1] reimbursement 消费后注册进 sources；「本次记录数/状态」按真实落盘信封
      （有信封=已取数 N 批 M 行 / data 空=无数据 / failed=失败带 error_code / 缺文件=未取数）；
   2. [P1] 归因符号运行时判定：费用类因子按基期行中位值判定实际存储符号，正号存储（线上
-     msku 报表实测口径）时修正贡献方向并在报告披露；收入类因子（productSales/
-     reimbursementAmount）不校准；
+     msku 报表实测口径）时修正贡献方向并在报告披露；收入类因子（productSales）不校准；
   3. failed 信封在 coverage 行标「取数失败（error_code：X）」，不再混同「无数据」；
   4. 核心结论按真实状态给文案（失败→「取数失败，原因见数据说明」；无数据→现行文案）；
-  5. 延期区块为空时补第三种真实原因（主源 failed 无 MSKU 锚点）；
+  5. 延期区块改为固定分工披露（宽表因子由 custom-report-analysis 承接）+ 赔偿条数核对；
   6. 请求 ASIN 0 命中披露：信封 scope.search_contents 提取 + --asin CLI + 渲染层显式披露
      且不下任何归因结论；
   7. 落盘信封 period 与 resolve_windows 口径窗口不一致 → warnings 告警；
   9. 死配置 caliber.compare_both 从 diagnosis.yaml / attribution-rules.md 删除。
+2026-10-22：自定义报表步骤已删（宽表因子归因由 custom-report-analysis 承接），
+  残留宽表落盘不消费并披露；--report-id / --feishu 入口已移除。
 """
 from __future__ import annotations
 
@@ -63,11 +64,9 @@ WINDOWS = dict(
     cur_start=date(2026, 9, 16), cur_end=date(2026, 10, 15),
     base_start=date(2026, 8, 17), base_end=date(2026, 9, 15),
 )
-# 与 WINDOWS 对齐的信封 period（msku/shop 报表用 yyyyMMdd，custom 用 yyyy-MM-dd）
+# 与 WINDOWS 对齐的信封 period（msku/shop 报表用 yyyyMMdd；yyyy-MM-dd 形态亦被归一化识别）
 P_CUR = {"start_date": "20260916", "end_date": "20261015", "date_type": 2}
 P_BASE = {"start_date": "20260817", "end_date": "20260915", "date_type": 2}
-P_CUR_ISO = {"start_date": "2026-09-16", "end_date": "2026-10-15"}
-P_BASE_ISO = {"start_date": "2026-08-17", "end_date": "2026-09-15"}
 
 
 # ---------------------------------------------------------------------------
@@ -104,14 +103,6 @@ def msku_row(msku="MSKU-A001", asin="B0TESTA001", *, sales, gross, commission, f
     }
 
 
-def custom_row(msku="MSKU-A001", asin="B0TESTA001", *, purchase=1500, headtrip=400,
-               reimb=120, wl=15, mfi=5, deferred=0):
-    return {"msku": [msku], "asin": [{"key": asin}], "shopId": [{"key": "美国站-主店铺"}],
-            "currency": "USD", "purchaseCost": purchase, "headTripPrice": headtrip,
-            "reimbursementAmount": reimb, "warehouseLostAmount": wl,
-            "missingFromInboundAmount": mfi, "deferredAmount": deferred}
-
-
 def reimb_rows(msku="MSKU-A001", amounts=(25.0, 15.0)):
     return [{"caseId": f"R-F{i}", "msku": msku, "amount": a, "status": "已到账",
              "reason": "WAREHOUSE_LOST"} for i, a in enumerate(amounts, 1)]
@@ -144,15 +135,15 @@ POS = dict(cur=dict(sales=7000, gross=1200, commission=950, fba=1380, cpc=1250,
 CFG = _bootstrap.load_diagnosis()
 
 
-def assemble(raw: Path, *, report_id=None):
+def assemble(raw: Path):
     return fetch_profit.assemble_all(
-        report_id=report_id, shop_ids=[], skill_cfg=CFG, raw_dir=raw, **WINDOWS)
+        shop_ids=[], skill_cfg=CFG, raw_dir=raw, **WINDOWS)
 
 
 def render_md(report, result, **meta_over):
     meta = {
         "sources": result.sources, "coverage": result.coverage, "warnings": result.warnings,
-        "demo_fingerprint": result.demo_fingerprint, "degraded": result.degraded,
+        "demo_fingerprint": result.demo_fingerprint,
         "caliber": result.caliber, "report_currency": "USD", "cost_currency": "CNY",
         "top_n": 20, "include_deferred_section": True,
         "reimbursement_count": result.reimbursement_status, "mcp_calls": result.mcp_calls,
@@ -162,8 +153,7 @@ def render_md(report, result, **meta_over):
 
 
 def diagnose_result(result):
-    return diagnose_mod.diagnose(msku_rows=result.msku_rows,
-                                 custom_rows=result.custom_rows, skill_cfg=CFG)
+    return diagnose_mod.diagnose(msku_rows=result.msku_rows, skill_cfg=CFG)
 
 
 class TempRawMixin:
@@ -241,17 +231,10 @@ class ReimbursementDisclosureTest(TempRawMixin, unittest.TestCase):
 # ---------------------------------------------------------------------------
 class RuntimeSignCalibrationTest(TempRawMixin, unittest.TestCase):
 
-    def _factors(self, pair, with_custom=False):
+    def _factors(self, pair):
         raw = self.raw()
         msku_pair(raw, **pair)
-        if with_custom:
-            write(raw, "custom_current.json",
-                  envelope([custom_row(reimb=0, deferred=350)], list_key="rows", period=P_CUR_ISO,
-                           tool_id="get_custom_report_page_list"))
-            write(raw, "custom_base.json",
-                  envelope([custom_row(reimb=120, deferred=0)], list_key="rows", period=P_BASE_ISO,
-                           tool_id="get_custom_report_page_list"))
-        result = assemble(raw, report_id="RID-TEST" if with_custom else None)
+        result = assemble(raw)
         report = diagnose_result(result)
         diag = next(m for m in report.mskus if m.msku == "MSKU-A001")
         return result, report, {f.key: f for f in diag.factors}
@@ -270,29 +253,22 @@ class RuntimeSignCalibrationTest(TempRawMixin, unittest.TestCase):
         self.assertEqual(round(fk_neg["fba_fulfillment"].contribution), 180)
 
     def test_revenue_like_factors_never_calibrated(self):
-        """收入类因子（productSales / reimbursementAmount）恒正存储，不做符号校准。"""
+        """收入类因子（productSales）恒正存储，不做符号校准；宽表收入类因子已删除。"""
         raw = self.raw()
         msku_pair(raw, **POS)
-        write(raw, "custom_current.json",
-              envelope([custom_row(reimb=0, deferred=0)], list_key="rows", period=P_CUR_ISO,
-                       tool_id="get_custom_report_page_list"))
-        write(raw, "custom_base.json",
-              envelope([custom_row(reimb=120, deferred=0)], list_key="rows", period=P_BASE_ISO,
-                       tool_id="get_custom_report_page_list"))
-        result = assemble(raw, report_id="RID-TEST")
+        result = assemble(raw)
         report = diagnose_result(result)
         diag = next(m for m in report.mskus if m.msku == "MSKU-A001")
         fk = {f.key: f for f in diag.factors}
         self.assertEqual(round(fk["sales"].contribution), 2000)
         self.assertFalse(fk["sales"].sign_calibrated)
-        # 赔偿收窄 120→0 判为拉住毛利 +120（漏领方向），不得被费用校准翻成 -120
-        self.assertEqual(round(fk["reimbursement"].contribution), 120)
-        self.assertFalse(fk["reimbursement"].sign_calibrated)
         cal = diagnose_mod.storage_sign_calibration(
-            result.msku_rows, result.custom_rows, CFG["attribution"]["factors"])
+            result.msku_rows, CFG["attribution"]["factors"])
         self.assertNotIn("product_sales", cal)
-        self.assertNotIn("reimbursement_amount", cal)
         self.assertIn("cpc_cost", cal)  # 费用类因子仍被校准
+        # 宽表收入类因子（reimbursementAmount）已不在因子表 —— 不参与校准也不参与归因
+        self.assertNotIn("reimbursement_amount", diagnose_mod.REVENUE_LIKE_FIELDS)
+        self.assertNotIn("reimbursement", {f.get("key") for f in CFG["attribution"]["factors"]})
 
     def test_calibration_skips_zero_median(self):
         """基期中位值恰为 0（无法判定存储符号）→ 保持配置缺省，不校准。"""
@@ -302,7 +278,7 @@ class RuntimeSignCalibrationTest(TempRawMixin, unittest.TestCase):
                             cpc=0, storage=200, refund=180))
         result = assemble(raw)
         cal = diagnose_mod.storage_sign_calibration(
-            result.msku_rows, [], CFG["attribution"]["factors"])
+            result.msku_rows, CFG["attribution"]["factors"])
         self.assertNotIn("cpc_cost", cal)
 
     def test_disclosure_rendered_under_attribution_table(self):
@@ -358,17 +334,43 @@ class CoreConclusionFailureTextTest(TempRawMixin, unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 修复#5：延期区块空因补全（第三种真实原因）
+# 修复#5：延期区块改为固定分工披露（宽表因子由 custom-report-analysis 承接）
 # ---------------------------------------------------------------------------
-class DeferredEmptyReasonsTest(TempRawMixin, unittest.TestCase):
+class DeferredSectionHandoffTest(TempRawMixin, unittest.TestCase):
 
-    def test_third_reason_listed(self):
-        result = fetch_profit.FetchResult()
-        md = render_md(diagnose_mod.DiagnosisReport(), result, mcp_calls=7)
-        self.assertIn("(c) 主源 `get_profit_report_by_msku` 取数失败或未取回行", md)
-        self.assertIn("无 MSKU 锚点", md)
-        self.assertIn("(a) 未配置自定义报表", md)
-        self.assertIn("(b) 该期确无此类金额", md)
+    def test_fixed_handoff_disclosed(self):
+        raw = self.raw()
+        msku_pair(raw, **NEG)
+        result = assemble(raw)
+        md = render_md(diagnose_result(result), result)
+        self.assertIn("延期结算与赔偿", md)
+        self.assertIn("custom-report-analysis", md)
+        self.assertIn("本报告不取值、不编造", md)
+        # 固定分工披露在「利润口径」区也出现（不是条件性口径降级）
+        self.assertIn("口径分工（固定）", md)
+        self.assertNotIn("口径降级", md)
+
+    def test_reimbursement_count_still_reported(self):
+        raw = self.raw()
+        msku_pair(raw, **NEG)
+        write(raw, "reimbursement.json",
+              envelope(reimb_rows(), list_key="rows", tool_id="get_amazon_reimbursement_report"))
+        result = assemble(raw)
+        md = render_md(diagnose_result(result), result)
+        self.assertIn("get_amazon_reimbursement_report", md)
+        self.assertIn("（本次记录数 / 状态：已取数 1 批 / 2 行）", md)
+
+    def test_stale_custom_raw_not_consumed_but_disclosed(self):
+        """残留宽表落盘不消费，coverage 披露承接说明（mcp_calls 只计 msku 两份）。"""
+        raw = self.raw()
+        msku_pair(raw, **NEG)
+        write(raw, "custom_current.json",
+              envelope([{"msku": ["MSKU-A001"], "purchaseCost": 9999}], list_key="rows",
+                       tool_id="get_custom_report_page_list"))
+        result = assemble(raw)
+        self.assertEqual(result.mcp_calls, 2)
+        self.assertTrue(any("custom-report-analysis" in c and "未消费" in c
+                            for c in result.coverage), result.coverage)
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +422,7 @@ class AsinMissDisclosureTest(TempRawMixin, unittest.TestCase):
             out = Path(td) / "report.md"
             proc = subprocess.run(
                 [sys.executable, str(SCRIPTS / "run_profit_diagnosis.py"),
-                 "--end", "2026-10-15", "--report-id", "RID-TEST",
+                 "--end", "2026-10-15",
                  "--raw-dir", str(raw), "--asin", "B0MOCKA001", "--out", str(out),
                  "--keep-md"],
                 capture_output=True, text=True, timeout=120,
@@ -433,6 +435,16 @@ class AsinMissDisclosureTest(TempRawMixin, unittest.TestCase):
             self.assertIn("不下任何归因结论", md)
             self.assertNotIn("贡献额", md)
             self.assertIn("（本次记录数 / 状态：已取数 1 批 / 2 行）", md)
+
+    def test_cli_no_feishu_or_report_id_flags(self):
+        """去飞书/去自定义报表后：CLI 不再有 --feishu / --report-id 入口。"""
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "run_profit_diagnosis.py"), "--help"],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(proc.returncode, 0)
+        self.assertNotIn("--feishu", proc.stdout)
+        self.assertNotIn("--report-id", proc.stdout)
 
 
 # ---------------------------------------------------------------------------
@@ -451,20 +463,16 @@ class WindowConsistencyTest(TempRawMixin, unittest.TestCase):
         self.assertIn("2026-08-17~2026-09-15", hit[0])  # 口径窗口并列呈现，可人工核对
 
     def test_iso_period_mismatch_warned_and_match_silent(self):
+        """yyyy-MM-dd 形态的 period 失配要告警；口径一致时不告警。"""
         raw = self.raw()
-        msku_pair(raw, **NEG)
-        write(raw, "custom_current.json",
-              envelope([custom_row()], list_key="rows",
-                       period={"start_date": "2026-09-16 00:00:00", "end_date": "2026-10-14 23:59:59"},
-                       tool_id="get_custom_report_page_list"))
-        write(raw, "custom_base.json",
-              envelope([custom_row()], list_key="rows", period=P_BASE_ISO,
-                       tool_id="get_custom_report_page_list"))
-        result = assemble(raw, report_id="RID-TEST")
+        msku_pair(raw, **NEG,
+                  cur_period={"start_date": "2026-09-16 00:00:00", "end_date": "2026-10-14 23:59:59"},
+                  base_period=P_BASE)
+        result = assemble(raw)
         hits = [w for w in result.warnings if "落盘信封请求窗口" in w]
         self.assertEqual(len(hits), 1, result.warnings)
         self.assertIn("2026-09-16~2026-10-14", hits[0])
-        # base 窗口（yyyy-MM-dd 形态）与口径一致 → 不告警
+        # base 窗口（yyyyMMdd 形态）与口径一致 → 不告警
         self.assertFalse(any("2026-08-17~2026-09-15" in w and "落盘信封请求窗口" in w
                              for w in result.warnings))
 

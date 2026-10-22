@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """利润异常诊断 —— 归因引擎。
 
-把两个宽表（msku 171 字段 + 自定义 489 字段）**收敛成 3~5 条归因**。
+把 MSKU 利润报表（171 字段）**收敛成 3~5 条归因**。
 
 方法论（为什么这样设计）：
   1. 不做「字段排行榜」。171 个字段里绝大多数是别的字段的比率/占比，直接排序会得出一堆同源结论。
-     所以先把因子收敛成**互相独立、金额可加**的十来条（见 config/diagnosis.yaml → attribution.factors）。
+     所以先把因子收敛成**互相独立、金额可加**的数条（见 config/diagnosis.yaml → attribution.factors）。
   2. 每条因子只算一个数：**它对毛利跌幅的贡献额**（contribution_to_drop）。贡献额可加，
      因此能回答「毛利少赚的这 8 万，分别是谁吃掉的」—— 这才是归因，而不是罗列。
-  3. 符号按配置显式声明（profit_sign），因为赛狐报表里费用字段的存储符号不统一
-     （msku 侧与自定义报表侧不同；线上实测 msku 侧费用为正数）。靠猜必反向。
+  3. 符号按配置显式声明（profit_sign），因为赛狐报表里**费用字段的存储符号不统一**。
+     靠猜必反向。
      ⚠️ profit_sign 只是**缺省假设**：归因前对每个费用类因子取基期行的中位数值做
      运行时符号校准（`storage_sign_calibration`），实测存储符号与假设不符时按实测符号
      修正贡献方向并在报告披露；收入类因子（收入恒正）不校准。
 
 边界：本模块只做**算术归因**，不做因果推断。因子间相关（如销售额跌会连带佣金跌）会在
-输出里提示，交由人判断。
+输出里提示，交由人判断。自定义报表（489 宽表）因子已不在本技能归因范围，
+由 `custom-report-analysis` 技能承接（固定口径，渲染层固定披露）。
 
 依赖：仅标准库 + 上层 fetch_profit。
 """
@@ -119,8 +120,7 @@ def _delta(cur: Optional[float], base: Optional[float]) -> Optional[float]:
 # 运行时符号校准（评测线上问题 N1：msku 报表费用线上实测为正数存储）
 # ---------------------------------------------------------------------------
 #: 收入类因子的规范字段（值越大对利润越有利、恒为正号存储）——不做符号校准（收入恒正）。
-#: reimbursementAmount 是「应收回的钱」，语义同收入（金额为正、越大越好）。
-REVENUE_LIKE_FIELDS = frozenset({"product_sales", "revenue", "reimbursement_amount"})
+REVENUE_LIKE_FIELDS = frozenset({"product_sales", "revenue"})
 
 
 def _median(values: Sequence[float]) -> Optional[float]:
@@ -135,7 +135,6 @@ def _median(values: Sequence[float]) -> Optional[float]:
 
 def storage_sign_calibration(
     msku_rows: Sequence[Dict[str, Any]],
-    custom_rows: Sequence[Dict[str, Any]],
     factors_cfg: Sequence[Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
     """对每个**费用类因子**做运行时存储符号判定。
@@ -148,7 +147,6 @@ def storage_sign_calibration(
     符号计算并在报告归因表脚注披露。收入类因子（恒正存储）不校准。
     """
     base_msku = [r for r in msku_rows if r.get("_window") == "baseline"]
-    base_custom = [r for r in custom_rows if r.get("_window") == "baseline"]
     out: Dict[str, Dict[str, Any]] = {}
     for f in factors_cfg:
         raw = str(f.get("field", ""))
@@ -156,7 +154,9 @@ def storage_sign_calibration(
         if canon in REVENUE_LIKE_FIELDS:
             continue
         tool = str(f.get("tool") or source_tool_for(canon))
-        rows = base_msku if tool == "get_profit_report_by_msku" else base_custom
+        if tool != "get_profit_report_by_msku":
+            continue  # 自定义报表因子已不在本技能归因范围（custom-report-analysis 承接）
+        rows = base_msku
         vals = [r.get(canon) for r in rows if isinstance(r.get(canon), (int, float))]
         median = _median(vals)
         if median is None or median == 0:
@@ -182,8 +182,6 @@ def attribute_one(
     msku: str,
     msku_cur: Optional[Dict[str, Any]],
     msku_base: Optional[Dict[str, Any]],
-    custom_cur: Optional[Dict[str, Any]],
-    custom_base: Optional[Dict[str, Any]],
     *,
     factors_cfg: Sequence[Dict[str, Any]],
     attribution_cfg: Dict[str, Any],
@@ -218,14 +216,33 @@ def attribute_one(
     if diag.gross_profit_delta is not None:
         diag.gross_profit_drop = -diag.gross_profit_delta  # 跌幅取正
 
-    # 每条因子：找到记录中的值（来源工具不同，去各自的记录里取）
+    # 每条因子：找到记录中的值（全部因子来自 msku 报表）
     for f in factors_cfg:
         raw = str(f.get("field", ""))
         canon = canonical_for(raw)
         tool = str(f.get("tool") or source_tool_for(canon))
         sign = float(f.get("profit_sign", 1))
-        cur_row = msku_cur if tool == "get_profit_report_by_msku" else custom_cur
-        base_row = msku_base if tool == "get_profit_report_by_msku" else custom_base
+        if tool != "get_profit_report_by_msku":
+            # 自定义报表因子已不在本技能归因范围（由 custom-report-analysis 承接）：
+            # 配置若仍残留此类因子，按「需人工核查」标注，不取值、不编造。
+            result = FactorResult(
+                key=str(f.get("key", raw)),
+                label=str(f.get("label", raw)),
+                tool=tool,
+                raw_field=raw,
+                canonical=canon,
+                current=None,
+                baseline=None,
+                contribution=None,
+                share_pct=None,
+                available=False,
+                reason=f"因子属 {tool}（宽表），已由 custom-report-analysis 技能承接，本技能不取值",
+                hint=str(f.get("hint", "")),
+            )
+            diag.unavailable_factors.append(result)
+            continue
+        cur_row = msku_cur
+        base_row = msku_base
 
         cur_val = cur_row.get(canon) if cur_row else None
         base_val = base_row.get(canon) if base_row else None
@@ -315,11 +332,10 @@ def _is_severe(diag: MskuDiagnosis, *, drop_pct_vs_30d: float, rate_min: float) 
 def diagnose(
     *,
     msku_rows: Sequence[Dict[str, Any]],
-    custom_rows: Sequence[Dict[str, Any]],
     skill_cfg: Dict[str, Any],
     profit_thresholds: Optional[Dict[str, Any]] = None,
 ) -> DiagnosisReport:
-    """全量归因。msku_rows / custom_rows 都带 _window 标记（current / baseline）。"""
+    """全量归因。msku_rows 带 _window 标记（current / baseline）。"""
     factors_cfg = (skill_cfg.get("attribution") or {}).get("factors") or []
     attribution_cfg = skill_cfg.get("attribution") or {}
     profit_th = profit_thresholds or {}
@@ -335,11 +351,10 @@ def diagnose(
         return result
 
     msku_cur, msku_base = _by_window(msku_rows)
-    custom_cur, custom_base = _by_window(custom_rows)
 
     # 运行时符号校准（评测线上问题 N1）：费用类因子按基期行中位值判定实际存储符号，
     # 与配置 profit_sign 推导的假设不符时修正贡献方向并在报告披露（收入类因子不校准）。
-    sign_calibration = storage_sign_calibration(msku_rows, custom_rows, factors_cfg)
+    sign_calibration = storage_sign_calibration(msku_rows, factors_cfg)
 
     # 以「本期有数据」的 MSKU 为主体；基期缺失也保留（标注需人工核查）
     keys = list(msku_cur.keys()) or list(msku_base.keys())
@@ -351,7 +366,6 @@ def diagnose(
         diag = attribute_one(
             msku,
             msku_cur.get(msku), msku_base.get(msku),
-            custom_cur.get(msku), custom_base.get(msku),
             factors_cfg=factors_cfg,
             attribution_cfg=attribution_cfg,
             sign_calibration=sign_calibration,

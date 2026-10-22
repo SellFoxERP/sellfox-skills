@@ -6,55 +6,56 @@
 ## 目录
 
 - [1. 评论相关字段的存在性（关键）](#1-评论相关字段的存在性关键)
-- [2. 三个数据源的列表字段名](#2-三个数据源的列表字段名)
+- [2. 数据源的列表字段名](#2-数据源的列表字段名)
 - [3. 辅助维度字段](#3-辅助维度字段)
 - [4. 取不到的字段（需人工核查）](#4-取不到的字段需人工核查)
 - [5. 外部评论 MCP 契约](#5-外部评论-mcp-契约)
 
 ## 1. 评论相关字段的存在性（关键）
 
-| 字段 | `get_custom_report_page_list` | `get_online_product_page_list` | 说明 |
+| 字段 | `get_custom_report_page_list` | `get_online_product_page_list` | 本技能是否使用 |
 |---|---|---|---|
-| `rating` | ✅ | ✅ | 评分，字符串（实测样例 `"4.5"`） |
-| `ratingCount` | ✅ | ✅ | 评论数 |
-| `lowReviewNum` | ✅ | ❌ | **差评数，只在 489 宽表** |
-| `reviewNum` | ✅ | ❌ | **评论总数，只在 489 宽表** |
-| `reviewRate` | ✅ | ❌ | **好评率/评分率，只在 489 宽表** |
+| `rating` | ✅ | ✅ | ✅ online 快照（主源） |
+| `ratingCount` | ✅ | ✅ | ✅ online 快照（小样本下界） |
+| `lowReviewNum` | ✅ | ❌ | ❌ 已由 custom-report-analysis 承接 |
+| `reviewNum` | ✅ | ❌ | ❌ 已由 custom-report-analysis 承接 |
+| `reviewRate` | ✅ | ❌ | ❌ 已由 custom-report-analysis 承接 |
 
 > ⚠️ **最常见的隐性错误**：以为 online 侧也有 `lowReviewNum`。
 > 实际取不到时**不报错**，会让「差评数」恒为空而无人察觉。
+> 需要差评数/好评率及其环比时转 `custom-report-analysis` 技能（489 宽表）。
 
 > ⚠️ **勿把真实字段误判为不存在**（历史上发生过，已被纠正）：
 > `adOrderConversionRate` / `threeSaleNum` 经一手实测确认为**真实字段**。
 > 判断字段是否存在，一律查 _shared/FIELD_DICTIONARY.md 与当前 MCP 契约，不凭记忆。
 
-## 2. 三个数据源的列表字段名
+## 2. 数据源的列表字段名
 
 列表字段名**因工具而异**，用错会拿到空结果且不报错（铁律 5）：
 
 | 类型 | 列表字段 | 本技能涉及 |
 |---|---|---|
-| 分页类 | `data.rows` | `get_custom_report_page_list`、`get_online_product_page_list` |
+| 分页类 | `data.rows` | `get_online_product_page_list`（本技能主源） |
 | 利润报表 | `data.reportList` | （本技能不用） |
 | 广告类（游标） | `data.itemList` + `data.nextToken` | （本技能不用） |
 
-本技能两个工具都是 `rows`；但仍要求 `call_paged(..., list_key="rows")` 显式声明，
-避免未来换工具时踩坑。
+本技能工具用 `rows`；仍要求显式声明 `list_key="rows"`，避免未来换工具时踩坑。
 
 ## 3. 辅助维度字段
 
 | 字段 | 数据源 | 用途 |
 |---|---|---|
-| `asin` | 两者 | VOC 归因主键（外部评论按 ASIN 拉） |
+| `asin` | online（本技能）/ 两者 | VOC 归因主键（外部评论按 ASIN 拉） |
 | `parentAsin` | 两者 | 变体聚合；外部源常按父 ASIN，注意粒度差异 |
-| `msku` | **仅 custom** | 定位到具体变体/配色 |
-| `sku` | 两者 | 变体标识 |
+| `sku` | online（本技能）/ 两者 | 变体标识 |
 | `shopId` | 两者 | 店铺（告警路由） |
 | `marketplaceId` | 两者 | 站点（外部源分市场，口径须对齐） |
 | `title` | 两者 | 辅助判断「描述不符」 |
 | `mainImage` | 两者 | 辅助判断「色差/与图不符」 |
-| `saleNum` | 两者 | 影响面排序（有销量的差评优先深挖） |
-| `buyBoxPercent` | **仅 custom** | 丢购物车可能与差评并发，辅助关联 |
+| `saleNum` | online 侧为 `day7SaleNum` 等；宽表侧 `saleNum` 已不在本技能 | 影响面排序（有销量的低分优先深挖） |
+
+> `msku` / `buyBoxPercent` / `saleNum`（宽表侧）只在 custom 报表，已由
+> `custom-report-analysis` 承接，本技能不取。
 
 完整映射见 `config/field-map.yaml`。
 
@@ -81,5 +82,5 @@
 
 可选：`title` `date` `reviewer_id` `reviewer_name`(PII) `marketplace` `verified` `helpful_votes`。
 
-`reviewer_name` 写入任何外部文档前**必须掩码**；`reviewer_id` 用于数独立评论者。
+`reviewer_name` 写入任何对外输出前**必须掩码**；`reviewer_id` 用于数独立评论者。
 详见 `config/field-map.yaml → external_review_contract` 与 `adapters/README.md`。

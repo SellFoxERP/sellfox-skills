@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -213,3 +214,87 @@ if __name__ == "__main__":  # pragma: no cover
         "日期过滤不可信:",
         detect_date_filter_unreliable(dates, "2026-10-01", "2026-10-14"),
     )
+
+# ---------------------------------------------------------------------------
+# PII 脱敏（v1.7.0 自 feishu_writer 迁入；飞书能力已整体移除）
+# ---------------------------------------------------------------------------
+
+def mask_email(value: str) -> str:
+    """掩码邮箱：``ab***@example.com``。"""
+    if not value or "@" not in value:
+        return "***"
+    local, _, domain = value.partition("@")
+    head = local[:2] if len(local) > 2 else local[:1]
+    return f"{head}***@{domain}"
+
+
+def mask_name(value: str) -> str:
+    """掩码姓名：保留首字符，其余用 ``*`` 代替。"""
+    if not value:
+        return "***"
+    if len(value) == 1:
+        return value + "*"
+    return value[0] + "*" * (len(value) - 1)
+
+
+def mask_pii(value: Any) -> Any:
+    """递归脱敏任意结构中的 PII 字段（``buyerEmail`` / ``buyerName`` 等）。
+
+    写入飞书或任何外部文档前**必须**先过这一层。
+    返回新对象，不修改入参。
+    """
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            if k in ("buyerEmail", "buyer_email"):
+                out[k] = mask_email(str(v))
+            elif k in ("buyerName", "buyer_name"):
+                out[k] = mask_name(str(v))
+            elif k in ("buyerAddress", "buyer_address"):
+                out[k] = "***"
+            else:
+                out[k] = mask_pii(v)
+        return out
+    if isinstance(value, list):
+        return [mask_pii(v) for v in value]
+    return value
+
+
+def mask_pii_in_text(text: str) -> str:
+    """对已渲染的文本做行级 PII 兜底脱敏（防漏网的 ``buyerEmail`` / ``buyerName``）。
+
+    支持 ``buyerEmail: xxx@yyy`` / ``buyerEmail=xxx@yyy`` 形态。
+    邮箱值按非空白 token 捕获（邮箱不含空格）；姓名值捕获到行尾/分隔符为止
+    （含中间空格），避免英文姓名只掩名不掩姓。先掩邮箱再掩姓名。
+    """
+    email_pattern = re.compile(
+        r"(buyerEmail|buyer_email)\s*[:=]\s*([^\s,;，；]+)", re.IGNORECASE
+    )
+    name_pattern = re.compile(
+        r"(buyerName|buyer_name)\s*[:=]\s*([^\n,;，；]+?)(?=\s*$|[,;，；])",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+    text = email_pattern.sub(
+        lambda m: f"{m.group(1)}: {mask_email(m.group(2))}", text
+    )
+    return name_pattern.sub(
+        lambda m: f"{m.group(1)}: {mask_name(m.group(2).strip())}", text
+    )
+
+
+def guard_demo(payload: Any, *, override: bool = False) -> Optional[str]:
+    """演示环境外部写出闸门（原飞书写入闸，v1.7.0 起为通用外部出口闸）。
+
+    命中演示指纹时：默认抛 :class:`RuntimeError` 阻断外部写出；``override=True``
+    时仅返回指纹并放行（但输出仍须加水印）。
+
+    :returns: 命中的指纹（无则 ``None``）。
+    """
+    fingerprint = detect_demo_environment(payload)
+    if fingerprint and not override:
+        raise RuntimeError(
+            f"⚠️ 检测到演示环境指纹「{fingerprint}」，已默认阻断外部写出。"
+            "确需写出请显式传 override=True，并在输出顶部加水印。"
+        )
+    return fingerprint

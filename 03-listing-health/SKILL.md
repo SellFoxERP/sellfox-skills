@@ -3,11 +3,6 @@ name: listing-health
 description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑制（onlineStatus）、丢购物车、无流量、有流量无转化、评分下滑、BSR 恶化、价格劣势、标签缺失，输出按严重度排序的问题清单（只诊断不修改）。当用户提到"Listing 体检""链接健康""链接体检""不可售""被抑制""丢购物车""buybox 掉了""没流量""有流量没转化""转化下滑""评分掉""BSR 掉排名""标签没打""这个 listing 有问题""帮我看下这些链接"，或要求排查某个 ASIN/店铺在售商品的异常、新品上架后跟踪、断货导致的排名下滑时，务必使用本技能，即使用户没说"体检"二字。
 ---
 
-## 报表自动发现
-
-任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
-匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
-
 ## 运行环境与路径
 
 以本文件所在目录为技能根目录，执行脚本前切换到该目录，使用 Python 3.10+。
@@ -18,9 +13,9 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
 `help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
 已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
-下文“零网络”仅指赛狐取数后的离线计算；飞书和审批通知模块会联网。
-默认输出本地报告；只有用户要求时才启用飞书或外部服务。没有原始数据时仅说明缺口或产出
-明确标识的模板，不能把空数据报告当作经营正常的结论。
+下文“零网络”指赛狐取数后的离线计算。报告仅本地 HTML，不外发
+（飞书写入能力 v1.7.0 已移除；演示数据仅加顶部水印，不外发）。
+没有原始数据时仅说明缺口或产出明确标识的模板，不能把空数据报告当作经营正常的结论。
 
 # Listing 健康体检
 
@@ -46,16 +41,17 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 - `references/report-template.md` — **渲染输出前必读**：问题清单模板与字段来源标注规则。
 - `references/listing-fields.md` — 需要核对某字段属于哪个工具、或判断能否取值时读。
 - `_shared/SELLFOX_CLIENT.md` — MCP 调用约定（契约版本门禁、参数类型、错误语义、落盘纪律），**agent 取数前必读**。
-- `_shared/APPROVAL.md` — 本技能只读，本不涉及写操作；若你要把报告推到飞书，读它的「PII 脱敏 + 演示环境阻断」两节。
 
 ## 能力边界（诚实写清）
 
-**本技能能做**：读 `get_online_product_page_list` / `get_product_analyze_list` / `get_product_by_label`，可选叠加 `get_custom_report_page_list`（宽表），产出问题清单。
+**本技能能做**：读 `get_online_product_page_list` / `get_product_analyze_list` / `get_product_by_label`，产出问题清单。
+
+**v1.7.0 起不再调用 `get_custom_report_page_list`（自定义报表宽表）**，也不依赖 `report_id`。
 
 **本技能不做**：
 1. **不修改任何 Listing**（无接口能力，也不该做）。
 2. **拿不到**：竞品 BuyBox 价、类目平均转化率基准、账户健康/绩效通知/政策合规状态、评论原文。这些一律标 **⚠️ 需人工核查**。
-3. **无 `report_id` 时**，`sessions`/`pageViews`/`conversionRate`/`buyBoxPercent`/`lowReviewNum`/`bigCategoryRanking`/`smallCategoryRanking`/`availableDays` **取不到**。宽表（`get_custom_report_page_list`，489 字段）是这些字段的**首选源**；线上 `get_product_analyze_list` 契约的 `fields` 亦含 sessions/pageView/buyBoxPercent/conversionRate/availableDays/lowReviewNum/reviewNum 等，**可作替代源**（以当次契约为准）。两者都未取到时技能会**显式降级并列出口径降级说明**，不会用别的字段冒充。
+3. `sessions`/`pageViews`/`conversionRate`/`buyBoxPercent`/`lowReviewNum`/`bigCategoryRanking`/`smallCategoryRanking`/`availableDays` 等**宽表专属字段取不到**——固定标「⚠️ 需人工核查——由 `custom-report-analysis` 技能承接」；线上 `get_product_analyze_list` 契约的 `fields` 亦含 sessions/pageView/buyBoxPercent/conversionRate/availableDays/lowReviewNum/reviewNum 等，**可作替代源**（以当次契约为准）。技能会**显式降级并列出口径降级说明**，不会用别的字段冒充。
 4. **不得把截图、竞品页面、人工观察当作本技能结论**——本技能结论只来自上列接口字段。
 
 ## 执行流程
@@ -66,10 +62,10 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 
 **先做前置校验并写入报告顶部**：
 - **客户端 MCP 就绪**：会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（Key 只在客户端 MCP 配置里，脚本**不需要** `SELLFOX_MCP_KEY`，也**不得自己发 HTTP**）。若数据源为演示/沙箱环境，运行时指纹识别后加水印并默认阻断写入。
-- 读 `config/paths.yaml` 解析 `shared_root`（为空走同仓库同级兜底）；读 `_shared/config/thresholds.yaml`（`listing` 段）与 `_shared/config/reports.yaml`。
-- **report_id**：`reports.yaml → daily_ops.id` 为空 → 启用**降级路径**（只用 online 字段），并在报告显式写「口径降级：缺少自定义报表，流量/购物车占比/CVR 等不可用」。
+- 读 `config/paths.yaml` 解析 `shared_root`（为空走同仓库同级兜底）；读 `_shared/config/thresholds.yaml`（`listing` 段）。
+- **宽表边界（固定）**：不取自定义报表（由 `custom-report-analysis` 承接），报告显式写「口径降级：未接入自定义报表，流量/购物车占比/CVR 等不可用」。
 - **落盘目录**：`out/raw/` 为空 → 还没取数，先按 `references/workflow.md` 的取数计划落盘，再跑计算面。
-- **演示环境**：组装时命中 `MOCK-` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」指纹 → 报告顶部加**水印**「⚠️ 演示数据，非真实经营数据」，并默认**阻断写飞书**。
+- **演示环境**：组装时命中 `MOCK-` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」指纹 → 报告顶部加**水印**「⚠️ 演示数据，非真实经营数据」（仅加水印，不外发）。
 
 ### Step 1：取数（agent 按取数计划落盘 → 脚本校验组装）
 
@@ -79,9 +75,11 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 | 顺序 | 落盘文件 | 工具 | 列表字段 | 用途 |
 |---|---|---|---|---|
 | 1 | `online_<batch>.json`（按状态/店铺分批） | `get_online_product_page_list` | `data.rows` | 主数据源（状态/价格/评分/BSR/销量/标签/库存） |
-| 2 | `custom_report_<label>.json`（仅 report_id 就绪） | `get_custom_report_page_list` | `data.rows` | 补 sessions/CVR/buyBoxPercent/类目排名/评分明细 |
-| 3 | `product_analyze.json`（可选） | `get_product_analyze_list` | `data.rows` | 补类目名/BSR/FBM 可用天数 |
-| 4 | `labels.json`（仅配置 `labels.required_groups`） | `get_product_by_label` | `data.rows` | 校验标签覆盖 |
+| 2 | `product_analyze.json`（可选） | `get_product_analyze_list` | `data.rows` | 补类目名/BSR/FBM 可用天数 |
+| 3 | `labels.json`（仅配置 `labels.required_groups`） | `get_product_by_label` | `data.rows` | 校验标签覆盖 |
+
+> `custom_report_<label>.json`（自定义报表宽表）不再属于取数计划——宽表字段分析由
+> `custom-report-analysis` 技能承接；残留落盘一律忽略。
 
 纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（contract_version）、参数类型按当次
 inputSchema、失配重取一次、不信 `has_more` 信 `coverage`、每步落盘不复述数据；多批次**可并行发起**。
@@ -102,12 +100,12 @@ python scripts/render_report.py --in problems.json --out report.md       # 报�
 | 级别 | 问题 | 判定字段（数据源） |
 |---|---|---|
 | **P0** | 不可售 / 被删除 | `onlineStatus` 非 active（online） |
-| **P1** | 丢购物车 | `buyBoxPercent < 阈值`（custom）或 `buyBoxWinner=false`（online，退化信号） |
-| **P1** | 无流量 | `sessions` 连续 N 天为 0（custom） |
+| **P1** | 丢购物车 | `buyBoxWinner=false`（online，退化信号；占比 `buyBoxPercent` 为宽表字段 → custom-report-analysis 承接） |
+| **P1** | 无流量 | `sessions` 为宽表字段 → 固定「需人工核查（custom-report-analysis 承接）」；`get_product_analyze_list` 实测含会话字段时可作替代源 |
 | **P1** | 价格劣势 | 自身 `listingPrice`/`standardPrice` 异常（online；**缺竞品基准 → 需人工核查**） |
 | **P2** | 评分下滑 | `rating` 环比下降（online，需历史快照；`lowReviewNum` 仅 custom） |
 | **P2** | BSR 恶化 | `bsrRank[].rank` 名次变差（online）；类目名次 `big/smallCategoryRanking`（custom） |
-| **P2** | 有流量无转化 | `sessions` 高 + `conversionRate` 低（custom；**类目基准拿不到 → 需人工核查**） |
+| **P2** | 有流量无转化 | `sessions`+`conversionRate` 为宽表字段 → 固定「需人工核查（custom-report-analysis 承接）」 |
 | **P3** | 标签缺失 | `labels` / `productLabelList` 未含必填分组（online） |
 
 命中某类问题后，**加载对应 reference 拿到完整处理流程**：
@@ -126,7 +124,7 @@ python scripts/render_report.py --in problems.json --out report.md       # 报�
 3. **截断披露**：若 `max_rows` 触顶，写明「本次仅覆盖 Top N，其余未纳入」（禁止静默截断）。
 4. 诚实边界段：本技能不修改 Listing；列出需人工核查项。
 
-如用户要求推送飞书：走 `_shared/scripts/feishu_writer.py`，写入前自动 `mask_pii` 脱敏（Listing 字段无 PII，但兜底），并先过 `guard_demo`（演示环境默认阻断）。
+报告仅本地 HTML（HTML 即报告），不外发；演示数据仅加顶部水印。
 
 ## 硬约束速查（违反即为缺陷）
 
@@ -146,7 +144,7 @@ python scripts/render_report.py --in problems.json --out report.md       # 报�
 - **status=partial**：读操作可采信但必须在数据说明披露。
 - **每步取数立即落盘 `out/raw/`，不在对话中复述行级数据**（上下文是稀缺资源）。
 - **字段名/来源必须查 `config/field-map.yaml`**，不用别的字段冒充 `sessions` 等宽表字段。
-- **阈值、到货周期、目标值、report_id 一律外置**到配置文件，绝不硬编码。
+- **阈值、到货周期、目标值一律外置**到配置文件，绝不硬编码。
 - **币种**：`listingPrice` 顶层为 USD；`inventoryManage.currency` 是 CNY —— 跨币种不得直接相减。
 
 ## 阈值与配置
@@ -154,7 +152,13 @@ python scripts/render_report.py --in problems.json --out report.md       # 报�
 - 通用阈值在 `_shared/config/thresholds.yaml` 的 `listing` 段（`buybox_pct_min`、`sessions_zero_days`、`rating_drop_abs`）。
 - 技能专属参数在 `config/listing.yaml`（窗口、`max_rows`、BSR/销量降幅、降级字段清单、严重度）。
 - 字段与数据源归属在 `config/field-map.yaml`。
-- **阈值、到货周期、目标值、report_id 一律读配置，绝不硬编码**；报表 ID 缺失按共享 `ONBOARDING.md` 自动发现；其他参数缺失时按配置加载器的批量询问流程补全，并在输出中标注每个参数的【来源】：配置命中 / 本次填写 / 默认值。
+- **阈值、到货周期、目标值一律读配置，绝不硬编码**；其他参数缺失时按配置加载器的批量询问流程补全，并在输出中标注每个参数的【来源】：配置命中 / 本次填写 / 默认值。
+
+## 与相邻技能的分工
+
+- 自定义报表 / 宽表字段分析（sessions/CVR/buyBoxPercent 占比、类目排名、差评数、
+  availableDays、489 字段宽表任意列）→ `custom-report-analysis`。
+- 每日经营日报 → `daily-ops-report`；库存补货建议单 → `inventory-health`。
 
 ## 常见错误
 

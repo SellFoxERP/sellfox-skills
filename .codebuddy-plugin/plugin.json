@@ -1,7 +1,7 @@
 {
   "name": "sellfox-skills",
-  "description": "赛狐经营技能包：通用业务助手与十二个专项技能，一次安装。",
-  "version": "1.6.0",
+  "description": "赛狐经营技能包：通用业务助手与十三个专项技能，一次安装。",
+  "version": "1.7.0",
   "author": {
     "name": "SellFoxERP"
   },
@@ -19,6 +19,7 @@
     "./10-sellfox-business/SKILL.md",
     "./11-returns-loss/SKILL.md",
     "./12-new-product-review/SKILL.md",
-    "./13-sales-profit-analysis/SKILL.md"
+    "./13-sales-profit-analysis/SKILL.md",
+    "./14-custom-report-analysis/SKILL.md"
   ]
 }

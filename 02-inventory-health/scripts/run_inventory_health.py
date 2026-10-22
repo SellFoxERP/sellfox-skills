@@ -2,27 +2,31 @@
 """库存健康与补货 —— 编排入口（run_inventory_health.py，v3）。
 
 串联：前置校验 → **取数（agent 调客户端 MCP 并落盘 out/raw/）** → 校验组装
-（fetch_inventory.assemble_all，零网络）→ 计算（replenishment.compute）→ 渲染（render）→ 可选写飞书。
+（fetch_inventory.assemble_all，零网络）→ 计算（replenishment.compute）→ 渲染（render）。
+报告仅本地 HTML，不外发（飞书写入能力 v1.7.0 已移除；演示数据仅加顶部水印）。
 
 v3 前置校验（--check-only）：
-  1. 客户端已配置 Sellfox-MCP（脚本不再需要 ``SELLFOX_MCP_KEY`` —— Key 只在客户端配置里）；
-  2. ``reports.yaml`` 的 ``inventory.report_id`` 是否已回填（缺失 → 助手自动发现，无可用报表则降级）；
-  3. ``out/raw/`` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
-  4. 演示环境指纹运行期识别 → 顶部水印 + 默认阻断写飞书。
+  1. 客户端已配置 Sellfox-MCP（脚本不需要 ``SELLFOX_MCP_KEY`` —— Key 只在客户端配置里）；
+  2. ``out/raw/`` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
+  3. 演示环境指纹运行期识别 → 顶部水印（演示数据仅加水印，不外发）。
+
+口径说明（v1.7.0）：本技能**不取自定义报表宽表**（get_custom_report_page_list / report_id
+依赖已整体移除，宽表字段分析由 custom-report-analysis 技能承接）。主源为在线产品
+`get_online_product_page_list`，可售天数与建议补货量按在线产品口径**自算**，
+报告顶部固定标「口径降级」横幅。
 
 用法：
   # 0) agent 先按 references/workflow.md 取数计划调 mcp__Sellfox-MCP__* 并落盘 out/raw/
   python scripts/run_inventory_health.py --check-only          # 只做前置校验（含落盘检查）
   python scripts/run_inventory_health.py                       # 组装 → 计算 → 渲染
   python scripts/run_inventory_health.py --date 2026-09-29 --out out/inventory.md
-  python scripts/run_inventory_health.py --feishu              # 写入飞书（演示环境默认阻断）
   python scripts/run_inventory_health.py --answers '{"MOCK-SKU-001":45}' --write-back
 
 设计约束（对照 SKILL.md）：
   * 计算面零网络：只读 out/raw/ 落盘与配置文件，不 import 旧 sellfox_client。
-  * report_id 缺失 → 降级并显式标注口径降级。
+  * 未接入自定义报表（由 custom-report-analysis 承接）→ 固定按在线产品口径自算并显式标注口径降级。
   * 到货周期解析不到 → 一次性批量询问（--answers 供非交互/测试）。
-  * 演示环境命中 → 输出水印 + 默认阻断写飞书；仅 --allow-demo-write 显式放行。
+  * 演示环境命中 → 输出顶部水印（仅加水印，不外发）。
 """
 
 from __future__ import annotations
@@ -59,23 +63,9 @@ def _parse_date(text: str | None) -> date:
     return date.fromisoformat(text)
 
 
-def _resolve_report_id(loader: ConfigLoader, override: str | None) -> str | None:
-    if override:
-        return override
-    reports = loader.load("reports").get("reports") or {}
-    inv = reports.get("inventory") or {}
-    return (inv.get("id") or "").strip() or None
-
-
-def precheck(report_id: str | None, raw_dir: Path | None = None) -> list[str]:
+def precheck(raw_dir: Path | None = None) -> list[str]:
     """返回告警列表（空 = 全部就绪）。不抛异常，让技能能继续以降级模式运行。"""
     warnings: list[str] = []
-
-    if not report_id:
-        warnings.append(
-            "尚未取得适用库存报表：本次走在线产品降级口径（可售天数/建议量为自算）。"
-            "报表由助手按 ONBOARDING.md 自动发现，无需商家手工配置。"
-        )
 
     raw_dir = Path(raw_dir) if raw_dir else SKILL_DIR / "out" / "raw"
     if not raw_dir.exists() or not any(raw_dir.glob("*.json")):
@@ -88,23 +78,9 @@ def precheck(report_id: str | None, raw_dir: Path | None = None) -> list[str]:
     return warnings
 
 
-def _print_first_run_guidance(loader: ConfigLoader) -> None:
-    """首轮引导：与现行 ONBOARDING 自动发现口径一致 —— 不要求商家创建报表。"""
-    from merchant_setup import is_deferred
-    if not is_deferred('inventory'):
-        print('尚未取得适用增强报表；由助手按 ONBOARDING.md 自动发现并验证（无需商家创建/配置报表），当前先用简版。')
-    # 输出实际所缺指标口径（reports.yaml → inventory.fields_hint），不凭记忆编造清单
-    hint = ((loader.load('reports').get('reports') or {}).get('inventory') or {}).get('fields_hint')
-    if hint:
-        print(f'本次使用简版，缺少的自定义报表指标（{hint}）将以自算口径或「需人工核查」在报告中说明。')
-    else:
-        print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="库存健康体检与补货建议（只读；v3 计算面零网络）")
     ap.add_argument("--date", default=None, help="业务日 YYYY-MM-DD（默认今天）")
-    ap.add_argument("--report-id", default=None, help="覆盖 reports.yaml 的 inventory.id")
     ap.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     ap.add_argument("--check-only", action="store_true", help="只做前置校验（含 out/raw 落盘检查）")
     ap.add_argument("--answers", default=None, help='本次填写的到货周期 JSON，如 \'{"SKU":30}\'')
@@ -113,13 +89,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep-md", action="store_true",
                     help="--out 时额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--shared-root", default=None, help="覆盖 _shared 路径")
-    ap.add_argument("--feishu", action="store_true", help="写入飞书文档（演示环境默认阻断）")
-    ap.add_argument(
-        "--allow-demo-write",
-        action="store_true",
-        help="显式放行演示环境写入飞书（仍加水印）；不加此开关则演示指纹一律阻断",
-    )
-    ap.add_argument("--folder-token", default=None, help="飞书文件夹 token")
     return _run(ap.parse_args(argv))
 
 
@@ -128,38 +97,32 @@ def _run(args: argparse.Namespace) -> int:
     skill_cfg = _skill_cfg()
     loader = ConfigLoader(shared_root=shared_root(args.shared_root))
 
-    report_id = _resolve_report_id(loader, args.report_id)
-
-    # 前置校验：report_id / out/raw 落盘（v3 取数面由 agent 完成，脚本零网络零 Key）
+    # 前置校验：out/raw 落盘（v3 取数面由 agent 完成，脚本零网络零 Key）
     raw_dir = Path(args.raw_dir).expanduser() if args.raw_dir else SKILL_DIR / "out" / "raw"
     print("== 前置校验 ==")
-    warns = precheck(report_id, raw_dir)
+    warns = precheck(raw_dir)
     for w in warns:
         print(f"⚠️ {w}")
     if not warns:
-        print("✅ 前置校验通过（report_id 已配置 / 取数已落盘）")
+        print("✅ 前置校验通过（取数已落盘）")
     if args.check_only:
         return 0
     if any("取数落盘为空" in w for w in warns):
         print("❌ 无取数落盘，无法组装数据。请先由 agent 按 workflow.md 取数计划落盘。", file=sys.stderr)
         return 2
-    if not report_id:
-        _print_first_run_guidance(loader)
 
     # 校验 + 组装（零网络）：读取 agent 落盘的 out/raw/*.json
     try:
-        result: FetchResult = assemble_all(
-            raw_dir, report_id=report_id, skill_cfg=skill_cfg,
-        )
+        result: FetchResult = assemble_all(raw_dir, skill_cfg=skill_cfg)
     except SystemExit as exc:  # assemble_all 对空落盘目录抛 SystemExit（附操作指引）
         print(f"{exc.code}", file=sys.stderr)
         return 2
 
     if not result.records:
-        # 主源与降级源均不可用：报告照常产出（横幅在 render 层），但 rc=2 信号「无有效数据」，
+        # 主源（在线产品）不可用：报告照常产出（横幅在 render 层），但 rc=2 信号「无有效数据」，
         # 不允许 rc=0 的全 0 项空报告被读成「体检通过」。
         print(
-            "⚠️ 未取回任何 MSKU 记录：主源与降级源均不可用时本报告无有效数据项"
+            "⚠️ 未取回任何 MSKU 记录：在线产品源不可用时本报告无有效数据项"
             "（可能是无数据，而非全部健康）。请核对落盘文件与店铺范围。",
             file=sys.stderr,
         )
@@ -219,45 +182,8 @@ def _run(args: argparse.Namespace) -> int:
     else:
         print(markdown)
 
-    if args.feishu:
-        return _write_feishu(markdown, args, result)
-
     print("\n提示：本技能只出建议，不下采购单。到货周期可在 lead_time.yaml 维护。")
     return 2 if not result.records else 0
-
-
-def _write_feishu(markdown: str, args: argparse.Namespace, result: FetchResult) -> int:
-    try:
-        from feishu_writer import FeishuError, FeishuWriter
-    except Exception as exc:  # noqa: BLE001
-        print(f"❌ 无法加载 feishu_writer：{exc}", file=sys.stderr)
-        return 1
-    try:
-        writer = FeishuWriter()
-    except Exception as exc:  # noqa: BLE001
-        print(f"❌ 飞书初始化失败（需 app_id/app_secret）：{exc}", file=sys.stderr)
-        return 1
-
-    # 演示环境默认阻断：只有显式传 --allow-demo-write 才放行（且文档顶部已带水印）。
-    # 绝不根据「是否命中演示指纹」自动放行 —— 那样会让闸门永不放行，等于没闸门。
-    override = bool(getattr(args, "allow_demo_write", False))
-    try:
-        writer.guard_demo({"rows": result.records, "_fp": result.demo_fingerprint}, override=override)
-    except FeishuError as exc:
-        print(f"⛔ 已阻断写入飞书：{exc}", file=sys.stderr)
-        return 3
-    if result.demo_fingerprint:
-        print(
-            "⚠️ 检测到演示环境，已在 --allow-demo-write 显式放行下写入，"
-            "文档顶部含演示水印。"
-        )
-
-    title = markdown.splitlines()[0].lstrip("# ").strip() or "库存健康体检"
-    doc_id = writer.create_doc(title, folder_token=args.folder_token)
-    blocks = writer.markdown_to_blocks(markdown)  # 内含 PII 文本脱敏兜底
-    writer.write_blocks(doc_id, blocks)
-    print(f"✅ 已写入飞书文档：{doc_id}")
-    return 0
 
 
 if __name__ == "__main__":

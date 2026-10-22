@@ -9,7 +9,7 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
     （多窗口，文件名带窗口标签）。旧直连客户端 `sellfox_client.py` 已废弃，本模块不再 import。
   * **本脚本 = 计算面**：零网络，只读落盘文件——校验（存在性 / status / 空数据 /
     演示指纹 / coverage 截断），并组装出与旧版**完全相同形状**的 `weekly_data.json`，
-    compute_metrics.py / render_report.py / push_feishu.py 无需改动。
+    compute_metrics.py / render_report.py 无需改动。
 
 落盘文件 → 输出键映射（与取数计划一致；窗口值由 `scripts/period.py` 固定，不手算）：
     profit_shop_current.json     本期（最近完整自然周/月） → data.profit_current
@@ -19,10 +19,11 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
     profit_shop_mtd.json         本月累计（达成率 basis）   → data.profit_month_to_date
     profit_msku.json             MSKU 利润（本期，单文件）  → data.rank_top / data.rank_bottom
                                  （组装层本地排序：Top 按销售额降序 / Bottom 按毛利升序）
-    custom_current.json          自定义宽表（本期）         → data.custom_report
-    custom_prev*.json            宽表历史窗口（可选，当前计算面未消费）
     trend.json                   商品分析 charData（可选）  → data.char_data
     shops.json                   店铺清单（可选，计算面不依赖，仅保持形状）
+
+自定义报表（489 字段宽表）已不在本技能取数范围：流量/广告/退款等宽表指标
+由 `custom-report-analysis` 技能承接（见 SKILL.md「诚实边界」）。
 
 口径纪律（不变）：
 * 利润口径 `profit_caliber_type`（settlement/shipment）必须显式，写入 meta 并进报告「数据说明」；
@@ -55,7 +56,6 @@ from sellfox_offline import (  # type: ignore  # noqa: E402
     is_no_data,
     load_envelope,
 )
-from config_loader import ConfigLoader  # type: ignore  # noqa: E402
 
 import period as period_mod  # noqa: E402
 
@@ -74,7 +74,6 @@ PROFIT_WINDOW_STEPS: Tuple[Tuple[str, str, str], ...] = (
 
 TOOL_PROFIT_SHOP = "get_profit_report_by_shop"
 TOOL_PROFIT_MSU = "get_profit_report_by_msku"
-TOOL_CUSTOM = "get_custom_report_page_list"
 TOOL_TREND = "get_product_analyze_detail"
 TOOL_SHOPS = "get_shop_page_list"
 
@@ -204,19 +203,6 @@ def assemble_rankings(
     return source, dict(source), [], [], env
 
 
-def assemble_custom(
-    raw_dir: Path, report_id: str
-) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Optional[RawEnvelope]]:
-    """自定义宽表（489 字段，本期窗口）。缺 report_id / 缺落盘 → 降级（不崩）。"""
-    if not report_id:
-        note = ("未配置 reports.yaml → daily_ops.id，流量/广告/退款等 489 字段不可用；"
-                "助手可自动发现适用报表；当前按可得数据展示（口径降级）")
-        return _make_source("degraded", TOOL_CUSTOM, note), [], None
-    env, err = _load(raw_dir, "custom_current")
-    source, rows = _consume_envelope(env, err, TOOL_CUSTOM, "宽表（本期）", "rows")
-    return source, rows, env
-
-
 def assemble_trend(raw_dir: Path, trend_cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Any]:
     """趋势图（可选）：信封 data 里的 charData；缺失时计算层自动降级为 bizDay 日粒度。"""
     if not trend_cfg.get("enabled", True):
@@ -261,8 +247,6 @@ def fetch_all(
     raw_dir_arg: Optional[str] = None,
 ) -> Dict[str, Any]:
     cfg = skill_paths.load_skill_config("weekly")
-    loader = ConfigLoader(shared_root)
-    reports_cfg = loader.load("reports")
     fm = cfg["profit_report_fields"]
 
     plan = period_mod.build_plan(
@@ -271,7 +255,6 @@ def fetch_all(
         yoy=(cfg.get("period", {}).get("compare", {}) or {}).get("yoy", True),
     )
 
-    daily_report_id = str(((reports_cfg.get("reports") or {}).get("daily_ops") or {}).get("id") or "").strip()
     agg_currency = currency or (cfg.get("currency", {}) or {}).get("aggregate_to", "") or ""
 
     raw_dir = Path(raw_dir_arg) if raw_dir_arg else (skill_paths.SKILL_ROOT / "out" / "raw")
@@ -326,25 +309,25 @@ def fetch_all(
     data["rank_bottom"] = bottom_rows
     envs.append(env)
 
-    # 4) 自定义宽表（本期；缺 report_id → 降级）+ 历史窗口（可选，暂未消费）
-    custom_src, custom_rows, env = assemble_custom(raw_dir, daily_report_id)
-    sources["custom_report"] = custom_src
-    data["custom_report"] = custom_rows
-    envs.append(env)
-    prev_customs = sorted(p.name for p in raw_dir.glob("custom_prev*.json"))
-    if prev_customs:
-        sources["custom_prev"] = _make_source(
-            "skipped", TOOL_CUSTOM,
-            f"宽表历史窗口已落盘 {len(prev_customs)} 份（{', '.join(prev_customs)}），"
-            "当前计算面只消费 custom_current")
-
-    # 5) 趋势图（可选）
+    # 4) 趋势图（可选）
     trend_src, char_data = assemble_trend(raw_dir, cfg.get("trend") or {})
     sources["trend"] = trend_src
     data["char_data"] = char_data
     data["analyze_list"] = []  # v3 不再落盘 analyze_list；计算面仅消费 char_data
+    # 自定义宽表（custom_current.json / custom_prev*.json）已不在取数计划内；
+    # 历史落盘中存在的宽表文件一并忽略，不消费。
+    stale_customs = sorted(
+        p.name for p in raw_dir.glob("custom_current.json")
+    ) + sorted(p.name for p in raw_dir.glob("custom_prev*.json"))
+    if stale_customs:
+        sources["custom_report"] = _make_source(
+            "skipped", "get_custom_report_page_list",
+            f"宽表落盘（{', '.join(stale_customs)}）已不在本技能取数范围，未消费；"
+            "流量/广告/退款等宽表指标由 custom-report-analysis 技能承接。"
+        )
+        data["custom_report"] = []
 
-    # 6) 演示环境识别（运行期，不靠人记；扫全部已落盘信封）
+    # 5) 演示环境识别（运行期，不靠人记；扫全部已落盘信封）
     mock_fingerprint: Optional[str] = None
     for env in envs:
         if env is None:
@@ -360,7 +343,6 @@ def fetch_all(
         "period": plan,
         "profit_caliber_type": caliber,
         "currency": agg_currency or "原币种（未折算，禁止跨币种直接相加）",
-        "report_id_present": bool(daily_report_id),
         "mock": bool(mock_fingerprint),
         "demo_fingerprint": mock_fingerprint,
         "shop_filter": shop_ids or [],

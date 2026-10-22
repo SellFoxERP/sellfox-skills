@@ -24,8 +24,10 @@
 | `get_order_detail` | 单笔订单核对 | 自带官方加总定义（`totalRevenue`/`totalCost` 公式见 field-map「契约自带组合」）；行含买家信息，PII 脱敏 |
 | `get_fba_shipping_head_fee_page_list` | 头程涨价要落到批次时（成本子链专项） | 首次用前读契约 |
 | `get_amazon_reimbursement_report` | 赔偿、漏领追回（费用子链专项） | 首次用前读契约 |
-| `get_custom_report_page_list` | 需要固定费用等**自定义口径**时 | `report_id` **只能从 Web 界面取**，不可猜；取不到就按内置字段口径并披露 |
 | `get_multiplatform_sale_stats` | **别用于利润**——自述 `not_for 利润、毛利、广告归因` | 跨工具不可混算（field-map §四） |
+
+> 固定费用等**自定义报表口径**本技能不再查询（v1.7.0 起移除）：需要宽表/自定义报表口径时
+> 转 **custom-report-analysis 技能**承接；取不到就按内置字段口径并披露缺口。
 
 ## 二、取数计划表
 

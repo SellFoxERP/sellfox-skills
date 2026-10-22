@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """广告优化编排器 —— v3：脚本零网络，写操作由 agent 执行。
 
-五段式不变：诊断 → dry-run 提案 → 审批 → 执行 → 记录/回滚；变的是**执行者**：
+五段式不变：诊断 → dry-run 提案 → 会话内人工确认 → 执行 → 记录/回滚；变的是**执行者**：
 
 子命令：
     diagnose   读 out/raw/ 落盘（agent 已按取数计划取好）→ 诊断 → dry-run 提案
@@ -19,7 +19,7 @@
                未执行项标注「未执行（不在本次批准范围）」，不报不一致
     selftest   用内置合成数据离线自检（不调用 MCP，全绿）
 
-铁律：脚本零 HTTP；写操作只经 agent 按审批流程调 action；写契约**执行前重取**
+铁律：脚本零 HTTP；写操作只经 agent 按会话内人工确认流程调 action；写契约**执行前重取**
 （contract_version 占位必须替换为当次 search 结果）；写后 read-back；
 累计闸防连续调用；演示环境默认阻断写操作。
 """
@@ -65,9 +65,9 @@ _RULE_LABELS = {
     "insufficient_data": "数据不足",
 }
 
-#: 绩效来源/范围的商家话术（渲染层翻译）
-_PERF_SOURCE_LABELS = {"download_task": "下载任务报表", "custom_report": "自定义报表"}
-_PERF_SCOPE_LABELS = {"campaign": "活动级", "msku": "MSKU 级"}
+#: 绩效来源/范围的商家话术（渲染层翻译；v1.7.0 起绩效唯一主源为下载任务报表）
+_PERF_SOURCE_LABELS = {"download_task": "下载任务报表"}
+_PERF_SCOPE_LABELS = {"campaign": "活动级"}
 
 
 def _perf_line(ad_data: Any) -> str:
@@ -83,7 +83,7 @@ def _render_empty_proposal(ad_data: Any, proposal: Optional[Proposal]) -> str:
     """变更条数为 0 时的提案渲染：开头直说原因与下一步，省略空对比表与回滚模板。
 
     商家视角（2026-10-22 审查）：0 条变更时，空的「变更前后对比」表与回滚模板
-    只会稀释注意力；保留技能/风险/模式与「确认方式」等审批说明，其余换成
+    只会稀释注意力；保留技能/风险/模式与「确认方式」等确认说明，其余换成
     醒目段——绩效缺失时明确「本次不产生变更提案」及下一步动作。
     """
     from approval import DEFAULT_LIMITS, RISK_LEVELS
@@ -206,7 +206,7 @@ def render_report(
         "- 无法获取账户健康 / 绩效通知 / 政策合规，相关判断一律标注「需人工核查」。",
         "- `servingStatus` 的 `BUDGET_CAPPED` 取值未经实测，本技能不以其自动判定预算受限。",
         "- 关键词级竞价（`edit_sp_targeting` 的 `targetId` 语义）未实测确认，默认不自动执行。",
-        "- 本脚本不直接执行任何写操作：执行由 agent 按审批协议逐项调 action（见 workflow.md）。",
+        "- 本脚本不直接执行任何写操作：执行由 agent 按会话内人工确认后的执行协议逐项调 action（见 workflow.md）。",
     ]
     return "\n".join(lines)
 
@@ -672,7 +672,7 @@ def _execution_checklist(
             "dry_run": False,
             "warning": _WRITE_PROTOCOL_NOTE,
             "protocol": (
-                "写操作由 agent 执行（脚本零网络）：① 本清单已过人工审批与累计闸；"
+                "写操作由 agent 执行（脚本零网络）：① 本清单已过会话内人工确认与累计闸；"
                 "② 逐项执行前重新 search 该 tool_id 取当次 contract_version；"
                 "③ 调 mcp__Sellfox-MCP__action(tool_id, params, contract_version)；"
                 "④ 按 read_back_plan 回读目标对象；⑤ 填 record_template 存为 change.json，"
@@ -702,7 +702,7 @@ def cmd_execute(args: argparse.Namespace) -> int:
 
     decision, approved = parse_confirmation(args.approve or "", total=len(proposal.items))
     if decision == "unclear":
-        print("审批文本无法识别，未生成执行清单（不得默认执行）。", file=sys.stderr)
+        print("确认文本无法识别（会话内人工确认），未生成执行清单（不得默认执行）。", file=sys.stderr)
         return 2
     if decision == "reject":
         print("已驳回，未执行任何变更。")
@@ -906,14 +906,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_d.add_argument("--end", required=True, help="yyyy-MM-dd")
     p_d.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     p_d.add_argument("--keep-md", action="store_true",
-                     help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
+                     help="额外留档同名 .md（默认只写 .html，仅供调试）")
     p_d.set_defaults(func=cmd_diagnose)
 
     p_e = sub.add_parser("execute",
                          help="解析批准 + 累计闸 → 输出执行清单（不调用写工具，由 agent 执行）")
     p_e.add_argument("--proposal", required=True, help="proposal.json 路径")
     p_e.add_argument("--approve", required=True, help='如 "批准 1,3,5" / "批准全部" / "驳回"')
-    p_e.add_argument("--operator", default="", help="操作人标识（飞书 open_id）")
+    p_e.add_argument("--operator", default="", help="操作人标识（落变更日志 ad_changes.jsonl）")
     p_e.add_argument("--shop-id", default="", help="覆盖提案中的 shop_id")
     p_e.add_argument("--allow-demo", action="store_true", help="演示环境放行（默认阻断）")
     p_e.add_argument("--keep-md", action="store_true",

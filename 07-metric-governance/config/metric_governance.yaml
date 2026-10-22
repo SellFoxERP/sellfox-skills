@@ -2,10 +2,11 @@
 # 指标治理配置（metric_governance.yaml）—— 技能 7 特有
 # ============================================================================
 # 本文件由**使用者维护**。技能读取，绝不硬编码。
-# 通用配置（报表 ID / 审批闸门 / 预警阈值）引用 _shared/config/：
-#   - report_id  → _shared/config/reports.yaml（自动发现后的兼容缓存）
+# 通用配置（审批闸门 / 预警阈值）引用 _shared/config/：
 #   - 审批上限   → _shared/config/thresholds.yaml → approval
 #   - 口径白皮书 → _shared/METRIC_FORMULAS.md
+#   - 报表 ID    → 本文件 report_ids（使用者从赛狐网页端确认后回填；
+#                  v1.7.0 起共享 reports.yaml 自动发现缓存已移除）
 # ============================================================================
 
 # 默认只演练：true 时脚本不执行任何 add/update（安全默认）。
@@ -21,16 +22,21 @@ max_proposals_per_run: 20
 
 # 演示/沙箱环境策略（铁律 11）。
 demo_policy:
-  block_feishu_write: true     # 命中演示指纹时默认阻断写飞书
+  block_external_write: true   # 命中演示指纹时默认阻断对外写出（v1.7.0 前为 block_feishu_write）
   block_write_execute: true    # 演示环境下即使人工批准也不执行写（只跑 dry-run）
   watermark: true              # 输出顶部加「演示数据」水印
 
-# 拟治理的报表范围（键名对应 _shared/config/reports.yaml）。
+# 拟治理的报表范围（键名对应下方 report_ids）。
 # 仅用于把 report_id_list 传给 get_custom_report_index_page_list 做过滤；
 # 为空则治理全部（口径降级，输出中须标注）。
 target_reports:
   - daily_ops
   - profit
+
+# 报表 ID 映射（使用者从赛狐网页端确认后回填；不猜 ID）。
+report_ids:
+  daily_ops: ""                # 例："1234567890"
+  profit: ""
 
 # 变更日志路径（累计闸与审计读取）。
 change_log_path: ad_changes.jsonl
@@ -66,7 +72,8 @@ readback_id_fields:
 # ============================================================================
 
 desired_indices:
-  # 客单价：销售额 / 订单数。字段 productSales、orderNum 均在 get_custom_report_page_list。
+  # 客单价：销售额 / 订单数。字段 productSales、orderNum 均属自定义报表宽表
+  # （宽表查询/字段核对转 custom-report-analysis 技能；本技能只做指标治理）。
   - name: 客单价-公司口径
     type: "2"                 # 货币
     formula: ""               # ← 待业务方确认语法后回填

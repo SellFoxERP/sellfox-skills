@@ -380,7 +380,7 @@ def build_change_items(findings: Sequence[Finding], opt_cfg: Dict[str, Any]) -> 
                    ("pause" if f.after == "paused" else "set_bid"),
             risk="L2",
             extra=dict(f.extra),
-            index=len(items) + 1,  # 1-based，供审批「批准 1,3,5」与回滚定位
+            index=len(items) + 1,  # 1-based，供人工确认「批准 1,3,5」与回滚定位
         ))
 
     # 防「批量全暂停」：全部是暂停且 ≥2 条 → 全部降级为人工，不自动执行。

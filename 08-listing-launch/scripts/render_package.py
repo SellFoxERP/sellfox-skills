@@ -168,7 +168,7 @@ def render_package(
     blocks.append("- **字符/字节限制**：亚马逊各品类确切限制本次未验证，须按目标站点最新官方要求核对。")
     blocks.append("- **商标/专利/资质**：本技能无相关数据库访问能力，仅提示、不下结论。")
     blocks.append("- **评论原文**：赛狐仅有聚合指标（rating/ratingCount），无评论内容。")
-    blocks.append("- **头程成本**：优先取商品行 `headTripCost`（get_online_product_page_list，实测返回）；缺值时需接自定义报表宽表（`headTripPrice`）或人工核查。")
+    blocks.append("- **头程成本**：优先取商品行 `headTripCost`（get_online_product_page_list，实测返回）；缺值时需人工核查（宽表口径转 custom-report-analysis 技能）。")
     if notes.warnings:
         blocks.append("\n### 数据说明与警示")
         blocks.extend(f"- {w}" for w in notes.warnings)
@@ -181,7 +181,7 @@ def _main() -> int:  # pragma: no cover
     ap.add_argument("--input-json", required=True, help="包含各步骤结果的 JSON")
     ap.add_argument("--out")
     ap.add_argument("--keep-md", action="store_true",
-                    help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
+                    help="额外留档同名 .md（默认只写 .html，仅供调试）")
     args = ap.parse_args()
     payload = json.loads(open(args.input_json, encoding="utf-8").read())
     md = render_package(

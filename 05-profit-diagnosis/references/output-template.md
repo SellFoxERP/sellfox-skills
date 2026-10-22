@@ -22,7 +22,7 @@
 - 利润口径：settlement（结算口径，赛狐默认） / shipment（发货口径）
 - 本期窗口 / 基期窗口（等长、不重叠）
 - 报表币种与成本口径币种
-- ⚠️ 口径降级（仅 report_id 缺失时）
+- ℹ️ 口径分工（固定）：宽表因子归因由 custom-report-analysis 技能承接
 
 ## 核心结论
 - 诊断 MSKU 数 / 异常数 / 严重数 / 合计毛利下滑额
@@ -57,52 +57,51 @@
 | 因子 | 来源工具 | 字段 | 基期 | 本期 | 贡献额 | 占跌幅 |
 |---|---|---|---|---|---|---|
 | 销售额下滑 | get_profit_report_by_msku | `productSales` | 9,000.00 | 7,000.00 | +2,000.00 | 167% |
-| 采购成本上涨 | get_custom_report_page_list | `purchaseCost` | 3,000.00 | 3,600.00 | +600.00 | 50% |
+| 广告花费失控 | get_profit_report_by_msku | `cpcCost` | -300.00 | -560.00 | +260.00 | 22% |
 
 **建议动作**
 - **{因子label}**：{hint}（来源字段 `{raw_field}`）
 
 > ⚠️ 以下因子本期/基期数据缺失，**需人工核查**，未参与归因：
-> - 本期无 headTripPrice（get_custom_report_page_list）
+> - 本期无 grossProfit（get_profit_report_by_msku）
 
 > 💱 汇率 rate 由 7.15 变为 7.20 …
 ```
 
 **要点**：
 
-- 「来源工具」列**必须存在** —— 171+489 字段来自两个不通用报表，不标来源无法复核。
+- 「来源工具」列**必须存在** —— 归因因子全部来自 msku 报表（171 字段），不标来源无法复核。
 - 「占跌幅」合计可 **> 100%**（因子相关，见 `attribution-rules.md §8`），是正常现象。
 - 无数据的因子进「需人工核查」并写明**缺哪一侧、属于哪个工具**，**不写 0**。
 
 ## 3. 延期结算与赔偿区块
 
-这两类是最容易漏看的钱，独立成区块：
+延期结算与赔偿的**金额**因子已移交 `custom-report-analysis`（固定分工），本区块固定披露
+该分工并给出赔偿**条数级**核对结果：
 
 ```markdown
 ## 延期结算与赔偿（易漏的钱）
 
-| MSKU | 项目 | 字段 | 来源工具 | 基期 | 本期 |
-|---|---|---|---|---|---|
-| `MSKU-DEMO-1` | 延期结算 | `deferredAmount` | get_custom_report_page_list | 0.00 | 500.00 |
-
-> ⚠️ 这些字段只存在于 get_custom_report_page_list（489 字段宽表），
->    不在 get_profit_report_by_msku。未配置 report_id 时此区块必然为空。
-> 赔偿类可进一步用 get_amazon_reimbursement_report 交叉核对是否漏领（本次取回 N 条）。
+> ℹ️ 延期结算（deferredAmount）与赔偿金额（reimbursementAmount / warehouseLostAmount /
+>    missingFromInboundAmount）只存在于自定义报表宽表，相关金额归因由 custom-report-analysis
+>    技能承接，本报告不取值、不编造。
+> 赔偿条数级核对仍由本技能完成：get_amazon_reimbursement_report（本次记录数 / 状态：已取数 N 批 / M 行）；
+> 两边都需核对时，先在本报告看条数，再到 custom-report-analysis 的宽表报告对金额。
 ```
 
-区块为空时，**明确说明原因**（未配 report_id / 该期确无此类金额），**不写 0**。
+条数为空时按三态如实标注（未取数 / 无数据 / 取数失败带 error_code），**不写 0**。
 
 ## 4. 数据说明区块（必填）
 
 四个子块缺一不可：
 
 1. **取数覆盖范围**：数据源列表 + 店铺范围（含「未指定店铺 → 全部店铺」）+ 每条
-   `last_truncation.describe()`（截断披露）。
-2. **警示**：取数失败、口径降级、窗口截短（`resolve_windows` 告警）、`mcp_calls==0` 等。
+   截断/覆盖披露语句。
+2. **警示**：取数失败、窗口截短（`resolve_windows` 告警）、`mcp_calls==0` 等。
 3. **⚠️ 需人工核查**：所有不可用因子与缺失字段，逐条列出（最多 30 条 + 计数）。
 4. **本技能不做什么**：只读不改、不做因果、不做账户健康/买家消息/评论原文。
 
 > 离线自检（`python scripts/selfcheck.py`）会生成一份含真实结构与水印的示例报告，
-> 可直接对照：顶部演示水印 → 「利润口径」标注 settlement → 含「来源工具」列的归因表
-> （销售额下滑 167% + 采购成本 50% + 延期结算 42% + 广告 22%）→ 每条归因附来源字段 →
+> 可直接对照：顶部演示水印 → 「利润口径」标注 settlement 与宽表分工披露 → 含「来源工具」列的
+> 归因表（销售额下滑 167% + 广告 22%）→ 每条归因附来源字段 →
 > 「数据说明」列出覆盖范围与本技能不做什么。

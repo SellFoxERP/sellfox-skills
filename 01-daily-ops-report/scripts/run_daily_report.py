@@ -2,19 +2,18 @@
 """每日经营日报 —— 编排入口（run_daily_report.py，v3）。
 
 串联：前置校验 → **取数（agent 调客户端 MCP 并落盘 out/raw/）** → 校验组装(fetch_data)
-→ 分析(analyze) → 渲染(render_report) → 可选写飞书。
+→ 分析(analyze) → 渲染(render_report)。报告仅本地 HTML，不外发（飞书能力 v1.7.0 已移除）。
 
 v3 前置校验：
-  1. 客户端已配置 Sellfox-MCP（脚本不再需要 SELLFOX_MCP_KEY —— Key 只在客户端配置里）；
-  2. ``reports.yaml`` 的 daily_ops ``report_id`` 是否已回填（缺失 → 助手自动发现，无可用报表则降级）；
-  3. ``out/raw/`` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
-  4. 演示环境指纹运行时识别 → 顶部水印 + 默认阻断写飞书。
+  1. 客户端已配置 Sellfox-MCP（脚本不需要 SELLFOX_MCP_KEY —— Key 只在客户端配置里）；
+  2. ``out/raw/`` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
+  3. 演示环境指纹运行时识别 → 顶部水印（演示数据仅加水印，不外发）。
 
 用法::
 
     # 0) agent 先按 references/workflow.md 取数计划调 mcp__Sellfox-MCP__* 并落盘 out/raw/
     python run_daily_report.py                 # 校验落盘 → 组装 → 分析 → 渲染
-    python run_daily_report.py --date 2026-09-29 --feishu
+    python run_daily_report.py --date 2026-09-29
     python run_daily_report.py --check-only    # 只做前置校验
 """
 
@@ -50,20 +49,6 @@ def precheck() -> List[str]:
         warnings.append(f"_shared 路径不可用（{shared or '未配置'}）：请设置 config/paths.yaml 的 shared_root。")
         return warnings
 
-    try:
-        sys.path.insert(0, str(Path(shared) / "scripts"))
-        from config_loader import ConfigLoader
-
-        reports = ConfigLoader(shared_root=shared).load("reports").get("reports") or {}
-        rid = str((reports.get("daily_ops") or {}).get("id") or "").strip()
-        if not rid:
-            warnings.append(
-                "reports.yaml 的 daily_ops.report_id 为空：分项明细将口径降级。"
-                "缺少自定义报表支持的指标将在报告中说明。"
-            )
-    except Exception as exc:  # noqa: BLE001
-        warnings.append(f"读取 reports.yaml 失败：{exc}")
-
     raw_dir = _SKILL_ROOT / "out" / "raw"
     if not raw_dir.exists() or not any(raw_dir.glob("*.json")):
         warnings.append(
@@ -82,8 +67,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="利润口径覆盖（透传 fetch_data.py；用户点名发货/结算口径时使用，缺省读配置）")
     ap.add_argument("--marketplace", default=None,
                     help="请求的站点过滤（如 US；透传 fetch_data.py，用于核验过滤生效性并回显范围）")
-    ap.add_argument("--feishu", action="store_true", help="写入飞书")
-    ap.add_argument("--override-demo", action="store_true", help="演示环境也强制写飞书")
     ap.add_argument("--keep-md", action="store_true",
                     help="渲染层额外写出同名 .md（调试/测试用；默认只写 .html）")
     ap.add_argument("--check-only", action="store_true", help="只做前置校验")
@@ -99,7 +82,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     for w in warns:
         print(f"⚠️ {w}")
     if not warns:
-        print("✅ 前置校验通过（_shared 可用 / report_id 已配置 / 取数已落盘）")
+        print("✅ 前置校验通过（_shared 可用 / 取数已落盘）")
     if args.check_only:
         return 0
     if any("取数落盘为空" in w for w in warns):
@@ -119,9 +102,7 @@ def main(argv: Optional[List[str]] = None) -> int:
          "--in", str(bundle), "--out", str(analysis)],
         [sys.executable, str(_THIS.parent / "render_report.py"),
          "--analysis", str(analysis), "--bundle", str(bundle), "--out", str(report)]
-        + (["--keep-md"] if args.keep_md else [])
-        + (["--feishu"] if args.feishu else [])
-        + (["--override-demo"] if args.override_demo else []),
+        + (["--keep-md"] if args.keep_md else []),
     ]
     for cmd in steps:
         print(f"\n== 执行：{' '.join(Path(c).name for c in cmd[:1])} ==")

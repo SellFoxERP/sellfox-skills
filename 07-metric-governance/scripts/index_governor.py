@@ -128,26 +128,23 @@ def load_skill_config(path: Optional[str] = None) -> Dict[str, Any]:
     return cfgmod.load_yaml_file(cfg_path)
 
 
-def load_shared_reports() -> Dict[str, Any]:
-    """读取 _shared/config/reports.yaml（report_id 自动发现缓存，供取数计划过滤用）。"""
-    loader = cfgmod.ConfigLoader(shared_root=str(SHARED_ROOT))
-    return loader.load("reports")
-
-
 def load_thresholds() -> Dict[str, Any]:
     """读取 _shared/config/thresholds.yaml。"""
     loader = cfgmod.ConfigLoader(shared_root=str(SHARED_ROOT))
     return loader.load("thresholds")
 
 
-def target_report_ids(cfg: Dict[str, Any], reports: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-    """返回 (report_id_list, 缺失的报表键)。空 id 不计入，并回报缺失键做首轮引导。"""
+def target_report_ids(cfg: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """返回 (report_id_list, 未配置 ID 的报表键)。空 id 不计入，并回报缺失键提示回填。
+
+    v1.7.0 起共享 reports.yaml 自动发现缓存已移除：报表 ID 由使用者从赛狐网页端
+    确认后维护在本技能 config 的 ``report_ids`` 映射（不猜 ID）。
+    """
     ids: List[str] = []
     missing: List[str] = []
-    table = reports.get("reports") or {}
+    table = cfg.get("report_ids") or {}
     for key in cfg.get("target_reports") or []:
-        entry = table.get(key) or {}
-        rid = entry.get("id")
+        rid = table.get(key)
         if rid:
             ids.append(str(rid))
         else:
@@ -962,8 +959,7 @@ if __name__ == "__main__":  # pragma: no cover - 离线自检（零网络）
     print(f"shared_root = {SHARED_ROOT}")
     cfg = load_skill_config()
     print(f"dry_run_default = {cfg.get('dry_run_default')} ｜ max_rows = {cfg.get('max_rows')}")
-    reports = load_shared_reports()
-    ids, missing = target_report_ids(cfg, reports)
+    ids, missing = target_report_ids(cfg)
     print(f"report_id_list = {ids} ｜ 缺失报表键 = {missing}")
     desired = [DesiredIndex.from_dict(d) for d in (cfg.get("desired_indices") or [])]
     demo_existing = [{"indexName": "客单价-公司口径", "indexFormula": "productSales/orderNum", "id": "1"}]

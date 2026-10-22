@@ -16,10 +16,9 @@ report:
   #   local  = 按 timezone 计算本地自然日
   date_mode: bizday
   timezone: America/Los_Angeles
-  # 基线对比方案：
-  #   window_field = 用报表现成窗口字段 sevenSaleNum / thirtySaleNum（省调用，默认）
-  #   slice_30d    = 额外取 30 天店铺级利润报表，在技能内按日切片
-  baseline: window_field
+  # 基线对比方案（v1.7.0 起宽表窗口字段已随自定义报表移除，仅剩店铺级切片）：
+  #   slice_30d = 额外取 30 天店铺级利润报表，在技能内按日切片
+  baseline: slice_30d
   baseline_days: 30
 
 # 每个数据源的 max_rows（硬截断安全阀）。
@@ -27,7 +26,6 @@ report:
 limits:
   shops: 40                # get_shop_page_list 店铺清单（可缓存）
   shop_profit_rows: 40     # get_profit_report_by_shop（店铺级）
-  msku_per_shop: 20        # get_custom_report_page_list，每批（店铺）≤20 行，与硬上限对齐
   orders: 40               # get_order_page_list（仅作异常订单下钻样本）
   campaigns_per_shop: 200  # get_sp_campaign_list（游标）
   multiplatform_rows: 200  # get_multiplatform_sale_stats
@@ -46,15 +44,11 @@ multiplatform:
   group_type: shop
 
 output:
-  dir: ./out
-  feishu_folder_token: ""      # 留空则用环境变量 FEISHU_FOLDER_TOKEN
-  feishu_default_enabled: false  # 只读日报默认只出本地 Markdown，写飞书需显式 --feishu
+  dir: ./out               # 报告仅本地 HTML，不外发（飞书能力 v1.7.0 已移除）
 
-# 缺少 daily_ops report_id 时的降级说明（写进「数据说明」区块，口径降级需显式标注）
-degradation:
-  no_report_id_note: "缺少自定义报表 report_id：L2 明细层口径降级。跳过宽表步骤（get_custom_report_page_list，缺口在「口径降级」区块披露），仅使用店铺级利润报表（get_profit_report_by_shop）与订单 / 广告等其余步骤可得指标； 流量（sessions/转化率）、广告点击、库龄分桶、补货建议等宽表字段不可用，标注「需人工核查」。"
-
-# MCP 无对应数据源、必须人工核查的巡检项（显式占位，绝不编造）
+# MCP 无对应数据源、必须人工核查的巡检项（显式占位，绝不编造）。
+# 宽表专属指标（流量/转化、广告点击、库龄分桶、补货建议）不在本技能取数范围，
+# 由 custom-report-analysis 技能承接（固定降级说明由 fetch_data.py 写入「口径降级」区块）。
 human_check:
   - 账户健康 / 绩效通知（需人工登录 Seller Central）
   - 买家消息 / 待回工单（MCP 无客服接口）

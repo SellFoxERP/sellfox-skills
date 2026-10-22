@@ -3,9 +3,9 @@
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
   * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{help,search,action}`，
-    按 `references/workflow.md` 的**取数计划**把每步信封落盘到 `out/raw/<step>.json`。
+    按 `references/workflow.md` 的**取数计划**把每步完整信封落盘 `out/raw/<step>.json`。
   * **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/coverage 截断），
-    并组装出与旧版完全相同形状的 `data.json` —— diagnose.py / render_report.py 无需改动。
+    并组装出与旧版兼容形状的 `data.json`。
 
 用法::
 
@@ -15,9 +15,13 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 
 落盘步骤名（与取数计划一致）：
     online_<batch>.json         get_online_product_page_list → rows（按状态或店铺分批，一批一文件）
-    custom_report_<label>.json  get_custom_report_page_list  → rows（依赖 report_id；缺 → 跳过并标口径降级）
     product_analyze.json        get_product_analyze_list     → rows（可选增强）
     labels.json                 get_product_by_label        → rows（仅配置 labels.required_groups 时）
+
+v1.7.0 起**不再取自定义报表宽表**（get_custom_report_page_list / report_id 依赖整体移除）：
+sessions/conversionRate/buyBoxPercent/类目排名/差评数等宽表专属字段固定标
+「⚠️ 需人工核查——由 custom-report-analysis 技能承接」（见 WIDE_TABLE_UNAVAILABLE）；
+残留 custom_report_*.json 一律忽略（不消费、不采信）。
 
 基线快照自持（BSR/评分环比）：成功组装后把当前各记录 bsrRank/rating 按记录 ID 全量重建
 落盘 `<raw_dir>/../baseline-snapshot.json`；下次运行读入生成 `meta.baseline`。
@@ -49,20 +53,17 @@ except Exception as exc:  # pragma: no cover
 
 _SKILL_ROOT = lc.SKILL_DIR
 
-# 宽表（489 字段）专属、online 表没有的字段 —— report_id 缺失时显式列出的不可用清单。
+#: 宽表专属字段固定不可用清单（v1.7.0 起不取自定义报表，由 custom-report-analysis 技能承接）
+WIDE_TABLE_UNAVAILABLE_NOTE = (
+    "未接入自定义报表（由 custom-report-analysis 技能承接）："
+    "sessions / pageViews / conversionRate / buyBoxPercent / 类目排名 / 差评数等"
+    "宽表专属字段不可用，标「⚠️ 需人工核查」。"
+)
 WIDE_TABLE_ONLY_FIELDS = (
     "sessions", "pageViews", "conversionRate", "buyBoxPercent",
     "lowReviewNum", "reviewNum", "bigCategoryRanking", "smallCategoryRanking",
     "availableDays",
 )
-
-# 组装层对宽表行的字段裁剪（与旧版一致：只留体检需要的列，避免 489 字段撑爆上下文）。
-_TRAFFIC_KEEP = {
-    "asin", "parentAsin", "msku", "sku", "shopId", "marketplaceId",
-    "sessions", "pageViews", "conversionRate", "buyBoxPercent",
-    "lowReviewNum", "reviewNum", "rating", "bigCategoryRanking", "smallCategoryRanking",
-    "availableDays", "listingPrice", "currency",
-}
 
 # 基线快照文件名（BSR/评分环比自持；与 raw_dir 同级的 out/ 下）
 BASELINE_SNAPSHOT_NAME = "baseline-snapshot.json"
@@ -171,14 +172,6 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     shop_ids = [s.strip() for s in args.shop_ids.split(",") if s.strip()]
     label_ids = [s.strip() for s in args.label_ids.split(",") if s.strip()]
 
-    # report_id 解析（与旧版一致：显式参数 > _shared/config/reports.yaml）
-    report_id = args.report_id.strip()
-    report_key = ((cfg.get("degradation") or {}).get("report_key")) or "daily_ops"
-    if not report_id:
-        reports = lc.load_shared_section("reports", "reports") or {}
-        entry = reports.get(report_key) or {}
-        report_id = str(entry.get("id") or "").strip()
-
     end = _dt.date.today()
     start = end - _dt.timedelta(days=long_days)
 
@@ -257,44 +250,10 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             f"本次运行后将生成 {baseline_path.name}，下次运行起环比生效"
         )
 
-    # 2) 宽表（依赖 report_id）。三态如实：enabled / fetch_failed / not_configured|discovery_failed
-    traffic_rows: List[Dict[str, Any]] = []
-    wide_error_codes: List[str] = []
-    wide_status = "not_configured"
-    cr_envs = _merge_pattern(raw_dir, "custom_report")
-    if not report_id:
-        # 口径降级：宽表整步不消费（不可用字段清单见 meta.wide_table_fields_unavailable）。
-        # 但「报表发现失败」的已落盘信封必须读取并披露——report_id 为空时不读盘，
-        # 发现被拒的 error_code 就会从报告中完全消失（零披露）。
-        for env in cr_envs:
-            batch = env.path.stem.replace("custom_report_", "")
-            if env.status not in ("complete", "partial"):
-                _scan(env.obj)
-                errors.append(
-                    f"报表发现失败 get_custom_report_page_list[{batch}] status={env.status} "
-                    f"error_code={env.error_code} {env.message or ''}"
-                    "（未配置 report_id，走口径降级；失败原因照记，供人工核查）"
-                )
-                wide_error_codes.append(env.error_code or env.status or "unknown")
-        if wide_error_codes:
-            wide_status = "discovery_failed"
-    else:
-        step_failed = not cr_envs
-        if step_failed:
-            errors.append(
-                "自定义报表落盘缺失（out/raw/custom_report_<label>.json）："
-                "流量/CVR/购物车占比/类目排名/差评数不可用。"
-            )
-        for env in cr_envs:
-            _scan(env.obj)
-            batch = env.path.stem.replace("custom_report_", "")
-            rows = _rows_or_note(env, "get_custom_report_page_list", batch, errors, disclosures)
-            if env.status not in ("complete", "partial"):
-                step_failed = True
-                wide_error_codes.append(env.error_code or env.status or "unknown")
-            for rec in rows or []:
-                traffic_rows.append({k: v for k, v in rec.items() if k in _TRAFFIC_KEEP})
-        wide_status = "fetch_failed" if step_failed else "enabled"
+    # 2) 宽表步骤已移除（v1.7.0）：不再取 get_custom_report_page_list，
+    #    宽表专属字段固定标「需人工核查（custom-report-analysis 承接）」；
+    #    残留 custom_report_*.json 一律忽略（不消费、不采信）。
+    disclosures.append(f"[wide_table] {WIDE_TABLE_UNAVAILABLE_NOTE}")
 
     # 3) 产品分析（可选增强：文件缺失 = agent 未取，不算失败）
     analyze_rows: List[Dict[str, Any]] = []
@@ -366,13 +325,11 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         "window": {"short_days": short_days, "long_days": long_days,
                    "start": start.isoformat(), "end": end.isoformat(),
                    "timezone_note": "日期按服务器本地日；多站点 US/EU/JP 边界可能不同，需在报告注明"},
-        "report_id": report_id,
-        "report_configured": bool(report_id),
-        "degraded": not bool(report_id),
+        "degraded": True,  # 固定口径降级：未接入自定义报表（custom-report-analysis 承接）
         "wide_table": {
-            "status": wide_status,
-            "error_codes": sorted({c for c in wide_error_codes if c}),
-            "rows": len(traffic_rows),
+            "status": "not_configured",  # v1.7.0 固定：宽表步骤已移除
+            "error_codes": [],
+            "rows": 0,
         },
         "demo_fingerprint": demo_fp,
         "disclosures": disclosures,
@@ -383,18 +340,16 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     meta["baseline_snapshot_path"] = str(baseline_path)
     if by_label_meta is not None:
         meta["by_label"] = by_label_meta
-    if not report_id:
-        meta["wide_table_fields_unavailable"] = list(WIDE_TABLE_ONLY_FIELDS)
+    meta["wide_table_fields_unavailable"] = list(WIDE_TABLE_ONLY_FIELDS)
     meta["raw_dir"] = str(raw_dir)
 
-    # 5) 基线快照落盘：主数据源非空（本次组装成功）才更新；按当前记录全量重建，避免陈旧记录
+    # 4) 基线快照落盘：主数据源非空（本次组装成功）才更新；按当前记录全量重建，避免陈旧记录
     if online_rows:
         lc.write_json(str(baseline_path), _build_baseline_snapshot(online_rows, meta["generated_at"]))
 
     return {
         "meta": meta,
         "online": online_rows,
-        "traffic": traffic_rows,
         "analyze": analyze_rows,
         "by_label": by_label_rows,
     }
@@ -404,8 +359,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Listing 健康体检 - 落盘校验与组装（零网络）")
     ap.add_argument("--shop-ids", default="",
                     help="逗号分隔；留空=不限店铺（仅记录范围，实际取数范围由 agent 落盘批次决定）")
-    ap.add_argument("--report-id", default="",
-                    help="自定义报表 ID；缺省读 _shared/config/reports.yaml → daily_ops.id")
     ap.add_argument("--online-status", default="",
                     help="逗号分隔；缺省读 config/listing.yaml（active/inActive/delete）")
     ap.add_argument("--label-ids", default="",
@@ -422,16 +375,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     lc.write_json(args.out, payload)
 
     meta = payload["meta"]
-    print(f"✓ 在线产品 {len(payload['online'])} 条；流量宽表 {len(payload['traffic'])} 条"
+    print(f"✓ 在线产品 {len(payload['online'])} 条"
           f" → {args.out}（来源：{meta['raw_dir']}）")
     if payload["online"]:
         print(f"✓ 基线快照已更新 → {meta['baseline_snapshot_path']}"
               f"（下次运行起 BSR/评分环比可用）")
     if meta["demo_fingerprint"]:
         print(f"⚠️ 检测到演示环境指纹：{meta['demo_fingerprint']}（数据不可用于业务口径）")
-    if meta["degraded"]:
-        print("⚠️ 口径降级：未配置 report_id，宽表专属字段不可用 → "
-              + "、".join(WIDE_TABLE_ONLY_FIELDS))
+    print(f"⚠️ 口径降级：{WIDE_TABLE_UNAVAILABLE_NOTE}")
     for d in meta["disclosures"]:
         print(f"数据说明：{d}")
     for e in meta["errors"]:

@@ -8,7 +8,7 @@
 
 - [1. 三个数据源与列表字段名](#1-三个数据源与列表字段名)
 - [2. 字段 → 数据源对照表](#2-字段--数据源对照表)
-- [3. 只在宽表的字段（无 report_id 即降级）](#3-只在宽表的字段无-report_id-即降级)
+- [3. 只在宽表的字段（固定由 custom-report-analysis 承接）](#3-只在宽表的字段固定由-custom-report-analysis-承接)
 - [4. 拿不到的字段](#4-拿不到的字段)
 
 ## 1. 三个数据源与列表字段名
@@ -16,7 +16,7 @@
 | 工具 | 列表字段 | 分页 | 备注 |
 |---|---|---|---|
 | `get_online_product_page_list` | `data.rows` | 页码 `page_no`，服务端上限 20 | 79 字段，Listing 体检主源 |
-| `get_custom_report_page_list` | `data.rows` | 页码 `page_no`，需 `report_id` | 489 字段宽表 |
+| `get_custom_report_page_list` | `data.rows` | — | 489 字段宽表（v1.7.0 起本技能不调用，由 custom-report-analysis 承接） |
 | `get_product_analyze_list` | `data.rows` | 页码 `page_no` | 字段集合取决于 `fields` 入参 |
 | `get_product_by_label` | `data.rows` | 页码 **`page_num`** | 标签→产品 |
 
@@ -47,11 +47,11 @@
 | `currency`（顶层） | ✅ | ✅ | ✅ | USD |
 | `inventoryManage.currency` | ✅ | | | **CNY**（跨币种须显式处理） |
 
-## 3. 只在宽表的字段（无 report_id 即降级）
+## 3. 只在宽表的字段（固定由 custom-report-analysis 承接）
 
 `sessions`、`pageViews`、`conversionRate`、`buyBoxPercent`、`buyboxPrice`、`lowReviewNum`、`bigCategoryRanking`、`smallCategoryRanking`、`availableDays`、`orderConversionRate`、`naturalConversionRate`。
 
-以上均**只出现在 `get_custom_report_page_list`**（06 字段字典已核对）。无 `report_id` 时按 `references/workflow.md` §4 降级并标注「需人工核查」。
+以上均**只出现在 `get_custom_report_page_list`**（06 字段字典已核对）。v1.7.0 起本技能不取宽表——固定按 `references/workflow.md` §3 降级并标注「需人工核查（由 custom-report-analysis 承接）」。
 
 > 注：`buyBoxPercent` **不在** `get_online_product_page_list`——该表只有 `buyBoxWinner` 布尔，勿混用。
 

@@ -1,15 +1,14 @@
 # 输出模板（output-templates.md）
 
-> 何时读：渲染诊断报告、飞书审批文档、ad_changes.jsonl 记录，或撰写飞书卡片文案时。
+> 何时读：渲染诊断报告、dry-run 提案、ad_changes.jsonl 记录时。
 > `scripts/optimize.py render_report()` 已按此模板生成，手写时也请保持一致。
 
 ## 目录
 
 - [一、诊断报告模板](#一诊断报告模板)
 - [二、dry-run 提案表（由 approval.Proposal 渲染）](#二dry-run-提案表由-approvalproposal-渲染)
-- [三、飞书审批卡片](#三飞书审批卡片)
-- [四、ad_changes.jsonl 记录格式](#四ad_changesjsonl-记录格式)
-- [五、渲染注意事项](#五渲染注意事项)
+- [三、ad_changes.jsonl 记录格式](#三ad_changesjsonl-记录格式)
+- [四、渲染注意事项](#四渲染注意事项)
 
 ---
 
@@ -78,19 +77,7 @@
 
 ---
 
-## 三、飞书审批卡片
-
-由 `approval.build_card()` 生成，内容：标题 + 风险级别（L3/L4 红、其余橙）+ 变更条数 +
-文档链接 + 确认示例 + `@负责人`。
-
-- 审批文档与卡片正文均自动过 PII 脱敏，文档标注「已脱敏」。
-- 文档默认**不公开分享**。
-- 创建文档限流 3 次/秒，同文件夹创建必须串行（底座已节流+重试）。
-- **演示环境默认阻断写入**；确需写入时显式 `override=True` 并加水印。
-
----
-
-## 四、ad_changes.jsonl 记录格式
+## 三、ad_changes.jsonl 记录格式
 
 每行一条 JSON（v3 由 agent 执行完一项后调 `python scripts/optimize.py record --change change.json` 写入）：
 
@@ -98,7 +85,7 @@
 {"tool":"edit_sp_campaign","target_type":"campaign","target_id":"C1","field":"state",
  "before":"enabled","after":"paused","reason":"近周期花费 120.50 但订单为 0",
  "action":"pause","risk":"L2","extra":{},"index":1,
- "operator":"ou_xxx","status":"success","ts":"2026-09-30T09:30:00",
+ "operator":"张三","status":"success","ts":"2026-09-30T09:30:00",
  "contract_version":"<当次执行用的版本>","read_back":{"ok":true,"actual":"paused"}}
 ```
 
@@ -110,7 +97,7 @@
 
 ---
 
-## 五、渲染注意事项
+## 四、渲染注意事项
 
 - 报告用中文祈使句，结论先行；管理层只看「核心结论」即可。
 - 数值缺失写「无数据」，**不写 0**。

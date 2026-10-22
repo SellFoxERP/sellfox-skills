@@ -6,17 +6,18 @@
 |---|---|---|---|
 | 售价 | ``listingPrice`` / ``standardPrice`` | get_online_product_page_list | 顶层 ``currency``（实测 USD） |
 | ~~售价~~ 聚合金额 | ``salePrices``（线上实测为销售金额聚合，值=单价×整数倍数，**不可作单价**） | get_online_product_page_list | 顶层 ``currency`` |
-| 采购成本 | ``purchaseCost`` | get_online_product_page_list / get_custom_report_page_list | 成本口径（CNY） |
+| 采购成本 | ``purchaseCost`` | get_online_product_page_list | 成本口径（CNY） |
 | 平台佣金 | ``referralFee`` | get_online_product_page_list | 售价口径 |
 | FBA 费用 | ``fbaFees`` | get_online_product_page_list | 售价口径 |
 | 变动结算费 | ``variableClosingFee`` | get_online_product_page_list | 售价口径 |
-| 头程 | ``headTripCost``（商品行，首选）/ ``headTripPrice``（宽表补充） | get_online_product_page_list / get_custom_report_page_list | 成本口径 |
+| 头程 | ``headTripCost``（商品行，唯一来源） | get_online_product_page_list | 成本口径 |
 
 铁律：
 - 售价（USD）与成本（CNY）**不得直接相减**；必须经 ``config/fx.yaml`` 换算并标注来源/日期。
 - 汇率未配置 → 标「⚠️ 需人工核查」，**不臆造汇率、不给假数字**。
-- 头程优先消费商品行 ``headTripCost``（线上实测返回；来源标注「商品行」，成本口径换算入账），
-  缺值再走宽表 ``headTripPrice`` / 人工核查。
+- 头程消费商品行 ``headTripCost``（线上实测返回；来源标注「商品行」，成本口径换算入账）；
+  缺值需人工核查（v1.7.0 起自定义报表宽表 ``headTripPrice`` 补充源已移除，
+  宽表口径需求转 custom-report-analysis 技能）。
 """
 
 from __future__ import annotations
@@ -137,8 +138,8 @@ def estimate_pricing(
         else:
             notes.need_manual("FBA 费用（fbaFees）取不到且未配置缺省值，需人工核查")
 
-    # 头程：优先消费商品行 headTripCost（线上实测字段；成本口径 → 换算到售价口径），
-    # 缺值再走宽表（get_custom_report_page_list → headTripPrice）/人工。
+    # 头程：消费商品行 headTripCost（线上实测字段；成本口径 → 换算到售价口径），
+    # 缺值需人工核查（v1.7.0 起宽表 headTripPrice 补充源已移除，转 custom-report-analysis 技能）。
     note_headtrip = pricing.get("headtrip_source")
     headtrip_raw = product.get("headtrip_cost")
     headtrip = _convert(headtrip_raw, cost_ccy, price_ccy, fx, notes, "头程成本")

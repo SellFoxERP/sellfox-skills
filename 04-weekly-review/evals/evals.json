@@ -3,8 +3,8 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "帮我出一下上周的经营周报，带上目标达成率和 Top/Bottom ASIN 榜，推到飞书",
-      "expected_output": "含核心结论、目标达成率（或标注未配置目标）、核心指标环比/同比、Top/Bottom ASIN 榜、店铺明细、必填的数据说明区块；利润口径 settlement 显式标注；若为演示环境则顶部水印且默认阻断飞书写入",
+      "prompt": "帮我出一下上周的经营周报，带上目标达成率和 Top/Bottom ASIN 榜",
+      "expected_output": "含核心结论、目标达成率（或标注未配置目标）、核心指标环比/同比、Top/Bottom ASIN 榜、店铺明细、必填的数据说明区块；利润口径 settlement 显式标注；宽表指标固定标注「由 custom-report-analysis 承接」；若为演示环境则顶部水印",
       "files": []
     },
     {

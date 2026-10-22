@@ -15,7 +15,7 @@
 - [二、取数计划（agent 执行）](#二取数计划agent-执行)
 - [三、计算面（脚本执行）](#三计算面脚本执行)
 - [四、诊断与 dry-run 提案](#四诊断与-dry-run-提案)
-- [五、飞书审批](#五飞书审批)
+- [五、人工确认（会话内）](#五人工确认会话内)
 - [六、写操作 agent 执行协议](#六写操作-agent-执行协议)
 - [七、read-back 与 verify 校验](#七read-back-与-verify-校验)
 - [八、累计闸](#八累计闸)
@@ -31,7 +31,7 @@
 ```
 ① 诊断（只读，agent 取数落盘 + 脚本计算）
 ② 提案（dry-run，只输出「变更前后对比表」，不碰系统）
-③ 人工确认（飞书，@ 负责人）
+③ 人工确认（会话内，回复「批准 1,3,5」等）
 ④ 执行（写）—— v3：agent 按执行清单逐项调 action，脚本不发请求
 ⑤ read-back 校验 + 写 logs/ad_changes.jsonl（可回滚）
 ```
@@ -68,7 +68,6 @@
 | 5 | `out/raw/download_tasks.json` | `get_ad_download_task_page_list` | `task_ids`；**分页类** | `rows` | 20 | 绩效下载任务进度（`reportState`/`downloadUrl` 在行里） |
 | 6 | `out/raw/perf_campaign_<end>.xlsx` | agent 下载 `downloadUrl` 后放入 | —（本地文件） | — | 500 | 活动级绩效（`adCampaignReport` 导出） |
 | 6b | `out/raw/perf_target_<end>.xlsx` | 同上 | — | — | 500 | 关键词/投放级绩效（`adTargetReport` 导出） |
-| 7（兜底） | `out/raw/perf_custom_<shopId>.json` | `get_custom_report_page_list` | `report_id`；`start/end=yyyy-MM-dd`；`shop_ids` | `rows` | 500 | 仅 `perf_primary=custom_report` 时；MSKU 级，**不可归因 campaign** |
 
 **绩效链（步骤 5→6）的正确顺序**：
 
@@ -80,7 +79,7 @@
 3. **agent 下载 xlsx**（downloadUrl 是普通 HTTP 链接）放入 `out/raw/perf_campaign_<end>.xlsx` /
    `perf_target_<end>.xlsx`——**解析交给脚本**（`ad_fetch.parse_xlsx`，本地文件、零网络）。
 
-**落盘纪律**（详见 `_shared/SELLFOX_CLIENT.md` §7）：
+**落盘纪律**（详见 `_shared/SELLFOX_CLIENT.md` §6）：
 
 - 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
@@ -150,19 +149,20 @@ action 的工具名）与 **`contract_version: null` 占位**——占位值**�
 
 ---
 
-## 五、飞书审批
+## 五、人工确认（会话内）
 
 ```
-生成提案 → 飞书审批文档 + 卡片消息 @ 广告负责人 → 人工回复「批准 1,3,5」
+生成提案（本地 HTML/JSON）→ 会话内呈给广告负责人 → 人工回复「批准 1,3,5」
         → optimize.py execute 生成执行清单 → agent 逐项执行（见下一节）
 ```
 
-推送用 `_shared/scripts/approval.py` 的 `push_proposal(...)`（由 agent 在会话内编排，
-脚本不直连飞书）；负责人 open_id 读 `config/optimizer.yaml` 的 `approval.owner_open_id`。
-确认文本解析见 `_shared/APPROVAL.md`。
+v1.7.0 起飞书审批链已移除：不再推送审批文档/卡片，审批即**会话内人工确认**——
+助手把 `Proposal.render_markdown()` 的 dry-run 对比表呈给负责人，人工回复
+「批准 1,3,5 / 批准全部 / 驳回」。确认文本解析（`approval.parse_confirmation`）与
+`unclear` 必回人工的规则见 `_shared/APPROVAL.md`。
 
-> 写飞书文档前自动过 PII 脱敏（`buyerEmail`/`buyerName`）并标注「已脱敏」。
-> 演示环境下默认**阻断写入飞书**。
+> 对外输出（如导出文档给第三方）前须过 PII 脱敏（`sellfox_offline.mask_pii*`）。
+> 演示环境下默认**阻断写操作与对外写出**。
 
 ---
 
@@ -173,7 +173,7 @@ action 的工具名）与 **`contract_version: null` 占位**——占位值**�
 
 ```
 ① 审批：python scripts/optimize.py execute --proposal out/ad_proposal_*.json \
-            --approve "批准 1,3,5" --operator ou_xxx
+            --approve "批准 1,3,5" --operator 张三（操作人标识）
    → 脚本完成：批准解析（unclear/reject 即止）→ 演示阻断 → 累计闸 →
      生成执行清单 out/ad_execute_<start>_<end>.{md,json}
      （被批准项 × tool_id × 参数模板 × before 快照 × read-back 计划 × record 模板）
@@ -190,7 +190,7 @@ action 的工具名）与 **`contract_version: null` 占位**——占位值**�
      `create_sp_negative_keyword_targeting`：`{"shop_id","items":[{campaignId,adGroupId,keywordText,matchType}]}`）；
    · 参数类型按当次 inputSchema；未声明字段不传；
    · `state` 取值仅用实测确认的 enabled / paused / archived；
-   · **status=partial 的写一律按失败处理**：不重放、进人工核查（铁律，见 SELLFOX_CLIENT.md §6）。
+   · **status=partial 的写一律按失败处理**：不重放、进人工核查（铁律，见 SELLFOX_CLIENT.md §3）。
 
 ④ record 落日志：每执行完一项，把清单里的 record_template 填上实际结果
    （status success/failed、read_back.ok、回读实际值、当次 contract_version）存为
@@ -215,7 +215,7 @@ action 的工具名）与 **`contract_version: null` 占位**——占位值**�
   "tool": "edit_sp_campaign", "target_type": "campaign", "target_id": "C001",
   "field": "budget", "before": 100, "after": 120, "reason": "…",
   "action": "set_budget", "risk": "L2", "extra": {}, "index": 1,
-  "operator": "ou_xxx", "status": "success",
+  "operator": "张三", "status": "success",
   "contract_version": "当次执行用的版本",
   "read_back": {"ok": true, "actual": 120}
 }
@@ -289,11 +289,11 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 | 某步骤信封 `status=failed` | 该页数据跳过并记 warning，其余照常；数据说明记录 error_code |
 | 广告列表 `data:{}` / `null` | 标「无数据」，**不写 0**，**不重试** |
 | 绩效 xlsx 落盘缺失 / 任务一直未完成 | 降级为「仅结构与状态诊断」并标注；任务失败态在 `download_tasks.json` 摘要里披露 |
-| 未装 openpyxl | 明确提示 `pip install openpyxl` 或改用 `custom_report` 兜底（`perf_custom_<shopId>.json`） |
+| 未装 openpyxl | 明确提示 `pip install openpyxl`；装不上则降级「仅结构与状态诊断」并披露 |
 | 仅拿到 MSKU 级绩效 | 活动级/关键词级诊断降级为「人工核查」并标注 |
 | 提案违反强制约束 | 清空自动提案，仅保留人工核查清单（不静默） |
 | 提案混入不支持的写工具（如 Listing 类） | `execute` 拒绝执行整批（fail-closed），指明提案项 #N 与工具名（退出码 5），不生成执行清单 |
 | 写 action 失败 / partial | 该项记 `failed`，**不重放**；人工核实后重新走提案 |
 | 回读不一致 | `record` 防线改记 `failed`；`verify` 输出差异表；不更新本地状态 |
 | 命中累计闸 | `execute` 拒绝生成执行清单，列出违规（记 skipped 的责任在 agent，见 APPROVAL.md） |
-| 演示环境 | 报告顶部加水印；默认阻断写操作与写飞书 |
+| 演示环境 | 报告顶部加水印；默认阻断写操作与对外写出 |

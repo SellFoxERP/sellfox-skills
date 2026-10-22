@@ -13,15 +13,16 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
     # 1) agent 先按 workflow.md 取数计划落盘 out/raw/*.json
     # 2) 校验 + 组装（汇总检查用）：
     python fetch_inventory.py --out out/assemble_summary.json
-    python fetch_inventory.py --report-id DEMO-RPT-001   # 模拟宽表口径组装
 
 落盘文件 ↔ 工具（与取数计划一致）：
     shops.json                   get_shop_page_list           → rows（分页参数 string）
-    msku_<shopId>.json           get_custom_report_page_list  → rows（每店铺批一个；
-                                                                report_id 缺 → 整步跳过走降级）
-    online_products_<batch>.json get_online_product_page_list → rows（降级 / 补充源）
+    online_products_<batch>.json get_online_product_page_list → rows（主源）
     fba_shipments.json           get_fba_shipment_page_list   → rows（可能 data:{} → 无数据）
     awd_inventory.json           get_awd_inventory_page_list  → rows（可能 data:{} → 无数据）
+
+v1.7.0 起**不再取自定义报表宽表**（get_custom_report_page_list / report_id 依赖整体移除，
+宽表字段分析由 custom-report-analysis 技能承接）：主源为在线产品，可售天数/建议补货量
+按在线产品口径自算，组装结果固定标「口径降级」。残留 msku_*.json 一律忽略（不消费、不采信）。
 
 铁律对应（沿袭旧版口径）：
   * 分页硬上限 20 —— agent 单次 ≤1 页；本模块按 max_rows 做**组装侧硬截断**并披露。
@@ -97,7 +98,7 @@ def num(value: Any) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
-# 规范化记录（字段裁剪：489 字段宽表只保留本技能需要的列）
+# 规范化记录（字段裁剪：只保留本技能需要的列；历史宽表列名保留作同名字段兜底）
 # ---------------------------------------------------------------------------
 CUSTOM_FIELDS = [
     ("msku", ("msku",)),
@@ -152,10 +153,10 @@ CUSTOM_FIELDS = [
 def normalize_row(row: Dict[str, Any], *, source: str, currency: Optional[str]) -> Dict[str, Any]:
     rec: Dict[str, Any] = {"_source": source, "_currency": currency}
     for canonical, candidates in CUSTOM_FIELDS:
-        # 末位 candidate 用规范名本身：降级源已按真实字段名预映射到规范名（见
-        # ONLINE_PRODUCT_FIELDS），此处需能重新拾回；宽表原始行不含规范名，不受影响。
+        # 末位 candidate 用规范名本身：在线产品源已按真实字段名预映射到规范名（见
+        # ONLINE_PRODUCT_FIELDS），此处需能重新拾回。
         rec[canonical] = pick(row, *candidates, canonical)
-    # 降级源专属字段（不在 CUSTOM_FIELDS 中）：直接透传，供自算可售天数
+    # 在线产品专属字段（不在 CUSTOM_FIELDS 中）：直接透传，供自算可售天数
     rec["online_available_qty"] = row.get("online_available_qty")
     # 数值化关键字段
     for key in (
@@ -198,7 +199,7 @@ def _coalesce(*values: Any) -> Any:
 
 
 def _normalize_online_product(row: Dict[str, Any]) -> Dict[str, Any]:
-    """降级源：get_online_product_page_list（inventoryManage 41 字段，currency=CNY）。
+    """主源：get_online_product_page_list（inventoryManage 41 字段，currency=CNY）。
 
     自定义报表字段名（salesVelocityMonth/thirtySaleNum/fbaInventory/localAvailableQty…）
     **不适用于**该工具；这里除复用 CUSTOM_FIELDS 做同名字段兜底外，再按在线产品真实字段名
@@ -231,13 +232,13 @@ def _normalize_online_product(row: Dict[str, Any]) -> Dict[str, Any]:
     currency = first_scalar(manage.get("currency")) or first_scalar(row.get("currency"))
     rec = normalize_row(merged, source="online_product", currency=currency)
     if rec.get("available_days") is None and rec.get("fbm_available_days") is None:
-        # 降级源无赛狐 availableDays（该字段仅属自定义报表/产品分析）→ 标记口径降级
+        # 在线产品无赛狐 availableDays（该字段仅属自定义报表/产品分析）→ 标记口径降级
         rec["_degraded_days"] = True
     return rec
 
 
 # ---------------------------------------------------------------------------
-# 组装结果（形状与旧版 HTTP 取数器完全一致，replenishment/render 零改动）
+# 组装结果（形状与旧版 HTTP 取数器一致，replenishment/render 零改动）
 # ---------------------------------------------------------------------------
 @dataclass
 class FetchResult:
@@ -246,12 +247,15 @@ class FetchResult:
     coverage: List[str] = field(default_factory=list)   # 截断/无数据披露语句
     warnings: List[str] = field(default_factory=list)
     demo_fingerprint: Optional[str] = None
-    report_id_used: Optional[str] = None
     degraded: bool = False
-    degrade_reason: Optional[str] = None  # 口径降级的真实原因（未配置/发现被拒/主源失败），渲染层横幅用
-    no_valid_data: bool = False  # 主源与降级源均不可用（records 全空）：横幅 + rc=2 信号，绝不静默空报告
+    degrade_reason: Optional[str] = None  # 口径降级的真实原因（渲染层横幅用）
+    no_valid_data: bool = False  # 主源不可用（records 全空）：横幅 + rc=2 信号，绝不静默空报告
     shipments: List[Dict[str, Any]] = field(default_factory=list)
     awd: List[Dict[str, Any]] = field(default_factory=list)
+
+
+#: 固定口径降级原因（v1.7.0 起不取自定义报表，宽表字段分析由 custom-report-analysis 承接）
+DEGRADE_REASON = "未接入自定义报表（由 custom-report-analysis 技能承接），按在线产品口径自算"
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +272,7 @@ def _load(raw_dir: Path, name: str) -> Optional[RawEnvelope]:
 
 
 def _merge_pattern(raw_dir: Path, prefix: str) -> List[RawEnvelope]:
-    """合并 msku_*.json / online_products_*.json 等批次文件（v3 并行落盘，文件名不冲突）。"""
+    """合并 online_products_*.json 等批次文件（v3 并行落盘，文件名不冲突）。"""
     out: List[RawEnvelope] = []
     for p in sorted(raw_dir.glob(f"{prefix}_*.json")):
         try:
@@ -316,7 +320,7 @@ def _rows_from_env(env: RawEnvelope, *, label: str, max_rows: int, result: Fetch
 
 def _row_identity(rec: Dict[str, Any]) -> Any:
     """记录的 MSKU 身份：msku 退化到 sku（与计算层 replenishment.compute 的口径一致，
-    降级源 get_online_product_page_list 常只有 sku）。None = 无法识别，不参与去重。"""
+    在线产品源 get_online_product_page_list 常只有 sku）。None = 无法识别，不参与去重。"""
     return rec.get("msku") or rec.get("sku")
 
 
@@ -326,14 +330,15 @@ def _row_identity(rec: Dict[str, Any]) -> Any:
 def assemble_all(
     raw_dir: Path,
     *,
-    report_id: Optional[str],
     skill_cfg: Dict[str, Any],
     result: Optional[FetchResult] = None,
 ) -> FetchResult:
-    """四源落盘合并组装。report_id 为空 → 跳过宽表步骤，走在线产品降级并标「口径降级」。
+    """落盘合并组装。主源 = 在线产品（get_online_product_page_list）。
+
+    v1.7.0 起不取自定义报表宽表（由 custom-report-analysis 技能承接）：
+    固定按在线产品口径自算并标「口径降级」；残留 msku_*.json 一律忽略。
 
     :param raw_dir: 落盘目录（通常是 ``<skill>/out/raw``）。
-    :param report_id: 报表 ID（reports.yaml → inventory.id，或 --report-id 覆盖）。
     :param skill_cfg: ``config/inventory.yaml``（max_rows / 口径参数）。
     """
     result = result or FetchResult()
@@ -380,66 +385,9 @@ def assemble_all(
                     "首个出现为准去重）；分批请按去重后的唯一店铺清单，避免重复批次。"
                 )
 
-    # 1) 宽表主源（每店铺批一文件；无 report_id → 整步跳过走降级）
-    msku_envs = _merge_pattern(raw_dir, "msku")
-    custom_records: List[Dict[str, Any]] = []
-    custom_failed_codes: List[str] = []  # 主源 failed 的 error_code（降级原因/失败可见性用）
-    max_cr = int(limits.get("custom_report", 200))
-    if report_id and msku_envs:
-        result.report_id_used = report_id
-        result.sources.append("get_custom_report_page_list")
-        truncated_any = False
-        for env_ in msku_envs:
-            _scan(env_.obj)
-            batch = env_.path.stem  # msku_<shopId>
-            if env_.status == "failed" and env_.error_code and env_.error_code not in custom_failed_codes:
-                custom_failed_codes.append(env_.error_code)
-            rows = _rows_from_env(
-                env_, label=f"custom_report({batch})", max_rows=max_cr, result=result
-            )
-            truncated_any = truncated_any or bool((env_.coverage or {}).get("truncated"))
-            for row in rows:
-                custom_records.append(normalize_row(row, source="custom_report", currency="USD"))
-        # 组装侧 max_rows 硬截断（服务端 20 条/页硬上限在取数侧用「单次 ≤1 页」规避）
-        if len(custom_records) > max_cr:
-            result.warnings.append(
-                f"⚠️ 宽表合并 {len(custom_records)} 行，超出 max_rows={max_cr} 上限，"
-                f"本次仅覆盖前 {max_cr} 行，其余未纳入统计。"
-            )
-            custom_records = custom_records[:max_cr]
-            truncated_any = True
-        if truncated_any:
-            result.warnings.append(
-                f"⚠️ 自定义报表取数触达 max_rows={max_cr} 上限，本次仅覆盖部分 MSKU，其余未纳入统计。"
-            )
-    elif report_id and not msku_envs:
-        result.warnings.append(
-            "宽表落盘缺失（out/raw/msku_*.json）：L2 明细层降级，改用在线产品降级源组装。"
-        )
-    elif not report_id and msku_envs:
-        # report_id 为空时按取数计划不应调用宽表；即便有落盘也整步跳过，显式说明。
-        # 失败可见性：已落盘的 failed 宽表信封（如发现验证读 RESULT_BUDGET_EXCEEDED）绝不静默 ——
-        # error_code + 工具名进警告/数据说明（涉及工具），再走降级。
-        any_failed = False
-        for env_ in msku_envs:
-            _scan(env_.obj)
-            if env_.status == "failed":
-                any_failed = True
-                if env_.error_code and env_.error_code not in custom_failed_codes:
-                    custom_failed_codes.append(env_.error_code)
-                result.warnings.append(
-                    f"custom_report({env_.path.stem}) status=failed（error_code={env_.error_code}）："
-                    "get_custom_report_page_list 取数失败，report_id 未保存，该步未纳入统计，走降级路径。"
-                )
-        if any_failed:
-            result.sources.append("get_custom_report_page_list(失败未采信)")
-        result.warnings.append(
-            "reports.yaml → inventory.id 为空：忽略已落盘的 msku_*.json，整步跳过走降级路径。"
-        )
-
-    # 2) 在线产品降级 / 补充源
+    # 1) 在线产品主源（v1.7.0 起不再取自定义报表宽表，残留 msku_*.json 忽略）
     online_envs = _merge_pattern(raw_dir, "online_products")
-    fallback: List[Dict[str, Any]] = []
+    records: List[Dict[str, Any]] = []
     max_op = int(limits.get("online_product", 200))
     for env_ in online_envs:
         _scan(env_.obj)
@@ -448,98 +396,50 @@ def assemble_all(
             env_, label=f"online_product({batch})", max_rows=max_op, result=result
         )
         for row in rows:
-            fallback.append(_normalize_online_product(row))
+            records.append(_normalize_online_product(row))
+    if online_envs:
+        result.sources.append("get_online_product_page_list")
     # 去重防御：上游 shop_id_list 过滤失效时（线上实测）不同批次会返回同一目录，
     # 同一 MSKU 按批次数重复计入会让建议单/核心结论成倍虚增 —— 按 MSKU
-    # （msku 退化到 sku，与计算层口径一致）去重，首个出现为准（对齐补充路径做法），去重时披露。
+    # （msku 退化到 sku，与计算层口径一致）去重，首个出现为准，去重时披露。
     seen_msku: set = set()
-    deduped_fallback: List[Dict[str, Any]] = []
-    for rec in fallback:
+    deduped_records: List[Dict[str, Any]] = []
+    for rec in records:
         key = _row_identity(rec)
         if key is not None and key in seen_msku:
             continue
         if key is not None:
             seen_msku.add(key)
-        deduped_fallback.append(rec)
-    if len(deduped_fallback) < len(fallback):
+        deduped_records.append(rec)
+    if len(deduped_records) < len(records):
         result.warnings.append(
-            f"⚠️ 在线产品降级源跨批次重复 {len(fallback) - len(deduped_fallback)} 行"
+            f"⚠️ 在线产品源跨批次重复 {len(records) - len(deduped_records)} 行"
             "（同一 MSKU，首个出现为准去重）：疑似上游 shop_id_list 过滤失效，建议核对店铺分批参数。"
         )
-    fallback = deduped_fallback
-    if len(fallback) > max_op:
+    records = deduped_records
+    if len(records) > max_op:
         result.warnings.append(
-            f"⚠️ 在线产品合并 {len(fallback)} 行，触达 max_rows={max_op} 上限，其余未纳入统计。"
+            f"⚠️ 在线产品合并 {len(records)} 行，触达 max_rows={max_op} 上限，其余未纳入统计。"
         )
-        fallback = fallback[:max_op]
+        records = records[:max_op]
 
-    if not report_id:
-        # report_id 为空 → 宽表整步跳过；存在 online_products_*.json 则组装降级数据
-        result.degraded = True
-        if custom_failed_codes:
-            result.degrade_reason = (
-                "报表发现验证失败（get_custom_report_page_list，error_code="
-                + "/".join(custom_failed_codes) + "），report_id 未保存"
-            )
-        else:
-            result.degrade_reason = "未配置报表 ID（reports.yaml → inventory.id 为空，尚未发现适用报表）"
-        result.sources.append("get_online_product_page_list(降级)")
-        result.warnings.append(
-            f"⚠️ 口径降级：{result.degrade_reason}，改用在线产品 inventoryManage "
-            "子对象；可售天数为自算口径，与赛狐 availableDays 不一致，尚未取得适用报表时先展示当前自算结果。"
-        )
-        result.records = fallback
-        if not fallback:
-            # 主源（宽表整步跳过/发现被拒）与降级源均不可用：显式警告 + 报告横幅 + rc=2 信号
-            result.no_valid_data = True
-            result.warnings.append(
-                "⚠️ 主源与降级源均不可用，本报告无有效数据项：宽表整步未取（report_id 未取得），"
-                "且降级源落盘缺失（out/raw/online_products_*.json）——全 0 结论不可采信，请核对取数落盘。"
-            )
-    elif custom_records:
-        # 主源有数据：在线产品仅作补充（按 MSKU 去重合并，身份键与计算层一致），
-        # 口径仍以宽表为准
-        if fallback:
-            result.sources.append("get_online_product_page_list(补充)")
-        existing = {_row_identity(r) for r in custom_records if _row_identity(r) is not None}
-        result.records = custom_records + [
-            r for r in fallback if _row_identity(r) not in existing
-        ]
-    elif fallback:
-        # 主源整批缺失（落盘缺失/failed/无数据）→ 实际口径已是降级源，显式标注
-        result.degraded = True
-        if custom_failed_codes:
-            result.degrade_reason = (
-                "主源取数失败（get_custom_report_page_list，error_code="
-                + "/".join(custom_failed_codes) + "）"
-            )
-        elif not msku_envs:
-            result.degrade_reason = "宽表落盘缺失（out/raw/msku_*.json）"
-        else:
-            result.degrade_reason = "主源整批无数据（custom_report 未取回任何行）"
-        result.sources.append("get_online_product_page_list(降级)")
-        result.records = fallback
-    else:
-        # 主源与降级源均不可用（稀疏 raw：主源 failed + online_products_*.json 缺失）：
-        # 绝不静默产出全 0 项空报告 —— 显式警告 + 报告横幅 + rc=2 信号。
-        result.records = []
+    # 口径降级：未接入自定义报表（固定，非动态判定）——宽表字段分析由 custom-report-analysis 承接
+    result.degraded = True
+    result.degrade_reason = DEGRADE_REASON
+    result.warnings.append(
+        f"⚠️ 口径降级：{DEGRADE_REASON}——可售天数/建议补货量为自算口径"
+        "（非赛狐 availableDays / suggestNumSum），与宽表口径可能不一致。"
+    )
+    result.records = records
+    if not records:
+        # 主源（在线产品）不可用：显式警告 + 报告横幅 + rc=2 信号
         result.no_valid_data = True
-        result.degraded = True
-        if custom_failed_codes:
-            result.degrade_reason = (
-                "主源取数失败（get_custom_report_page_list，error_code="
-                + "/".join(custom_failed_codes) + "）"
-            )
-        elif not msku_envs:
-            result.degrade_reason = "宽表落盘缺失（out/raw/msku_*.json）"
-        else:
-            result.degrade_reason = "主源整批无数据（custom_report 未取回任何行）"
         result.warnings.append(
-            f"⚠️ 主源与降级源均不可用，本报告无有效数据项（{result.degrade_reason}，"
-            "且降级源落盘缺失 out/raw/online_products_*.json）——全 0 结论不可采信，请核对取数落盘。"
+            "⚠️ 本报告无有效数据项：在线产品源落盘缺失或无数据"
+            "（out/raw/online_products_*.json）——全 0 结论不可采信，请核对取数落盘。"
         )
 
-    # 3) 在途货件 / 4) AWD 库存：可能为空（data:{} → 无数据），不视为失败
+    # 2) 在途货件 / 3) AWD 库存：可能为空（data:{} → 无数据），不视为失败
     env = _load(raw_dir, "fba_shipments")
     if env is None:
         result.warnings.append(
@@ -580,7 +480,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     """独立运行：校验 + 组装，输出摘要 JSON（不做判定与渲染，入口见 run_inventory_health.py）。"""
     ap = argparse.ArgumentParser(description="库存健康 - 落盘校验与组装（零网络）")
     ap.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
-    ap.add_argument("--report-id", default=None, help="模拟 reports.yaml 的 inventory.id（缺省按降级口径组装）")
     ap.add_argument("--out", default=None, help="把组装摘要写成 JSON（缺省打印到 stdout）")
     args = ap.parse_args(argv)
 
@@ -591,11 +490,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     from config_loader import load_yaml_file  # noqa: E402 （_shared 已在 sys.path）
 
     skill_cfg = load_yaml_file(skill_root / "config" / "inventory.yaml")
-    result = assemble_all(raw_dir, report_id=args.report_id, skill_cfg=skill_cfg)
+    result = assemble_all(raw_dir, skill_cfg=skill_cfg)
 
     summary = {
         "raw_dir": str(raw_dir),
-        "report_id_used": result.report_id_used,
         "degraded": result.degraded,
         "degrade_reason": result.degrade_reason,
         "records": len(result.records),

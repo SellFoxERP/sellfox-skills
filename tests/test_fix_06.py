@@ -533,5 +533,63 @@ class SelftestRunTest(unittest.TestCase):
         self.assertIn("record/verify helper 往返一致", proc.stdout)
 
 
+class V17DeFeishuDeCustomReportTest(unittest.TestCase):
+    """[v1.7.0] 去飞书 + 去自定义报表：审批=会话内人工确认；custom_report 兜底移除。"""
+
+    DOCS = ("SKILL.md", "references/workflow.md", "references/output-templates.md",
+            "references/field-dictionary.md", "references/diagnosis-rules.md")
+
+    def test_docs_have_no_feishu_approval_chain(self):
+        for rel in self.DOCS:
+            text = (SKILL / rel).read_text(encoding="utf-8")
+            self.assertNotIn("push_proposal", text, rel)
+            self.assertNotIn("## 五、飞书审批", text, rel)   # 旧章节头不得复现
+            self.assertNotIn("飞书审批卡片", text, rel)       # output-templates 旧节
+            self.assertNotIn("写飞书", text, rel)
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("会话内人工确认", skill)
+        self.assertNotIn("推送飞书审批", skill)
+        wf = (SKILL / "references" / "workflow.md").read_text(encoding="utf-8")
+        self.assertIn("五、人工确认（会话内）", wf)
+
+    def test_no_get_custom_report_page_list_anywhere(self):
+        for path in list(SKILL.rglob("*")):
+            if "__pycache__" in path.parts or "out" in path.parts or not path.is_file():
+                continue
+            if path.suffix in (".py", ".md", ".json", ".yaml"):
+                self.assertNotIn("get_custom_report_page_list",
+                                 path.read_text(encoding="utf-8"), str(path))
+
+    def test_custom_report_fallback_removed_in_loader(self):
+        # perf_primary=custom_report（旧配置残留）不再加载 perf_custom_<shopId>.json：
+        # 落盘存在也按「非法值/移除」处理，绩效保持缺失并告警（fail-closed 不编造绩效）。
+        cfg = json.loads(json.dumps(OPT_CFG))
+        cfg["data_source"] = {"perf_primary": "custom_report"}
+        with tempfile.TemporaryDirectory() as td:
+            raw = _write_raw(td, "10001", campaigns=[{"campaignId": "C1", "state": "enabled"}])
+            (raw / "perf_custom_10001.json").write_text(
+                json.dumps(envelope("rows", [{"adCost": "9.9", "msku": "M1"}]),
+                           ensure_ascii=False), encoding="utf-8")
+            data = ad_fetch.load_from_raw(raw, "10001", "2026-10-08", "2026-10-14", cfg)
+        self.assertEqual(data.perf_source, "none")
+        self.assertEqual(data.perf_campaign, [])
+        self.assertTrue(any("custom_report" in w and "移除" in w
+                            for w in data.warnings), data.warnings)
+
+    def test_scripts_have_no_feishu_wording(self):
+        for name in ("optimize.py", "ad_fetch.py", "diagnose.py", "_bootstrap.py"):
+            src = (SCRIPTS / name).read_text(encoding="utf-8")
+            self.assertNotIn("飞书", src, name)
+            self.assertNotIn("feishu", src, name)
+            self.assertNotIn("perf_custom", src, name)
+
+    def test_evals_approval_wording_updated(self):
+        evals = json.loads((SKILL / "evals" / "evals.json").read_text(encoding="utf-8"))
+        joined = json.dumps(evals, ensure_ascii=False)
+        self.assertNotIn("push_proposal", joined)
+        self.assertNotIn("custom_report 兜底并标注", joined)
+        self.assertIn("会话内人工确认", joined)
+
+
 if __name__ == "__main__":
     unittest.main()

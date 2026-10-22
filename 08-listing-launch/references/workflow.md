@@ -32,13 +32,13 @@
 
 1. **客户端 MCP 就绪**：会话内能调 `mcp__Sellfox-MCP__*`（Key 只在客户端 MCP 配置里，
    **脚本不需要也不接受 `SELLFOX_MCP_KEY`**，计算面零网络）。若数据源为演示/沙箱环境，
-   产出物会带演示水印并默认阻断写飞书。
+   产出物会带演示水印并默认阻断对外写出与外部生成。
 2. **落盘就绪**：`out/raw/online_product.json` 与 `out/raw/product_analyze.json` 是否已由
    agent 按取数计划落盘。缺落盘 → 不阻断，走「离线骨架」：实时字段标
    「⚠️ 需人工核查」，骨架照出。
 3. **演示环境指纹**（`MOCK-` / `demo.example.com` / `SHOP-DEMO-` / `B0DEMO` /
    店铺名含「演示」等，由 `fetch_baseline.py` 扫描落盘信封）。命中 → 上架包顶部加水印，
-   **默认阻断写飞书**。
+   **默认阻断对外写出与外部生成**（见阶段 5 演示数据闸）。
 4. **配置完整性**：`config/listing_spec.yaml`（字符/素材规格）、`config/fx.yaml`（汇率）、
    `config/launch.yaml`（素材计划/单价）—— 未配置的项一律标「需人工核查」，**不编造**。
 
@@ -72,7 +72,7 @@
 | 1 | `out/raw/online_product.json` | `get_online_product_page_list` | `search_type`/`search_content`（asin/parentAsin/msku/sku/title/fnsku/commodityName）；`marketplace_id_list=[站点]`；`shop_id_list`（每批 ≤20 行）；分页参数类型按当次契约 | `rows` | 20 | Listing 属性 + 成本/费用/价格 + FBA 库存 → 商品基线 `products` |
 | 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `search_type`；`search_mode=exact`；`search_contents`；`dim_type="1"`（asin 维度）；`fields` / `field_modules` **至少一项非空**（契约顶层 anyOf 必填——线上实测缺省被拒 `INVALID_PARAMS field_errors=[{path:"",rule:"anyOf"}]`，补 `fields` 可恢复）；`marketplace_id_list` / `shop_id_list` 同上 | `rows` | 20 | 类目 / BSR / 上架时间 → 基线 `analysis`；失败不阻断主流程（标需人工核查） |
 
-**落盘纪律**（详见 SELLFOX_CLIENT.md §7）：
+**落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
 - 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，组装交给脚本（上下文是稀缺资源）；
@@ -165,10 +165,11 @@ A+ 模块图 ×5~7
 | 佣金 | `referralFee` | get_online_product_page_list | 售价口径 |
 | FBA | `fbaFees` | get_online_product_page_list | 售价口径 |
 | 变动结算费 | `variableClosingFee` | get_online_product_page_list | 售价口径 |
-| 头程 | `headTripCost`（商品行，首选）/ `headTripPrice`（宽表补充） | get_online_product_page_list / get_custom_report_page_list | 成本口径 |
+| 头程 | `headTripCost`（商品行） | get_online_product_page_list | 成本口径 |
 
-- 跨币种必须经 `config/fx.yaml` 换算，并标注**汇率来源 + 日期**；未配置 → 标「需人工核查」。
-- 头程优先取商品行 `headTripCost`（来源标注「商品行」）；缺值再走宽表/人工，标「需人工核查」。
+- 跨币种必须经 `config/fx.yaml` 换算，并标注**汇率来源 + 日期**；未配置 → 「需人工核查」。
+- 头程取商品行 `headTripCost`（来源标注「商品行」）；缺值需人工核查（宽表口径转
+  custom-report-analysis 技能）。
 - 费用不完整时**不给**「精确」利润，只标「估算、仅供参考」。
 
 ---
@@ -188,8 +189,8 @@ A+ 模块图 ×5~7
 + 诚实边界 + 数据说明（必填，不可省略）
 ```
 
-写飞书（可选）：`FeishuWriter.guard_demo` 默认在演示环境**阻断**；显式 `--allow-demo-write`
-才放行且仍加水印。
+交付为本地 HTML（v1.7.0 起飞书写入已移除）。演示环境默认阻断对外写出：
+`sellfox_offline.guard_demo` 显式 `--allow-demo-write` 才放行且仍加水印。
 
 ---
 
@@ -216,6 +217,6 @@ A+ 模块图 ×5~7
 | 某信封 `status=partial` | 部分成功 | 可采信，但必须在数据说明披露 | 「partial：可采信，已披露」 |
 | `data` 为空（status=complete） | 该品无数据 | 标「**无数据**」，不写 0，不重试；提示确认 ASIN/MSKU/站点是否正确 | 「无数据」 |
 | `coverage.truncated=true` | 只覆盖 Top N | 写入 warnings，渲染层披露「仅覆盖 N 行，其余未纳入」 | 「截断披露」 |
-| 命中演示指纹 | 数据非真实 | 包顶加「⚠️ 演示数据」水印，默认阻断写飞书 | 水印 |
+| 命中演示指纹 | 数据非真实 | 包顶加「⚠️ 演示数据」水印，默认阻断对外写出与外部生成 | 水印 |
 | `product_analyze` 缺失/失败 | 类目/BSR/上架时间缺 | 上架包其余部分（文案/需求单/合规/测算）照常产出并披露该降级 | 区块 1 标「⚠️ 需人工核查：竞品/关键词情报需外部 MCP…」；失败时「待人工确认项」逐字记录 status=failed 与 error_code，缺失时记录「缺落盘 product_analyze.json」 |
 | 汇率（`config/fx.yaml`）未配置 | 跨币种无法折算 | 利润只标「估算、仅供参考」，不给精确值 | 「汇率未配置，需人工核查」 |

@@ -57,7 +57,7 @@
 ```markdown
 ---
 ## 数据说明
-- 数据源：赛狐 ERP ｜ 涉及工具：get_custom_report_page_list, get_fba_shipment_page_list, …
+- 数据源：赛狐 ERP ｜ 涉及工具：get_online_product_page_list, get_fba_shipment_page_list, …
 - 报表窗口：30 天 ｜ 截止：{日期} 23:59
 - 币种：售价口径 USD ｜ 成本口径 CNY（跨币种不直接相减，换算须标注汇率来源与日期）
 - 取数覆盖范围（含截断披露）：

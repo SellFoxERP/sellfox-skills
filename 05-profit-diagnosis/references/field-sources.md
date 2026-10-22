@@ -5,24 +5,22 @@
 
 ## 目录
 
-- [1. 两个主源的分工](#1-两个主源的分工)
+- [1. 数据源分工](#1-数据源分工)
 - [2. msku 报表用到的字段](#2-msku-报表用到的字段171)
-- [3. 自定义报表用到的字段](#3-自定义报表用到的字段489)
-- [4. 只在自定义报表的字段](#4-只在自定义报表的字段禁止归给-msku-报表)
-- [5. 广告转化字段并存](#5-广告转化字段并存按需选用)
-- [6. 销量窗口字段并存](#6-销量窗口字段并存按需选用)
-- [7. 需人工核查的项](#7-需人工核查的项)
+- [3. 只在自定义报表的字段（已移交 custom-report-analysis）](#3-只在自定义报表的字段已移交-custom-report-analysis禁止归给-msku-报表)
+- [4. 广告转化字段并存](#4-广告转化字段并存按需选用)
+- [5. 销量窗口字段并存](#5-销量窗口字段并存按需选用)
+- [6. 需人工核查的项](#6-需人工核查的项)
 
 ---
 
-## 1. 两个主源的分工
+## 1. 数据源分工
 
-| 数据源 | 字段数 | 定位 | 典型字段 |
+| 数据源 | 字段数 | 定位 | 本技能是否使用 |
 |---|---|---|---|
-| `get_profit_report_by_msku` | **171** | 财务深度（亚马逊费用逐项拆解） | `productSales` / `grossProfit` / `commission` / `fbaFulfillmentFee` / `cpcCost` / `storageFee` / `refundRate` / `roi` / `rate` / `currencyList` |
-| `get_custom_report_page_list` | **489** | 广度 + 成本/赔偿/延期结算 | `purchaseCost` / `headTripPrice` / `reimbursementAmount` / `warehouseLostAmount` / `missingFromInboundAmount` / `deferredAmount` / `sessions` / `availableDays` |
-
-> 💡 **选型口诀**：要**深**（费用拆解细）用 msku 利润报表；要**成本与赔偿明细**用自定义报表。
+| `get_profit_report_by_msku` | **171** | 财务深度（亚马逊费用逐项拆解）：`productSales` / `grossProfit` / `commission` / `fbaFulfillmentFee` / `cpcCost` / `storageFee` / `refundRate` / `roi` / `rate` / `currencyList` | ✅ 归因主源（全部因子） |
+| `get_custom_report_page_list` | **489** | 广度 + 成本/赔偿/延期结算：`purchaseCost` / `headTripPrice` / `reimbursementAmount` / `deferredAmount` / `sessions` / `availableDays` | ❌ 已移交 `custom-report-analysis` 技能承接 |
+| `get_amazon_reimbursement_report` | — | 赔偿条目清单 | ✅ 赔偿**条数级**核对（非自定义报表） |
 
 ## 2. msku 报表用到的字段（171）
 
@@ -45,34 +43,7 @@
 | `compensation_fee` | `compensationFee` | 赔偿**汇总** |
 | `rate` / `currency_list` | `rate` / `currencyList` | 汇率 / 币种列表（跨币种提示用） |
 
-## 3. 自定义报表用到的字段（489）
-
-| 规范名 | 原始字段 | 说明 |
-|---|---|---|
-| `purchase_cost` | `purchaseCost` | 采购成本（⚠️ 只在自定义报表） |
-| `head_trip_price` | `headTripPrice` | 头程运费（⚠️ 只在自定义报表） |
-| `commodity_cost` | `commodityCost` | 商品成本 |
-| `reimbursement_amount` | `reimbursementAmount` | 亚马逊赔偿（⚠️ 只在自定义报表） |
-| `warehouse_lost_amount` | `warehouseLostAmount` | 仓库丢失（⚠️ 只在自定义报表） |
-| `missing_from_inbound_amount` | `missingFromInboundAmount` | 入库缺失（⚠️ 只在自定义报表） |
-| `warehouse_damage_amount` | `warehouseDamageAmount` | 仓库损坏 |
-| `deferred_amount` | `deferredAmount` | 延期结算金额（⚠️ 只在自定义报表） |
-| `storage_fee_amount` | `storageFeeAmount` | 仓储费（宽表口径） |
-| `fba_long_term_storage_fee_amount` | `fbaLongTermStorageFeeAmount` | 长期仓储费（库龄 271+ 天） |
-| `fba_overage_fee_amount` | `fbaOverageFeeAmount` | 超量仓储费 |
-| `session` | `sessions` | 会话数（归因上下文） |
-| `conversion_rate` | `orderConversionRate` / `conversionRate` | 订单转化率 / 会话转化率 |
-| `buy_box_percent` | `buyBoxPercent` | 购物车占比 |
-| `return_sale_num` | `returnSaleNum` | 退货销量 |
-| `refund_price` | `refundPrice` | 退款金额 |
-| `inv_age_271_365` | `invAge271To365Days` | 库龄 271~365 天（长期仓储费风险） |
-| `inv_age_365_plus` | `invAge365PlusDays` | 库龄 365 天以上（长期仓储费红线） |
-| `profit_price` / `profit_rate` | `profitPrice` / `profitRate` | 宽表口径利润/利润率（交叉核对用，**非**归因主口径） |
-
-> ⚠️ `deferredReason`（延期原因）**不在**自定义报表 —— 实测它属于 `get_profit_report_by_order`（74 字段）。
-> 本技能免费报告不含订单级明细，因此**不呈现延期原因**，需看原因时引导用户改用订单利润报表。
-
-## 4. 只在自定义报表的字段（⚠️ 禁止归给 msku 报表）
+## 3. 只在自定义报表的字段（已移交 custom-report-analysis；⚠️ 禁止归给 msku 报表）
 
 以下 6 个字段经一手实测确认**只存在于 `get_custom_report_page_list`**，**不在** `get_profit_report_by_msku`：
 
@@ -81,12 +52,22 @@ purchaseCost / headTripPrice / reimbursementAmount
 warehouseLostAmount / missingFromInboundAmount / deferredAmount
 ```
 
-早期曾把它们错误归到 msku 报表，导致归因永远取不到值、静默落空。**本技能两个源都用**，
-归因表逐字段标注来源工具；`report_id` 缺失时这些因子一律标「⚠️ 需人工核查」。
+早期曾把它们错误归到 msku 报表，导致归因永远取不到值、静默落空。**本技能已不再取数
+自定义报表**：这些因子的金额归因由 `custom-report-analysis` 技能承接（固定分工，
+报告固定披露）；本技能归因因子全部来自 msku 报表，逐字段标注来源工具。
 
-## 5. 广告转化字段并存（按需选用）
+宽表侧其余字段（`commodityCost` / `storageFeeAmount` / `fbaLongTermStorageFeeAmount` /
+`fbaOverageFeeAmount` / `sessions` / `orderConversionRate` / `buyBoxPercent` /
+`invAge271To365Days` / `invAge365PlusDays` / `profitPrice` / `profitRate` 等）同样不在
+本技能取数范围，需要时改用 `custom-report-analysis`。
+
+> ⚠️ `deferredReason`（延期原因）**不在**自定义报表 —— 实测它属于 `get_profit_report_by_order`（74 字段）。
+> 本技能不含订单级明细，因此**不呈现延期原因**，需看原因时引导用户改用订单利润报表。
+
+## 4. 广告转化字段并存（按需选用）
 
 这几个字段**都真实存在**（均在 `get_custom_report_page_list`），指代不同，不得宣称某个不存在：
+需要它们时改用 `custom-report-analysis` 技能。
 
 | 字段 | 口径 |
 |---|---|
@@ -96,21 +77,20 @@ warehouseLostAmount / missingFromInboundAmount / deferredAmount
 | `orderConversionRate` | 订单转化率（订单侧） |
 | `conversionRate` | 会话转化率（会话侧） |
 
-本技能归因「销售额下滑」时读 `orderConversionRate`（订单侧），因为要回答的是
-「流量在，但下单变少了没有」。**广告侧转化问题交给技能 6**。
+广告侧转化问题交给技能 6。
 
-## 6. 销量窗口字段并存（按需选用）
+## 5. 销量窗口字段并存（按需选用）
 
 两套窗口字段，分属不同工具，**不可互套**：
 
 | 字段 | 归属 |
 |---|---|
-| `threeSaleNum` / `sevenSaleNum` / `fourteenSaleNum` / `thirtySaleNum` / `sixtySaleNum` / `ninetySaleNum` | **自定义报表** |
+| `threeSaleNum` / `sevenSaleNum` / `fourteenSaleNum` / `thirtySaleNum` / `sixtySaleNum` / `ninetySaleNum` | **自定义报表**（本技能不取） |
 | `day7SaleNum` / `day14SaleNum` / `day30SaleNum` | **在线产品**（`get_online_product_page_list`） |
 
-本技能主用 msku 报表的 `salesNum`（利润报表口径的销量）；宽表窗口字段仅作上下文补充。
+本技能主用 msku 报表的 `salesNum`（利润报表口径的销量）。
 
-## 7. 需人工核查的项
+## 6. 需人工核查的项
 
 以下内容**赛狐 MCP 拿不到**，一律标「⚠️ 需人工核查」，**绝不编造**：
 

@@ -29,8 +29,7 @@
 > 覆盖范围：N 个店铺 / 扫描状态 active,inActive,delete /
 > 时间窗口：近 7 天与近 30 天（口径：<站点/时区说明>）
 > 数据源：get_online_product_page_list（主）；get_product_analyze_list（可选）
->         [有 report_id] get_custom_report_page_list（daily_ops 报表，宽表）
->         [无 report_id] ⚠️ 口径降级：缺少自定义报表，sessions/CVR/buyBoxPercent/类目排名/差评数不可用
+>         ⚠️ 口径降级：未接入自定义报表（由 custom-report-analysis 技能承接），sessions/CVR/buyBoxPercent/类目排名/差评数不可用
 > 截断披露：本次仅覆盖 Top N，其余未纳入（若触顶）｜ 未触发截断
 > 演示环境：⚠️ 演示数据，非真实经营数据（命中指纹 <fingerprint>）｜ 未命中
 > 币种：价格字段为 USD；库存成本子对象为 CNY（未直接相减）
@@ -48,7 +47,7 @@
 
 ### [P1] 丢购物车 — B0MOCKA002
 - 证据：buyBoxPercent = 78%（阈值 90%）｜ 口径降级：仅有 buyBoxWinner 布尔
-        字段来源：get_custom_report_page_list.buyBoxPercent
+        字段来源：get_online_product_page_list.buyBoxWinner（占比为宽表字段，custom-report-analysis 承接）
 - 建议：检查跟卖/价格/库存；竞品价需人工核查
 
 ### [P2] BSR 恶化 — B0MOCKA003
@@ -64,7 +63,7 @@
 **每个证据值后面必须标注字段所属工具**（归因表逐字段标注），因为字段名因工具而异、且部分字段只在宽表：
 
 - `get_online_product_page_list` → 标 `（online）`
-- `get_custom_report_page_list` → 标 `（custom）`
+- `get_custom_report_page_list` → 已移交 custom-report-analysis，本技能不产出该来源
 - `get_product_analyze_list` → 标 `（analyze）`
 - `get_product_by_label` → 标 `（label）`
 

@@ -9,7 +9,7 @@
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
   * **取数面 = agent**：在会话里调客户端配置的 ``mcp__Sellfox-MCP__{help,search,action}``，
     按 `references/workflow.md` 的**取数计划**把每步信封落盘到 `out/raw/`；
-    **写操作也由 agent 按审批流程逐项调 action**，脚本只提供提案构造与记录/校验 helper。
+    **写操作也由 agent 按会话内人工确认流程逐项调 action**，脚本只提供提案构造与记录/校验 helper。
   * **计算面 = 脚本**：只读写本地文件，零网络。旧 `_shared/scripts/sellfox_client.py`
     已废弃，**本技能任何脚本不得 import 它**；离线工具改用 `_shared/scripts/sellfox_offline.py`。
 
@@ -108,11 +108,8 @@ def load_thresholds() -> Dict[str, Any]:
 def load_shops() -> Dict[str, Any]:
     """读 _shared/config/shops.yaml（店铺与负责人）。"""
     return loader().load("shops")
-
-
-def load_reports() -> Dict[str, Any]:
-    """读 _shared/config/reports.yaml（report_id 自动发现缓存）。"""
-    return loader().load("reports")
+# v1.7.0 起 _shared/config/reports.yaml（报表 ID 自动发现缓存）已移除：
+# 06 不再查询自定义报表，绩效唯一主源为下载任务链（见 config/optimizer.yaml）。
 
 
 def load_optimizer() -> Dict[str, Any]:
@@ -160,7 +157,7 @@ def demo_banner(payload: Any) -> str:
     """演示环境水印（命中指纹返回警示行，否则空串）。"""
     fp = detect_demo_environment(payload)
     if fp:
-        return f"⚠️ 演示数据，非真实经营数据（指纹：{fp}）。本技能默认阻断写飞书与广告写操作。"
+        return f"⚠️ 演示数据，非真实经营数据（指纹：{fp}）。本技能默认阻断广告写操作与对外写出。"
     return ""
 
 

@@ -75,7 +75,7 @@
 {"tool": "add_custom_report_index", "target_type": "index", "target_id": "客单价-公司口径",
  "field": "index_formula", "before": null, "after": "...", "reason": "...",
  "action": "add_index", "risk": "L2", "extra": {...}, "index": 1,
- "operator": "ou_xxx", "status": "success", "ts": "2026-09-30T10:00:00"}
+ "operator": "张三", "status": "success", "ts": "2026-09-30T10:00:00"}
 ```
 
 - `status` 只记 `success` / `failed` / `skipped`；**累计闸只统计 `success`**。

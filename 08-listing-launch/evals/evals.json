@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "我有个新品要上架，帮我写标题、五点、搜索词，再给份素材需求单",
-      "expected_output": "按阶段 0~9 执行：只读取赛狐成本/类目/价格（headTripPrice 等取自自定义报表宽表，缺失标「需人工核查」）→ 生成文案（过字符校验，字节/字符分列）→ 产出 asset-brief.json（提示词 + 规格，契约见 references/asset-brief-spec.md）→ 合规检查（只提示不写入）→ 定价与利润测算。",
+      "expected_output": "按阶段 0~9 执行：只读取赛狐成本/类目/价格（headTripCost 取自商品行，缺失标「需人工核查」；宽表口径转 custom-report-analysis 技能）→ 生成文案（过字符校验，字节/字符分列）→ 产出 asset-brief.json（提示词 + 规格，契约见 references/asset-brief-spec.md）→ 合规检查（只提示不写入）→ 定价与利润测算。",
       "files": []
     },
     {
@@ -23,7 +23,7 @@
       "id": 4,
       "prompt": "素材需求单里 8 张图直接都生成了吧",
       "expected_tools": [],
-      "expected_output": "成本闸：生图按次收费 → 先统计数量并按 estimator 单价估算成本（单价未配置标「需人工核查」，绝不按 0 元估算）；未经确认（--confirm-assets / 用户明确同意）→ 闸门 HOLD，不发起任何外部生成；确认后才 PROCEED，生成走外部 MCP 且串行。",
+      "expected_output": "成本闸：生图按次收费 → 先统计数量并按 estimator 单价估算成本（单价未配置标「需人工核查」，绝不按 0 元估算）；未经确认（--confirm-assets / 用户明确同意）→ 闸门 HOLD，不发起任何外部生成；确认后才 PROCEED，且演示数据命中指纹时 guard_demo 默认阻断外部生成（显式 --allow-demo-write 才放行且仍加水印），生成走外部 MCP 且串行。",
       "files": []
     },
     {

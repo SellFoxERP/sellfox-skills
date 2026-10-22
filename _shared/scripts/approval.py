@@ -2,7 +2,7 @@
 
 落地《12-Skill方案-最终版.md》第三章「人机审核统一规范」，**所有写操作走同一条通道**：
 
-    ① 诊断（只读） → ② 提案（dry-run 对比表） → ③ 人工确认（飞书）
+    ① 诊断（只读） → ② 提案（dry-run 对比表） → ③ 会话内人工确认
     → ④ 执行（写） → ⑤ 记录 + 可回滚
 
 本模块提供：
@@ -10,7 +10,7 @@
   * :class:`Proposal` / :class:`ChangeItem` —— 结构化提案，含变更前后对比与回滚方案。
   * 强制约束校验 :meth:`Proposal.validate` —— 单次 ≤20 条、预算幅度 ≤±30%、禁止清单。
   * :class:`AccumulatorGate` —— 累计闸：防连续调用绕过单次限额（读 ``ad_changes.jsonl``）。
-  * 飞书推送 :func:`push_proposal`、确认解析 :func:`parse_confirmation`、
+  * 确认解析 :func:`parse_confirmation`（v1.7.0 起审批为会话内人工确认，飞书能力已移除）、
     变更日志 :func:`record_changes`、写后回读 :func:`verify_read_back`。
 
 仅依赖标准库（``json`` / ``os`` / ``time`` / ``dataclasses``）。
@@ -229,7 +229,7 @@ class Proposal:
         *,
         demo_fingerprint: Optional[str] = None,
     ) -> str:
-        """渲染为「变更前后对比表」Markdown（dry-run 预览 / 飞书文档正文）。
+        """渲染为「变更前后对比表」Markdown（dry-run 预览 / 提案文档正文）。
 
         :param demo_fingerprint: 演示/样本数据指纹——人工审批所见的提案文档**首行**
             必须带水印（eval3-2026-10-22 N1）：提案是审批的依据文档，正文零水印会
@@ -415,79 +415,11 @@ class AccumulatorGate:
 
 
 # ---------------------------------------------------------------------------
-# 飞书推送 / 确认解析 / 日志 / 回读
+# 确认解析 / 日志 / 回读
 # ---------------------------------------------------------------------------
 
 
-def push_proposal(
-    proposal: Proposal,
-    *,
-    writer: Any = None,
-    owner_open_id: Optional[str] = None,
-    webhook_url: Optional[str] = None,
-    limits: Optional[Dict[str, Any]] = None,
-    demo_fingerprint: Optional[str] = None,
-) -> Dict[str, Any]:
-    """把提案推送到飞书（创建审批文档 + 发送卡片消息 @ 负责人）。
 
-    :param writer: :class:`feishu_writer.FeishuWriter` 实例（创建文档用）。
-    :param owner_open_id: 需要 @ 的负责人 open_id。
-    :param webhook_url: 群机器人 Webhook（发送卡片；缺省读 ``FEISHU_APPROVAL_WEBHOOK``）。
-    :param demo_fingerprint: 演示数据指纹——审批文档正文首行水印（与本地提案文档一致）。
-    :returns: ``{"document_id": ..., "card_sent": bool}``
-    """
-    result: Dict[str, Any] = {"document_id": None, "card_sent": False}
-    md = proposal.render_markdown(limits, demo_fingerprint=demo_fingerprint)
-
-    if writer is not None:
-        doc_id = writer.create_doc(proposal.title)
-        writer.write_blocks(doc_id, writer.markdown_to_blocks(md))
-        result["document_id"] = doc_id
-
-    hook = webhook_url or os.environ.get("FEISHU_APPROVAL_WEBHOOK")
-    if hook:
-        card = build_card(proposal, owner_open_id, result.get("document_id"))
-        send_webhook_card(hook, card)
-        result["card_sent"] = True
-    return result
-
-
-def build_card(proposal: Proposal, owner_open_id: Optional[str], document_id: Optional[str]) -> Dict[str, Any]:
-    """构造飞书交互卡片 JSON（含变更条数、风险级别、确认提示）。"""
-    at_line = f"<at id={owner_open_id}></at> 请审批" if owner_open_id else "请审批"
-    doc_line = f"审批文档：{document_id}" if document_id else ""
-    return {
-        "msg_type": "interactive",
-        "card": {
-            "header": {
-                "title": {"tag": "plain_text", "content": proposal.title},
-                "template": "red" if proposal.risk_level in ("L3", "L4") else "orange",
-            },
-            "elements": [
-                {"tag": "div", "text": {"tag": "lark_md", "content": (
-                    f"技能：**{proposal.skill}**\n"
-                    f"风险级别：**{proposal.risk_level}**\n"
-                    f"变更条数：**{len(proposal.items)}**\n{doc_line}"
-                )}},
-                {"tag": "hr"},
-                {"tag": "div", "text": {"tag": "lark_md", "content": (
-                    "回复示例：`批准 1,3,5` ｜ `批准全部` ｜ `驳回`\n" + at_line
-                )}},
-            ],
-        },
-    }
-
-
-def send_webhook_card(webhook_url: str, card: Dict[str, Any], timeout: float = 30.0) -> Dict[str, Any]:
-    """通过群机器人 Webhook 发送卡片。"""
-    import urllib.request
-
-    data = json.dumps(card, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        webhook_url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8", errors="replace"))
 
 
 def parse_confirmation(text: str, total: Optional[int] = None) -> Tuple[str, List[int]]:
@@ -518,7 +450,7 @@ def parse_confirmation(text: str, total: Optional[int] = None) -> Tuple[str, Lis
     )):
         return "approve", sorted(set(nums))
     if nums:
-        # 只回了序号，也视为批准（飞书卡片常见交互）。
+        # 只回了序号，也视为批准（快捷确认交互）。
         return "approve", sorted(set(nums))
     return "unclear", []
 

@@ -3,7 +3,11 @@
 > 何时读：**执行前必读**。定义取数计划、分页处理、字段裁剪、降级路径与披露义务。
 > **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `fetch_listing_data.py`
-> （校验+组装）→ `diagnose.py` → `render_report.py`，全部零网络。
+> （校验+组装）→ `diagnose.py` → `render_report.py`，全部零网络，报告仅本地 HTML（不外发）。
+>
+> **v1.7.0 宽表边界**：本技能不再调用 `get_custom_report_page_list`（自定义报表宽表），
+> 也不依赖 `report_id`——宽表字段分析由 `custom-report-analysis` 技能承接；
+> 残留 `custom_report_*.json` 落盘一律忽略。
 > 调用纪律（契约版本/参数类型/错误语义/并发）见 `_shared/SELLFOX_CLIENT.md`；
 > 字段名见 `config/field-map.yaml`。
 
@@ -37,11 +41,13 @@ inputSchema 为准（⚠️ 标注处为实测差异）。多状态/多店铺批
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/online_<batch>.json`（batch=状态名或店铺 ID） | `get_online_product_page_list` | `online_status_list=[status]`（可选值 `active`/`inActive`/`delete`）；`shop_id_list`；分页参数类型**以当次契约为准** | `rows` | 200/批 | 主数据源（状态/价格/评分/BSR/销量/标签/库存）；按 listingId 去重合并 |
-| 2 | `out/raw/custom_report_<label>.json` | `get_custom_report_page_list` | `report_id`；`start/end`（`yyyy-MM-dd`） | `rows` | 200 | 依赖 report_id（`_shared/config/reports.yaml → daily_ops.id`）；缺 → **跳过整步**（口径降级） |
-| 3 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `start/end`（`yyyy-MM-dd`）；`dim_type=1`（asin 维度）；返回字段集取决于 `fields` 入参 | `rows` | 100 | 可选增强：类目名/BSR 明细/FBM 可用天数 |
-| 4 | `out/raw/labels.json` | `get_product_by_label` | `label_ids`；`group_type=asin`；页参数名 **`page_num`**（非 `page_no`） | `rows` | 100 | **仅配置了 `labels.required_groups` 时**取；未配置则不取 |
+| 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `start/end`（`yyyy-MM-dd`）；`dim_type=1`（asin 维度）；返回字段集取决于 `fields` 入参 | `rows` | 100 | 可选增强：类目名/BSR 明细/FBM 可用天数（fields 实测含 sessions/buyBoxPercent 等，可作宽表替代源） |
+| 3 | `out/raw/labels.json` | `get_product_by_label` | `label_ids`；`group_type=asin`；页参数名 **`page_num`**（非 `page_no`） | `rows` | 100 | **仅配置了 `labels.required_groups` 时**取；未配置则不取 |
 
-**落盘纪律**（详见 SELLFOX_CLIENT.md §7）：
+> `custom_report_<label>.json`（`get_custom_report_page_list`，489 字段宽表）已不在取数计划
+> ——宽表字段分析由 `custom-report-analysis` 技能承接；残留落盘一律忽略。
+
+**落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
 - 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本（上下文是稀缺资源）；
@@ -79,8 +85,8 @@ python _shared/scripts/validate_raw.py --dir 03-listing-health/out/raw --step on
 ```
 
 `fetch_listing_data.py`（v3 改造）：校验 `out/raw/`（存在性/status/空数据/演示指纹/
-coverage 截断），组装出与旧版相同形状的 `data.json` —— diagnose/render 零改动；
-`coverage.truncated` 自动转披露；report_id 缺失时显式列出「宽表专属字段不可用」清单。
+coverage 截断）并组装 `data.json`；`coverage.truncated` 自动转披露；宽表步骤已移除，
+固定披露「未接入自定义报表（custom-report-analysis 承接），宽表专属字段不可用」清单。
 
 > **BSR/评分环比基线 = 本地快照自持**：每次成功组装后，组装层把当前各记录的
 > `bsrRank`/`rating` 按记录 ID 全量重建落盘 `out/baseline-snapshot.json`（含
@@ -88,52 +94,47 @@ coverage 截断），组装出与旧版相同形状的 `data.json` —— diagno
 > `meta.baseline` 供「BSR 恶化/评分下滑」环比。**首次运行无环比**（照旧标
 > 「需历史快照」），**第二次起生效**。
 
-## 3. 降级路径
-
-**判据：`_shared/config/reports.yaml → daily_ops.id` 是否为空（显式 `--report-id` 参数优先）。**
+## 3. 降级路径（v1.7.0：宽表为固定边界，非动态判定）
 
 | 缺失/异常项 | 影响 | 降级做法 | 必须标注 |
 |---|---|---|---|
 | `out/raw/` 为空 | 无法组装 | 停止并提示按取数计划落盘 | — |
 | `online_*.json` 全缺失 | 主数据源不可用 | 记 error，脚本退出码 2 | 「主数据源缺失，报告不可用」 |
 | 某信封 `status=failed` | 该批缺失 | 记录 error_code，其余批次照常 | 数据说明列出失败项 |
-| `report_id` 为空 | 宽表不可用 | 跳过步骤 2（即使有 custom_report_*.json 也不消费）；显式列出不可用字段清单 | 「口径降级：缺少自定义报表」 |
-| `custom_report_*.json` 缺失（report_id 已配置） | 宽表不可用 | 记 error，traffic 为空 | 同上 |
+| 未接入自定义报表（固定状态） | 宽表专属字段不可用 | 不消费任何 `custom_report_*.json`；显式列出不可用字段清单 | 「口径降级：未接入自定义报表（由 custom-report-analysis 承接）」 |
 | `product_analyze.json` 缺失 | 可选增强缺失 | 跳过，不算失败（与旧版未开启一致） | — |
 | `labels.json` 缺失（required_groups 已配置） | 标签覆盖校验降级 | 记 error | 「标签覆盖需人工核查」 |
 | 某 data 为空（status=complete） | 该项无数据 | 标「**无数据**」，不写 0，不重试 | — |
 
-检查项口径对照（有/无 report_id）：
+检查项口径对照（宽表字段固定由 custom-report-analysis 承接）：
 
-| 检查项 | 有 report_id | 无 report_id（降级） |
-|---|---|---|
-| 不可售/被抑制 | `onlineStatus`（online） | 同左，不降级 |
-| 丢购物车 | `buyBoxPercent < 阈值` | 退化用 `buyBoxWinner`（online 布尔）→ 标注「口径降级：仅有是否赢得购物车，无占比」 |
-| 无流量 | `sessions` 连续为 0 | **需人工核查**（online 无会话字段） |
-| 有流量无转化 | `sessions` + `conversionRate` | **需人工核查** |
-| 评分下滑 | `rating` 环比（online）+ `lowReviewNum`（custom） | 仅 `rating` 环比；差评数**需人工核查** |
-| BSR 恶化 | `bsrRank`（online）+ `big/smallCategoryRanking`（custom） | 仅 `bsrRank` 名次变化 |
-| 标签缺失 | `labels`/`productLabelList`（online） | 同左，不降级 |
-| 断货拖排名 | `availableDays`（custom） | 退化用 `quantity`（online） |
+| 检查项 | 本技能口径（online 源） |
+|---|---|
+| 不可售/被抑制 | `onlineStatus`（online），不降级 |
+| 丢购物车 | 退化用 `buyBoxWinner`（online 布尔）→ 标注「口径降级：仅有是否赢得购物车，无占比」 |
+| 无流量 | **需人工核查**（sessions 为宽表字段；analyze 实测含会话字段时可作替代源） |
+| 有流量无转化 | **需人工核查**（sessions/conversionRate 为宽表字段） |
+| 评分下滑 | 仅 `rating` 环比（online，需历史快照）；差评数**需人工核查** |
+| BSR 恶化 | 仅 `bsrRank` 名次变化（online）；类目名次**需人工核查** |
+| 标签缺失 | `labels`/`productLabelList`（online），不降级 |
+| 断货拖排名 | 退化用 `quantity`（online）；`availableDays` **需人工核查** |
 
-降级时**必须**在报告顶部写：「口径降级：缺少自定义报表（report_id），以下检查项不可用 →
-需人工核查：…」，并在每条对应问题后标 `需人工核查`。宽表专属不可用字段清单：
+降级为固定状态，报告顶部**必须**写：「口径降级：未接入自定义报表（由
+custom-report-analysis 技能承接），以下检查项不可用 → 需人工核查：…」，并在每条对应
+问题后标 `需人工核查`。宽表专属不可用字段清单：
 `sessions` / `pageViews` / `conversionRate` / `buyBoxPercent` / `lowReviewNum` / `reviewNum` /
 `bigCategoryRanking` / `smallCategoryRanking` / `availableDays`。
 
-自动发现：按共享 `ONBOARDING.md` 获取适用报表并核对流量/转化/购物车/评论/类目排名字段；未找到则使用在线商品数据并说明缺口，不要求商家回填 ID。
-
 ## 4. 字段裁剪
 
-489 字段宽表与 79 字段在线产品表都会撑爆上下文。**agent 侧**只保留
-`config/field-map.yaml` 中 `checks` 列出的字段；**组装层**对宽表行再裁剪一次
-（仅保留体检所需列）。不要整行原始 JSON 塞进报告，也不在对话中复述行级数据。
+79 字段在线产品表会撑爆上下文。**agent 侧**只保留 `config/field-map.yaml` 中
+`checks` 列出的字段；不要整行原始 JSON 塞进报告，也不在对话中复述行级数据。
 
 ## 5. 输出披露清单
 
 报告顶部必须逐项声明：
 - 覆盖范围（店铺数、扫描状态、是否触顶截断 → Top N 声明）
 - 时间窗口与**时区口径**（多站点 US/EU/JP 边界不同，明确写「昨日/近 7 天」按哪个口径）
-- 口径降级说明（有/无 report_id）
+- 口径降级说明（宽表固定由 custom-report-analysis 承接）
 - 演示环境水印（命中指纹时）
 - 币种说明：`listingPrice` 顶层为 USD；`inventoryManage.currency` 为 CNY，若同表引用必须显式标注，不得直接相减。

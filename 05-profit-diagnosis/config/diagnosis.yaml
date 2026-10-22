@@ -4,8 +4,11 @@
 # 通用配置一律引用 _shared/config/，本文件不重复：
 #   - 利润预警阈值（毛利率下限、毛利环比跌幅） → _shared/config/thresholds.yaml → profit
 #   - 平台费用/退货/仓储类阈值                 → _shared/config/thresholds.yaml（sales/after_sales/ad/inventory）
-#   - report_id（自定义报表）                   → _shared/config/reports.yaml → reports.profit
 #   - 店铺与负责人                              → _shared/config/shops.yaml
+#
+# 自定义报表（489 宽表）已不在本技能取数与归因范围：purchaseCost / headTripPrice /
+# reimbursementAmount / deferredAmount 等宽表因子由 custom-report-analysis 技能承接。
+# 赔偿条数级核对仍走 get_amazon_reimbursement_report（非自定义报表，保留）。
 #
 # 本文件只放【本技能专属】的取数上限、归因权重、口径与贡献度门槛。使用者可维护。
 # ⚠️ 阈值与业务参数一律外置，绝不硬编码进脚本。
@@ -16,7 +19,6 @@
 #    触达上限时输出必须写明「本次仅覆盖 Top N，其余未纳入统计」。
 max_rows:
   msku_report: 200          # 主源：get_profit_report_by_msku 的 MSKU 行数上限
-  custom_report: 200        # 主源：get_custom_report_page_list（489 字段）行数上限
   shop_report: 60           # get_profit_report_by_shop 店铺级行数上限
   reimbursement: 100        # get_amazon_reimbursement_report 赔偿报告行数上限
 
@@ -31,7 +33,7 @@ compare:
   # 基线窗口最长限制（get_profit_report_by_msku 按日查询限制最近 6 个月，见 01 接口清单）
   max_lookback_days: 180
 
-# ---------- 归因判定（把 171+489 字段收敛成 3~5 条）----------
+# ---------- 归因判定（把 171 字段收敛成 3~5 条）----------
 # 每条归因门槛：该因子的【贡献额】需同时满足「绝对值 ≥ min_amount」或「占毛利跌幅比 ≥ min_share」之一，
 # 才会进入归因清单。两项都设阈值，避免小额噪声与巨头效应各占一边。
 # ⚠️ 数值均为「报表币种」金额；占比为百分比数值（20 表示 20%）。
@@ -41,8 +43,10 @@ attribution:
   max_items: 5              # 最多输出 3~5 条归因（按贡献额绝对值降序）
   min_gross_profit_drop: 0  # 毛利跌幅绝对值低于此值不触发归因诊断（避免噪声）
 
-# 归因因子定义：字段 → 所属工具（⚠️ 归属不可混，实测确认）。
+# 归因因子定义：字段 → 所属工具（⚠️ 全部因子来自 get_profit_report_by_msku）。
 # 本表是「数据源归属」的唯一事实来源，脚本据此取值；改字段归属只改这里。
+# ⚠️ 自定义报表因子（purchaseCost / headTripPrice / reimbursementAmount / deferredAmount）
+#    已删除：宽表因子归因由 custom-report-analysis 技能承接（固定分工）。
 #
 # profit_sign 的含义（关键，用于统一口径）：
 #   +1 = 该字段「值越大，对利润越有利」
@@ -51,14 +55,12 @@ attribution:
 # 正值 = 该因子把毛利往下拉。之所以显式标注符号，是因为赛狐报表里**费用字段的存储符号不统一**：
 #   * msku 利润报表（线下合成/旧样例）：费用为【负数】（commission=-768.1 等，负数样例实为
 #     shop 报表口径）→ 费用变多 = 值变小 = 不利 → profit_sign = +1
-#   * 自定义报表：成本为【正数】（实测 purchaseCost=3102.5、headTripPrice=135）
-#     → 成本变多 = 值变大 = 不利 → profit_sign = -1
 #   * msku 利润报表（线上实测 2026-10）：费用为【正数】（commission=537.08、
 #     fbaFulfillmentFee=612.35；sales − Σ费用 ≈ grossProfit 成立）→ 应取 profit_sign = -1
 # ⚠️ **符号假设仅为缺省，运行时按实测符号校准**：diagnose.storage_sign_calibration() 对每个
 #    费用类因子取基期行的中位数值判定实际存储符号，与下表假设不符时按实测符号修正贡献方向，
 #    并在报告归因表脚注披露（如「因子 X 实测为正号存储（中位值 Y），已按正号口径归因」）。
-#    收入类因子（productSales / reimbursementAmount 等，收入恒正）不校准。
+#    收入类因子（productSales 等，收入恒正）不校准。
 # 用错符号会让归因恰好反向，务必按此表填。
   factors:
     - key: sales
@@ -66,19 +68,7 @@ attribution:
       tool: get_profit_report_by_msku
       field: productSales
       profit_sign: 1
-      hint: "订单/单价下滑 → 先查流量与转化（sessions/orderConversionRate），再查价格与竞品"
-    - key: purchase_cost
-      label: "采购成本上涨"
-      tool: get_custom_report_page_list
-      field: purchaseCost
-      profit_sign: -1
-      hint: "采购价/供应商变动 → 与采购确认是否调价，检查是否为高价批次优先出库"
-    - key: head_trip
-      label: "头程运费上涨"
-      tool: get_custom_report_page_list
-      field: headTripPrice
-      profit_sign: -1
-      hint: "运输方式/费率变动 → 查头程货件单价，评估改走海运/拼柜"
+      hint: "订单/单价下滑 → 先查流量与转化，再查价格与竞品；宽表流量因子（sessions 等）由 custom-report-analysis 承接"
     - key: commission
       label: "平台佣金上涨"
       tool: get_profit_report_by_msku
@@ -109,20 +99,6 @@ attribution:
       field: refundSales
       profit_sign: 1
       hint: "退款占销售额上升 → 查质量/尺寸/物流，联动技能 9「评论 VOC」"
-    - key: deferred
-      label: "延期结算（易漏的钱）"
-      tool: get_custom_report_page_list
-      field: deferredAmount
-      # 递延金额上升 = 本期确认的收入被推迟 = 本期利润被压低 → 对本期利润不利。
-      # ⚠️ 递延的「利/弊」取决于公司确认口径，务必与财务确认后固定此符号。
-      profit_sign: -1
-      hint: "结算递延，非真实亏损 → 与财务核对递延原因，勿当成本砍"
-    - key: reimbursement
-      label: "赔偿/仓损漏领（易漏的钱）"
-      tool: get_custom_report_page_list
-      field: reimbursementAmount
-      profit_sign: 1
-      hint: "仓库丢失/入库缺失/亚马逊赔偿 → 走 get_amazon_reimbursement_report 核对是否漏领"
 
   # ---------- 利润口径（不可省略）----------
   # get_profit_report_by_msku/_shop 均有 profit_caliber_type 参数：
@@ -133,7 +109,7 @@ caliber:
 
 # ---------- 币种（铁律 7：跨币种必须显式处理）----------
 currency:
-  report_currency: "USD"    # 利润报表/自定义报表的报表币种（可配置；用 currency 参数显式指定）
+  report_currency: "USD"    # 利润报表的报表币种（可配置；用 currency 参数显式指定）
   cost_currency: "CNY"      # inventoryManage.currency 等成本口径（本技能不混算，仅标注）
   # 处理原则：售价类与成本类【不同时相减】；确需合并时按此汇率折算并标注来源与日期。
   # 利润报表自带 rate / currencyList 字段，优先用报表内汇率；无则以 fx_rate 兜底。
@@ -143,10 +119,9 @@ currency:
 output:
   top_n_loss: 20            # 亏损 Top N 清单条数（超出披露）
   anomaly_max_items: 10     # 异常清单最多条数
-  include_deferred_section: true   # 是否单列「延期结算与赔偿」区块（这两类最易被漏看）
+  include_deferred_section: true   # 是否单列「延期结算与赔偿」区块（赔偿条数核对 + 宽表分工披露）
 
 # ---------- 自动动作开关（本技能只读，恒为 false；保留位以防误改）----------
 # ⚠️ 本技能是【只读】技能：不得修改赛狐任何数据、不得改价改广告。此处仅作显式声明。
 readonly_guard:
   allow_write_to_sellfox: false
-  allow_write_to_feishu: true    # 写入飞书文档是唯一的「写」（对外文档，非写赛狐），且需人确认

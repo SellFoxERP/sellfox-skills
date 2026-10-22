@@ -220,3 +220,12 @@ python3 scripts/build_release.py
 ## 1.6.3 报告出口改为仅 HTML
 
 2026-10-22 应商家侧反馈，全部 13 个技能的报告文件出口收敛为**仅 HTML**：渲染层内部仍以 Markdown 为单一真源，但默认不再写同名 .md（`write_html_report` 增 `keep_md`，默认 False）；各渲染 CLI 提供 `--keep-md` 供调试与通道载荷（04 飞书推送、09 编排 --feishu 等消费 md 的路径按需启用，01/02/03/05 的飞书链为内存直取不受影响）。文档与测试同步：默认断言「.html 存在且 .md 不存在」，--keep-md 双产出；厂商化副本（技能 10）与 _shared 版行为逐字一致。全量 316 项自动化测试通过。
+
+## 1.7.0 移除飞书与自定义报表查询、新增自定义报表分析技能
+
+2026-10-22 按商家侧要求完成三项能力重构（另：应反馈暂缓「数据不进上下文」文案增补）：
+
+- **移除飞书能力**：删除 `_shared/scripts/feishu_writer.py`（PII 脱敏与演示写出闸 `guard_demo` 迁入 `sellfox_offline.py`）、04/09 的推送脚本与各技能 `--feishu` 入口；`approval.py` 删除飞书推送/卡片（push_proposal/build_card/send_webhook_card），审批统一为会话内人工确认；演示数据语义收敛为「仅水印不外发」，08 的外部生成闸改用共享 guard_demo。
+- **移除自定义报表查询**：01~05、09、13 撤销 `get_custom_report_page_list` 取数步骤与 report_id/自动发现依赖（共享 ONBOARDING/reports.yaml/发现脚本删除）；受影响指标改为固定承接披露（「由 custom-report-analysis 承接」）；05 的 `get_amazon_reimbursement_report`（非自定义报表）保留；07 的指标治理工具保留；10 的 reports 域改为指标/公式+路由。
+- **新增 `14-custom-report-analysis`**：自定义报表分析专项技能——index 发现候选→验证读→plan.json（字段映射核对）→复用 10 的 process_data 执行→仅 HTML 报告；8 例评测，合成信封全链复放（partial 失败页披露、分币种、双出口退出码、安装布局兼容）通过。
+- 集成：插件 1.7.0/14 技能、audit 正则与计数、README/INSTALL、coverage/RUNBOOK（119+22=141 例）、cross-skill 自定义报表用例归属改 14。全量 323 项自动化测试通过。

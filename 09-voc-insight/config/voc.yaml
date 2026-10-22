@@ -18,32 +18,17 @@ stat_windows:
 
 # ---------- 取数上限（安全阀，硬截断；截断必须在输出中披露）----------
 max_rows:
-  custom_report: 200     # get_custom_report_page_list 每次扫描的最大行数
-  online_products: 200   # get_online_product_page_list 每次扫描的最大行数（用于补 rating）
+  online_products: 200   # get_online_product_page_list 每次扫描的最大行数（评分快照主路径）
   review_fetch: 200      # 外部 MCP 每个 ASIN 最多取多少条评论原文
 
-# ---------- 异常 ASIN 发现（只用赛狐官方聚合指标，零外部依赖）----------
-# ⚠️ 判定字段与数据源（已核对 _shared/FIELD_DICTIONARY.md）：
-#   lowReviewNum  仅 get_custom_report_page_list（489 宽表）
-#   reviewNum     仅 get_custom_report_page_list
-#   reviewRate    仅 get_custom_report_page_list
-#   rating        get_custom_report_page_list + get_online_product_page_list
-#   ratingCount   get_custom_report_page_list + get_online_product_page_list
-# 无自定义报表时 → 只能退化用 rating/ratingCount（且无环比基线，需历史快照）。
+# ---------- 异常 ASIN 发现（online 评分快照，零外部依赖）----------
+# ⚠️ 固定口径（2026-10-22 起）：自定义报表（489 宽表）已移出本技能，
+#   lowReviewNum / reviewNum / reviewRate 及其环比由 custom-report-analysis 技能承接；
+#   本技能用 online 评分快照（rating / ratingCount，无历史基线、不做环比）筛低分 ASIN。
 discovery:
-  # 哪些信号参与「问题 ASIN」判定（可多选，命中任一即入选）
-  signals:
-    - low_review_num_rise     # lowReviewNum 环比上升
-    - rating_drop             # rating 环比下降
-    - review_rate_drop        # reviewRate 下滑
-  # 阈值下界的单一真源在 _shared/config/thresholds.yaml → after_sales：
-  #   low_review_daily_max  （单日新增差评数上限）
-  #   rating_drop_abs       （评分环比下降绝对值）
-  # 本文件【不重复】定义，避免与底座分叉。
-  report_key: "daily_ops"     # 复用 _shared/config/reports.yaml 的报表段（同一张 489 宽表）
-  min_rating_count: 20        # 评论数低于此不判「评分下滑」，避免小样本误报
-  min_low_review_num: 2       # 差评数低于此不入选（单条差评不是问题）
-  max_flagged_asins: 20       # 一次最多深挖几个 ASIN（外部 MCP 按次收费，须控量）
+  snapshot_rating_low: 4.0   # 快照「低分」阈值：rating ≤ 此值且评分数达小样本下界才入选
+  min_rating_count: 20       # 评论数低于此不判「低分」，避免小样本误报
+  max_flagged_asins: 20      # 一次最多深挖几个 ASIN（外部 MCP 按次收费，须控量）
 
 # ---------- 差评主题分类法（归因口径）----------
 # 主题键（英文 slug）→ 中文名 + 关键词。关键词用于**规则初筛**；
@@ -96,8 +81,8 @@ external_reviews:
 # ---------- 评论原文的 PII 处理 ----------
 privacy:
   mask_reviewer_name: true     # 评论者昵称在输出中掩码
-  # 订单类 PII（buyerEmail/buyerName）由 _shared/scripts/feishu_writer.py 兜底脱敏；
-  # 评论原文的昵称由本技能 scripts/voc_common.py 处理。
+  # 订单类 PII（buyerEmail/buyerName）的文本脱敏兜底在 _shared/scripts/sellfox_offline.py
+  # （mask_pii / mask_pii_in_text）；评论原文的昵称由本技能 scripts/voc_common.py 处理。
 
 # ---------- 可选：优化素材（生图 MCP）----------
 # 与技能 8 同构：本技能只产出「素材需求单」，不直接生图。
@@ -109,29 +94,23 @@ optimization_brief:
 
 # ---------- 交付设置 ----------
 delivery:
-  write_feishu: false          # 是否把 VOC 报告写入飞书（演示环境默认阻断）
-  feishu_folder_token: ""      # 目标文件夹 token；留空 = 应用根目录
-  local_out_dir: "out"         # 本地输出目录（相对技能根目录）
+  local_out_dir: "out"         # 本地输出目录（相对技能根目录）；报告仅本地 HTML
 
-# ---------- 降级路径声明 ----------
+# ---------- 固定口径与降级路径声明 ----------
 degradation:
+  # 固定口径（2026-10-22 起）：自定义报表（489 宽表）已移出本技能，
+  # 差评数/评论数/好评率及其环比一律由 custom-report-analysis 技能承接。
+  # fetch_signals 把该横幅写进 signals.warnings / source.handoff_banner，报告置顶展示。
+  no_custom_report:
+    banner: "⚠️ 固定口径：自定义报表（489 宽表）已移出本技能，lowReviewNum / reviewNum / reviewRate 及其环比不可用；差评数与宽表分析由 custom-report-analysis 技能承接。本报告基于 online 评分快照（rating/ratingCount，无历史基线，不做评分环比）。"
   # 外部评论 MCP 不可用（未接入/失败/超预算）时的行为：
   no_external_reviews:
     mode: "aggregate_only"
-    banner: "⚠️ 未接入外部评论源：本报告仅用赛狐官方聚合指标定位问题 ASIN，**无评论原文**，无法做主题归因。"
+    banner: "⚠️ 未接入外部评论源：本报告仅用 online 评分快照定位低分 ASIN，**无评论原文**，无法做主题归因。"
     still_do:
-      - "按 lowReviewNum 环比 / rating 下降 / reviewRate 下滑 定位问题 ASIN"
+      - "按快照 rating/ratingCount 筛「评分低且样本足够」的 ASIN"
       - "给出「需人工核查评论原文」清单与建议抽查方向"
     cannot_do:
       - "差评主题聚类（质量/尺寸/色差/物流/描述不符）"
       - "高频问题词提取"
       - "基于原文的行动建议归因"
-  # 无 report_id（自定义报表）时的行为：连聚合差评信号都拿不全。
-  # 降级原因三态（fetch_signals 按落盘证据归因，{error_codes} 替换为实测 error_code 列表）；
-  # 关键纪律：上游失败不得写成「先配置 report_id」，把故障误归因为用户没配置。
-  no_custom_report:                # 未配置（无任何发现/验证失败证据）
-    banner: "⚠️ 口径降级：缺少自定义报表 report_id，lowReviewNum/reviewNum/reviewRate 不可用；仅能用 online 侧 rating/ratingCount（且无环比基线，需历史快照）。"
-  discovery_failed:                # 报表自动发现本身失败（error_code）
-    banner: "⚠️ 口径降级：自定义报表自动发现失败（error_code：{error_codes}），report_id 不可得；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。发现失败 ≠ 未配置：需人工核对发现链路后重跑，补配置解决不了。"
-  candidate_verification_rejected: # 报表已发现、候选验证读取被上游拒（error_code），report_id 未绑定
-    banner: "⚠️ 口径降级：报表已发现、候选验证读取被上游拒绝（error_code：{error_codes}），report_id 未绑定；lowReviewNum/reviewNum/reviewRate 不可用，仅能用 online 侧 rating/ratingCount（且无环比基线）。这是上游读取被拒，不是未配置 report_id：请人工在赛狐网页端核对报表，而非重新配置。"

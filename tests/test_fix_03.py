@@ -2,8 +2,9 @@
 
 覆盖：
 - 基线快照自持：写入/读取/meta.baseline 生成/陈旧记录清除/BSR 环比规则可达
-- 宽表状态三态：enabled / fetch_failed(error_code) / not_configured + discovery_failed
-- diagnose.py:147 文案：区分「未配置」「取数失败」「已启用但无该 ASIN 匹配行」
+- v1.7.0 宽表步骤移除：残留 custom_report_*.json 忽略；固定披露「未接入自定义报表
+  （custom-report-analysis 承接）」；traffic 键不再产出
+- 无流量/有流量无转化检查固定标「需人工核查（custom-report-analysis 承接）」
 - 断货检查排除 P0 已删除/不可售记录
 - 空数据（status=complete）落「无数据」披露进 bundle 并在报告可见
 - 标签命中清单披露（by_label 不编造合并）
@@ -161,8 +162,8 @@ class BaselineSnapshotTest(unittest.TestCase):
         self.assertEqual(set(snap), {"lid:SYN-LID-001"})
 
 
-class WideTableThreeStateTest(unittest.TestCase):
-    """修复 2：宽表状态三态如实（启用成功/取数失败/未配置或发现失败）。"""
+class WideTableRemovedTest(unittest.TestCase):
+    """v1.7.0：宽表步骤整体移除——残留 custom_report_*.json 忽略，固定承接披露。"""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -170,81 +171,50 @@ class WideTableThreeStateTest(unittest.TestCase):
         self.env = _Env(Path(self.temp.name) / "out")
         self.env.envelope("online_active", [_online_row(1)])
 
-    def test_enabled(self):
+    def test_custom_report_envelopes_ignored_fixed_disclosure(self):
+        # 残留宽表落盘（complete 或 failed）一律不消费
         self.env.envelope("custom_report_daily",
                           [{"asin": "B0SYNTH001", "sessions": 10, "conversionRate": 2.0}],
                           tool_id="get_custom_report_page_list")
-        p = fetch_mod.run(_args(self.env.raw, report_id="RPT-1"))
-        self.assertEqual(p["meta"]["wide_table"]["status"], "enabled")
-        self.assertEqual(p["meta"]["wide_table"]["rows"], 1)
-        md = render_mod.render({"meta": p["meta"], "problems": [],
-                                "manual_verification": []})
-        self.assertIn("宽表）已启用", md)
-        self.assertNotIn("宽表取数失败", md)
-
-    def test_fetch_failed_disclosed_not_enabled(self):
-        self.env.envelope("custom_report_daily", status="failed",
+        self.env.envelope("custom_report_probe", status="failed",
                           error_code="RESULT_BUDGET_EXCEEDED",
                           message="Result exceeds budget",
                           tool_id="get_custom_report_page_list")
-        p = fetch_mod.run(_args(self.env.raw, report_id="RPT-6126"))
-        wt = p["meta"]["wide_table"]
-        self.assertEqual(wt["status"], "fetch_failed")
-        self.assertIn("RESULT_BUDGET_EXCEEDED", wt["error_codes"])
-        self.assertEqual(p["traffic"], [])
+        p = fetch_mod.run(_args(self.env.raw))
+        self.assertNotIn("traffic", p)                       # traffic 键不再产出
+        self.assertTrue(p["meta"]["degraded"])
+        self.assertEqual(p["meta"]["wide_table"]["status"], "not_configured")
+        self.assertEqual(p["meta"]["wide_table"]["rows"], 0)
+        self.assertFalse(any("get_custom_report_page_list" in d
+                             for d in p["meta"]["disclosures"]
+                             if "已启用" in d or "取数失败" in d))
+        self.assertTrue(any("custom-report-analysis" in d
+                            for d in p["meta"]["disclosures"]),
+                        msg=str(p["meta"]["disclosures"]))
+        joined_errors = "\n".join(p["meta"]["errors"])
+        self.assertNotIn("get_custom_report_page_list", joined_errors)
         result = diagnose_mod.diagnose(p)
         md = render_mod.render(result)
-        self.assertIn("宽表取数失败", md)
-        self.assertIn("RESULT_BUDGET_EXCEEDED", md)
+        self.assertIn("未接入自定义报表（由 custom-report-analysis 技能承接）", md)
+        self.assertIn("不可用", md)
         self.assertNotIn("已启用", md)
-        # 修复 5：report_id 已配置 + 取数失败 → 不再误写「缺 report_id」
         manual_txt = "\n".join(result["manual_verification"])
-        self.assertIn("宽表取数失败", manual_txt)
-        self.assertNotIn("无流量检查不可用（缺 report_id）", manual_txt)
-
-    def test_discovery_failed_envelope_is_read_and_disclosed(self):
-        # report_id 为空（发现失败回落简版）：已落盘 failed 信封必须被读取并披露
-        self.env.envelope("custom_report_daily", status="failed",
-                          error_code="RESULT_BUDGET_EXCEEDED",
-                          message="Result exceeds budget",
-                          tool_id="get_custom_report_page_list")
-        p = fetch_mod.run(_args(self.env.raw, report_id=""))
-        wt = p["meta"]["wide_table"]
-        self.assertEqual(wt["status"], "discovery_failed")
-        self.assertIn("RESULT_BUDGET_EXCEEDED", wt["error_codes"])
-        self.assertEqual(p["traffic"], [])
-        self.assertTrue(any("报表发现失败" in e and "RESULT_BUDGET_EXCEEDED" in e
-                            for e in p["meta"]["errors"]))
-        result = diagnose_mod.diagnose(p)
-        md = render_mod.render(result)
-        self.assertIn("报表发现失败", md)
-        self.assertIn("RESULT_BUDGET_EXCEEDED", md)
-        self.assertNotIn("已启用", md)
+        self.assertIn("custom-report-analysis", manual_txt)
 
 
 class DiagnoseWordingTest(unittest.TestCase):
-    """修复 5：diagnose.py:147 区分「已配置但无该记录行」与「未配置」。"""
+    """v1.7.0：无流量/有流量无转化固定标「未接入自定义报表（custom-report-analysis 承接）」。"""
 
-    def test_configured_no_row_vs_not_configured(self):
-        base_online = [_online_row(1)]
-        with tempfile.TemporaryDirectory() as td:
-            env = _Env(Path(td) / "a")
-            env.envelope("online_active", base_online)
-            env.envelope("custom_report_daily",
-                         [{"asin": "B0OTHER999", "sessions": 5}],
-                         tool_id="get_custom_report_page_list")
-            p = fetch_mod.run(_args(env.raw, report_id="RPT-1"))
-            result = diagnose_mod.diagnose(p)
-            txt = "\n".join(result["manual_verification"])
-            self.assertIn("无流量检查不可用（宽表已启用但无该 ASIN 匹配行）", txt)
-            self.assertNotIn("缺 report_id）\n", txt)
+    def test_no_traffic_check_fixed_wording(self):
         with tempfile.TemporaryDirectory() as td:
             env = _Env(Path(td) / "b")
-            env.envelope("online_active", base_online)
-            p = fetch_mod.run(_args(env.raw, report_id=""))
+            env.envelope("online_active", [_online_row(1)])
+            p = fetch_mod.run(_args(env.raw))
             result = diagnose_mod.diagnose(p)
             txt = "\n".join(result["manual_verification"])
-            self.assertIn("无流量检查不可用（缺 report_id）", txt)
+            self.assertIn("无流量/有流量无转化检查不可用", txt)
+            self.assertIn("未接入自定义报表，由 custom-report-analysis 承接", txt)
+            self.assertNotIn("缺 report_id", txt)
 
 
 class StockoutExcludesP0Test(unittest.TestCase):
@@ -252,8 +222,7 @@ class StockoutExcludesP0Test(unittest.TestCase):
 
     def test_deleted_and_unsellable_skipped(self):
         data = {
-            "meta": {"report_configured": False, "degraded": True,
-                     "wide_table": {"status": "not_configured", "error_codes": [], "rows": 0}},
+            "meta": {"degraded": True},
             "online": [
                 _online_row(1, onlineStatus="delete", quantity=0),
                 _online_row(2, onlineStatus="inActive", quantity=0),

@@ -1,12 +1,7 @@
 ---
 name: ad-optimizer
-description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据）。拉取广告活动/关键词/广告产品结构与绩效，按配置阈值识别「高花费零转化」「ACOS 超标」「优质词扩量」「素材衰退」等问题，先出 dry-run「变更前后对比表」并推送飞书审批，人工批准后才执行调预算、暂停活动、调竞价、加否定词等写操作；写前快照旧值、写后 read-back 校验、全程写 ad_changes.jsonl 以支持回滚。当用户提到「广告优化」「广告诊断」「ACOS 太高」「广告花费异常」「调预算」「降竞价」「加否定词」「暂停广告活动」「SP 广告怎么样」「campaign 表现」「广告跑不动/亏钱」「预算受限」时，务必使用本技能，即使用户没有明确说「优化」二字。本技能只处理广告域，不做素材替换、Listing 修改与价格调整。
+description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据）。拉取广告活动/关键词/广告产品结构与绩效，按配置阈值识别「高花费零转化」「ACOS 超标」「优质词扩量」「素材衰退」等问题，先出 dry-run「变更前后对比表」，经会话内人工确认（「批准 1,3,5/批准全部/驳回」）后才执行调预算、暂停活动、调竞价、加否定词等写操作；写前快照旧值、写后 read-back 校验、全程写 ad_changes.jsonl 以支持回滚。当用户提到「广告优化」「广告诊断」「ACOS 太高」「广告花费异常」「调预算」「降竞价」「加否定词」「暂停广告活动」「SP 广告怎么样」「campaign 表现」「广告跑不动/亏钱」「预算受限」时，务必使用本技能，即使用户没有明确说「优化」二字。本技能只处理广告域，不做素材替换、Listing 修改与价格调整。
 ---
-
-## 报表自动发现
-
-任务需要自定义报表时读取共享底座 `ONBOARDING.md`：助手先复用已验证选择，否则通过当前 MCP 发现工具，或从自定义指标的 `reportList` 自动提取报表 ID 并核对用途。不要让商家手填 ID、编辑 YAML 或先创建报表。
-匹配唯一且字段适用时自动采用；多个候选只让商家选名称；无法取得可用报表则说明缺口并继续简版。内置查询和全局指标盘点不需要报表初始化。用户已选择简版时不重复打扰。
 
 ## 运行环境与路径
 
@@ -18,8 +13,8 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
 `help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
 已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
-下文“零网络”仅指赛狐取数后的离线计算；飞书和审批通知模块会联网。
-默认输出本地报告；只有用户要求时才启用飞书或外部服务。没有原始数据时仅说明缺口或产出
+下文“零网络”仅指赛狐取数后的离线计算；本技能不接入飞书等外部推送（v1.7.0 起移除），
+审批为会话内人工确认。默认输出本地报告。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
 
 # 广告诊断与优化执行
@@ -85,13 +80,13 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 |---|---|---|
 | 店铺 | 全部 / 指定 `shop_id` | 广告写操作必须落到具体店铺 |
 | 日期范围 | 近 7 天 | 绩效周期；「昨日」等业务日须标注时区 |
-| 数据源 | `config/optimizer.yaml → data_source.perf_primary` | `download_task`（推荐）/ `custom_report` |
-| 输出 | 本地 Markdown + proposal.json | 是否推飞书、@ 哪位负责人 |
+| 数据源 | `config/optimizer.yaml → data_source.perf_primary` | `download_task`（唯一主源） |
+| 输出 | 本地 HTML 报告 + proposal.json | 是否执行、操作人标识 |
 
 **前置校验「客户端 MCP 就绪」**：会话内能调 `mcp__Sellfox-MCP__{help,search,action}`
 （Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）。
 演示环境指纹（`MOCK-` / `demo.example.com` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」）
-**默认阻断写操作与写飞书**，并在报告顶部加水印。
+**默认阻断写操作与对外写出**，并在报告顶部加水印。
 
 ### Step 2：取数（agent 按取数计划落盘）
 
@@ -108,8 +103,8 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 | `perf_campaign_<end>.xlsx` / `perf_target_<end>.xlsx` | agent 下载 `downloadUrl` 后放入（解析归脚本） | — |
 
 绩效链：`create_ad_download_task`（L1，只读性质的写）→ 轮询 `get_ad_download_task_page_list`
-（列表字段是 `data.rows`）拿 `downloadUrl` → **agent 下载 xlsx** 放入 `out/raw/`；
-兜底 `get_custom_report_page_list`（MSKU 级，**不可归因 campaign**）落 `perf_custom_<shopId>.json`。
+（列表字段是 `data.rows`）拿 `downloadUrl` → **agent 下载 xlsx** 放入 `out/raw/`。
+绩效缺失（任务失败/未装 openpyxl）时降级为「仅结构与状态诊断」并披露，不编造绩效。
 
 纪律见 `_shared/SELLFOX_CLIENT.md`：每步落盘并核对 status、不在对话中复述行级数据、
 单次 ≤1 页 + `max_rows` 安全阀、**截断必披露**（`AdData.disclose()` 生成披露语句，
@@ -129,18 +124,18 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 写到 `out/ad_proposal_<start>_<end>.{html,json}`（`.html` 主报告；`--keep-md` 才附同名 `.md`）；提案 JSON 每项含 `tool_id` 与
 `contract_version: null` 占位（执行前须重 search 取当次版本）。
 
-### Step 4：审批（飞书）
+### Step 4：审批（会话内人工确认）
 
-把提案推送给广告负责人（`approval.push_proposal`，由 agent 在会话内编排），人工回复
+把提案（dry-run 对比表）呈给广告负责人，在会话内人工回复
 「批准 1,3,5」/「批准全部」/「驳回」。**`unclear` 必须回到人工再问，不得默认执行。**
-演示环境默认阻断写入飞书。
+演示环境默认阻断写操作。
 
 ### Step 5：执行（写，agent 按协议逐项调 action）
 
 ```
 # ① 脚本只生成「执行清单」（不调用任何写工具）：
 python scripts/optimize.py execute --proposal out/ad_proposal_2026-10-08_2026-10-14.json \
-    --approve "批准 1,3,5" --operator ou_xxx
+    --approve "批准 1,3,5" --operator 张三（操作人标识）
 #    → 审批解析 → 累计闸 → out/ad_execute_<start>_<end>.{html,json}（.html 主报告）
 # ② agent 逐项：重取写契约（search 取当次 contract_version）→ action → 按 read-back 计划回读
 # ③ 每项执行完落日志：
@@ -165,7 +160,7 @@ python scripts/optimize.py verify --proposal out/ad_proposal_….json --actual <
 6. 禁止清单：**批量全暂停、预算清零、删除投放**；
 7. 写后必须 read-back 校验（`record` + `verify`，不能只信网关返回）；
 8. 执行前过**累计闸**（读变更日志去重、限次数、限净变化、限单日预算增量）；
-9. 写飞书前过 **PII 脱敏**（`buyerEmail`/`buyerName`），文档标注「已脱敏」；
+9. 对外输出前过 **PII 脱敏**（`buyerEmail`/`buyerName`，`sellfox_offline.mask_pii*`）；
 10. 演示环境默认**阻断写入**；
 11. **脚本零 HTTP、零 MCP**：取数与写操作只走 agent 调 `mcp__Sellfox-MCP__{help,search,action}`，
     禁止 import 旧 `sellfox_client.py`；
@@ -183,7 +178,6 @@ python scripts/optimize.py verify --proposal out/ad_proposal_….json --actual <
 - `config/optimizer.yaml` — **本技能特有**：数据源、绩效列名映射、提案幅度、范围安全阀、写操作开关。
 - `_shared/config/thresholds.yaml` — 阈值与审批闸门（ACOS 上限、目标值、ROAS、闸门上限）。
 - `_shared/config/shops.yaml` — 店铺与负责人（告警路由）。
-- `_shared/config/reports.yaml` — 报表 ID 缓存（custom_report 兜底时由助手自动发现并验证）。
 
 参数缺失时按统一交互规范**一次性批量询问**，并在输出中标注每个参数的【来源】：
 配置命中 / 本次填写 / 默认值（默认值必须显式标注，不能混进真实数据）。

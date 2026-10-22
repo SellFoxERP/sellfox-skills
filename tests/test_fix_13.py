@@ -527,5 +527,35 @@ class Fix13ArchivedReplayTests(unittest.TestCase):
         self.assertIn("无数据（非 0）", text)     # by_shop 桥接缺 → 非全 0.00
 
 
+class V17DeCustomReportPiiSourceTest(unittest.TestCase):
+    """[v1.7.0] 去自定义报表（辅助工具表删 get_custom_report_page_list 行）+ PII 脱敏改 sellfox_offline。"""
+
+    def test_workflow_aux_tools_drop_custom_report_row(self):
+        wf = (SKILL / "references" / "workflow.md").read_text(encoding="utf-8")
+        self.assertNotIn("get_custom_report_page_list", wf)
+        self.assertNotIn("report_id", wf.split("辅助工具")[1].split("## 二、")[0]
+                         if "辅助工具" in wf else "")
+        # 固定费用自定义口径 → 指 custom-report-analysis 技能。
+        self.assertIn("custom-report-analysis", wf)
+        fmap = (SKILL / "references" / "field-map.md").read_text(encoding="utf-8")
+        self.assertNotIn("get_custom_report_page_list", fmap)
+
+    def test_render_report_pii_imports_from_sellfox_offline(self):
+        src = (SCRIPTS / "render_report.py").read_text(encoding="utf-8")
+        self.assertNotIn("feishu_writer", src)
+        self.assertIn("from sellfox_offline import mask_pii_in_text", src)
+        for path in SCRIPTS.glob("*.py"):
+            self.assertNotIn("飞书", path.read_text(encoding="utf-8"), path.name)
+
+    def test_pii_still_masks_buyer_fields(self):
+        # 共享层迁移动作不改变脱敏语义：buyerEmail/buyerName 仍被掩码。
+        masked = render_report.mask_pii_in_text(
+            "buyerEmail: john.doe@example.com | buyerName: John Doe")
+        self.assertIn("jo***@example.com", masked)
+        self.assertIn("J***", masked)
+        self.assertNotIn("john.doe@", masked)
+        self.assertNotIn("John Doe", masked)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,7 +25,9 @@
 1. **客户端 MCP 就绪**：会话内能调 `mcp__Sellfox-MCP__*`（Key 只在客户端 MCP 配置里，
    脚本零网络、不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，命中指纹即加水印，
    且本技能默认只 dry-run（见写操作协议）。
-2. **报表范围**：全局只读治理无需 ID；用户指定报表时按共享 `ONBOARDING.md` 自动发现并把已验证 ID 传入 report_id_list。无法定位不能扩大写入范围。发现阶段可只读共享关联，指标修改仍须核对所有权与具体授权。
+2. **报表范围**：全局只读治理无需 ID；用户指定报表时，report_id 由使用者从赛狐网页端确认后
+   回填 `config/metric_governance.yaml` 的 `report_ids`（v1.7.0 起共享 reports.yaml 自动发现缓存已移除），
+   并把已验证 ID 传入 report_id_list。无法定位不能扩大写入范围。指标修改仍须核对所有权与具体授权。
 3. **演示环境指纹**（`MOCK-` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」等，
    脚本从落盘信封自动检测）。命中 → 输出顶部加水印，**默认阻断生成执行清单**
    （`demo_policy.block_write_execute`）。演示数据只可验证连通性与参数格式，
@@ -43,7 +45,7 @@
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/stat_index_op1.json` | `get_custom_report_stat_index_list` | `op_type=1`（新增视角） | 结构未实测，防御性解析 | — | 官方指标目录基线（30 节点指标树） |
 | 2 | `out/raw/stat_index_op2.json` | `get_custom_report_stat_index_list` | `op_type=2`（编辑视角） | 同上 | — | 与步骤 1 取并集做参照 |
-| 3 | `out/raw/custom_indices_<page>.json`（逐页一盘，如 `custom_indices_1.json`） | `get_custom_report_index_page_list` | `page_no`/`page_size`；`share_status=0`（**只取「我的」，避免越权改共享项**）；可加 `report_id_list`（自动发现并验证后） | `rows` | 100 | 现有自定义指标；翻页各落一盘，翻页前看 `totalSize` 是否值得继续 |
+| 3 | `out/raw/custom_indices_<page>.json`（逐页一盘，如 `custom_indices_1.json`） | `get_custom_report_index_page_list` | `page_no`/`page_size`；`share_status=0`（**只取「我的」，避免越权改共享项**）；可加 `report_id_list`（使用者网页端确认后回填 config 的 report_ids） | `rows` | 100 | 现有自定义指标；翻页各落一盘，翻页前看 `totalSize` 是否值得继续 |
 | 4 | `out/raw/custom_indices_verify_<page>.json`（仅写后） | 同步骤 3 | 同步骤 3 | `rows` | 100 | **写后回读**：agent 执行完写操作后重取，供 `--verify` 比对 |
 
 取数纪律（详见 SELLFOX_CLIENT.md）：

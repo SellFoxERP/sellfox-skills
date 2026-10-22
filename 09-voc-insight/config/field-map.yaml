@@ -7,43 +7,45 @@
 # 抽查字段是否存在，一律以 当前 MCP 契约与共享字段字典 为准，**不得凭记忆**。
 #
 # sources:
-#   custom = get_custom_report_page_list  （分页类，data.rows；489 字段；需 report_id）
-#   online = get_online_product_page_list （分页类，data.rows；79 字段）
+#   custom = get_custom_report_page_list  （分页类，data.rows；489 字段）
+#           ⚠️ 2026-10-22 起自定义报表已移出本技能：custom 侧字段只作字段字典参考，
+#           实际取数/分析由 custom-report-analysis 技能承接。
+#   online = get_online_product_page_list （分页类，data.rows；79 字段；本技能主源）
 #
 # ⚠️ 严禁把下列字段误判为「不存在」（曾经发生过，已被纠正）：
 #   adOrderConversionRate / threeSaleNum —— 经一手实测确认为真实字段。
 #   本技能虽不直接用它们，但 field-map 的「假阴性」教训同样适用：
 #   rating / ratingCount 两个工具**都有**，lowReviewNum/reviewNum/reviewRate
-#   **只在 custom**（在线产品 79 字段里没有）。
+#   **只在 custom**（在线产品 79 字段里没有）→ 已由 custom-report-analysis 承接。
 # ============================================================================
 
-# ---------- 发现问题 ASIN：聚合评论指标 ----------
+# ---------- 发现低分 ASIN：聚合评论指标（本技能只用 online 快照）----------
 discovery_fields:
 
   rating:
     field: rating
-    source: [custom, online]
-    note: 字符串，实测样例 "4.5"。**不存在历史序列**，环比需外部快照（见 workflow.md §4）。
+    source: [online]
+    note: 字符串，实测样例 "4.5"。**不存在历史序列**（快照，无环比基线）。
 
   ratingCount:
     field: ratingCount
-    source: [custom, online]
-    note: 评论数。小样本（< min_rating_count）不判「评分下滑」。
+    source: [online]
+    note: 评论数。小样本（< min_rating_count）不判「低分」。
 
   lowReviewNum:
     field: lowReviewNum
     source: [custom]
-    note: ⚠️ **仅 489 宽表可得**，online 侧没有。差评数（评论 VOC 的核心信号）。
+    note: ⚠️ **仅 489 宽表可得**，online 侧没有。已由 custom-report-analysis 承接。
 
   reviewNum:
     field: reviewNum
     source: [custom]
-    note: ⚠️ **仅 489 宽表可得**。评论总数，与 lowReviewNum 配合算差评占比。
+    note: ⚠️ **仅 489 宽表可得**。已由 custom-report-analysis 承接。
 
   reviewRate:
     field: reviewRate
     source: [custom]
-    note: ⚠️ **仅 489 宽表可得**。好评率/评分率（实测样例 4.5）。
+    note: ⚠️ **仅 489 宽表可得**。已由 custom-report-analysis 承接。
 
 # ---------- 归因定位用的辅助维度 ----------
 context_fields:
@@ -61,41 +63,42 @@ context_fields:
   msku:
     field: msku
     source: [custom]
-    note: ⚠️ **仅 489 宽表可得**。用于把问题定位到具体变体/配色。
+    note: ⚠️ **仅 489 宽表可得**。已由 custom-report-analysis 承接。
 
   sku:
     field: sku
-    source: [custom, online]
+    source: [online]
+    note: 本技能用 online 侧 sku 定位变体。
 
   shopId:
     field: shopId
-    source: [custom, online]
+    source: [online]
     note: 店铺维度（告警路由）。
 
   marketplaceId:
     field: marketplaceId
-    source: [custom, online]
+    source: [online]
     note: 站点；外部评论源通常分市场（10 市场），口径须对齐。
 
   title:
     field: title
-    source: [custom, online]
+    source: [online]
     note: 商品标题，辅助判断「描述不符」类差评。
 
   mainImage:
     field: mainImage
-    source: [custom, online]
+    source: [online]
     note: 主图 URL，辅助判断「色差/与图不符」。
 
   saleNum:
     field: saleNum
-    source: [custom, online]
-    note: 销量；用于按影响面排序（有销量的差评优先深挖）。
+    source: [online]
+    note: 销量；用于按影响面排序（有销量的低分优先深挖）。
 
   buyBoxPercent:
     field: buyBoxPercent
     source: [custom]
-    note: ⚠️ **仅 489 宽表可得**（实测样例 92.5）。丢购物车可能与差评并发，辅助关联。
+    note: ⚠️ **仅 489 宽表可得**（实测样例 92.5）。已由 custom-report-analysis 承接。
 
 # ---------- 外部评论 MCP 应返回的字段（适配器契约）----------
 external_review_contract:

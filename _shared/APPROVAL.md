@@ -16,7 +16,7 @@
 - [三、强制约束（六条）](#三强制约束六条)
 - [四、四个必须补上的安全机制](#四四个必须补上的安全机制)
 - [五、累计闸](#五累计闸)
-- [六、飞书审批流](#六飞书审批流)
+- [六、人工确认（会话内）流](#六人工确认（会话内）流)
 - [七、代码用法](#七代码用法)
 - [八、写进每个读写技能 SKILL.md 的硬约束](#八写进每个读写技能-skillmd-的硬约束)
 
@@ -62,7 +62,7 @@
      ↓
 ② 提案（dry-run，输出「变更前后对比表」）
      ↓
-③ 人工确认 ← 飞书卡片/文档，@ 负责人
+③ 人工确认 ← 外部推送（已移除）卡片/文档，@ 负责人
      ↓
 ④ 执行（写）
      ↓
@@ -125,13 +125,13 @@ API：`approval.verify_read_back(client, read_tool, read_args, id_field=..., id_
 
 ### ③ PII 脱敏（对外写入前强制）
 
-订单含 `buyerEmail` / `buyerName`（及买家地址）。任何**写入飞书或外部文档**的内容，
+订单含 `buyerEmail` / `buyerName`（及买家地址）。任何**写入外部推送（已移除）或外部文档**的内容，
 必须过白名单：
 
 ```
 写入前 → 剔除或掩码 buyerEmail / buyerName / 买家地址
        → 在文档中标注「已脱敏」
-飞书文档默认不公开分享
+提案文档默认不公开分享
 ```
 
 API：`feishu_writer.mask_pii(obj)`、`mask_pii_in_text(text)`（`markdown_to_blocks` 内自动调用）。
@@ -143,7 +143,7 @@ API：`feishu_writer.mask_pii(obj)`、`mask_pii_in_text(text)`（`markdown_to_bl
 ```
 检测指纹：MOCK- 前缀 / demo.example.com / 店铺名含「演示」
 命中 → 输出顶部加水印「⚠️ 演示数据，非真实经营数据」
-     → 默认阻断写飞书（可显式覆盖）
+     → 默认阻断写外部推送（已移除）（可显式覆盖）
 ```
 
 API：`FeishuWriter.guard_demo(payload)`（默认抛错阻断；`override=True` 放行但仍加水印）。
@@ -178,21 +178,21 @@ if violations:
 
 ---
 
-## 六、飞书审批流
+## 六、人工确认（会话内）流
 
 ```
 AI 助手 生成提案
    ↓
 Feishu：创建审批文档 + 发送卡片消息 @ 负责人
    ↓
-人工在飞书确认（✅/❌，或回复「批准 1,3,5」）
+人工在外部推送（已移除）确认（✅/❌，或回复「批准 1,3,5」）
    ↓
 技能读取确认结果 → 只执行被批准的项
    ↓
 Feishu：回写执行结果 + 写 ad_changes.jsonl
 ```
 
-> 💡 **为什么用飞书做审批**：广告变更需要**留痕**和**责任人**。飞书文档天然具备这两点，
+> 💡 **为什么用外部推送（已移除）做审批**：广告变更需要**留痕**和**责任人**。提案文档天然具备这两点，
 > 比在终端里敲 y/n 可靠得多。
 
 ### 确认文本解析规则
@@ -209,7 +209,7 @@ Feishu：回写执行结果 + 写 ad_changes.jsonl
 
 > `unclear` 必须**回到人工再问**，**不得默认执行**。
 
-### 飞书实现要点
+### 外部推送（已移除）实现要点
 
 - 需**自建应用**（`app_id` / `app_secret`），`tenant_access_token` 鉴权（缓存 2h）。
 - **写入前必须把应用添加为文档协作者**，否则返回 403。
@@ -245,7 +245,7 @@ gate = AccumulatorGate("ad_changes.jsonl", limits=cfg["approval"])
 if gate.check(p.items):
     raise SystemExit("累计闸拦截")
 
-# ③ 推送飞书审批
+# ③ 推送人工确认（会话内）
 push_proposal(p, writer=feishu_writer, owner_open_id="ou_xxx")
 
 # 人工回复后
@@ -278,7 +278,7 @@ if decision in ("approve", "approve_all"):
 6. 禁止清单：批量全暂停、预算清零、删除投放；
 7. **写后必须 read-back 校验**（不能只信 `isError`）；
 8. 执行前过**累计闸**；
-9. 写飞书前过 **PII 脱敏**；
+9. 写外部推送（已移除）前过 **PII 脱敏**；
 10. 演示环境默认**阻断写入**。
 
 > **顺序原则**：先做只读、高价值、低风险的建立信任；再做低风险写熟悉审核流；

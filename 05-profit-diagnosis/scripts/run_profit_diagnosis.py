@@ -2,20 +2,21 @@
 """利润异常诊断 —— 编排入口（只读，v3：取数已前置到 agent）。
 
 串联：前置校验 → **取数（agent 调客户端 MCP 元工具并落盘 out/raw/）** →
-校验组装(fetch_profit.assemble_all) → 归因(diagnose) → 渲染(render) → 可选写飞书。
+校验组装(fetch_profit.assemble_all) → 归因(diagnose) → 渲染(render)。
 
 v3 前置校验（不再需要 SELLFOX_MCP_KEY —— Key 只在客户端 MCP 配置里）：
   1. 会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（agent 取数面前提）；
-  2. `reports.yaml` 的 `reports.profit.id` 是否已回填（缺失 → 自动发现 + 降级路径）；
-  3. `out/raw/` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
-  4. 演示环境指纹运行时识别 → 顶部水印 + 默认阻断写飞书。
+  2. `out/raw/` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
+  3. 演示环境指纹运行时识别 → 顶部水印。
+
+自定义报表（489 宽表）已不在本技能取数范围：宽表因子归因由 custom-report-analysis
+技能承接（固定分工，报告固定披露）；赔偿条数核对仍走 get_amazon_reimbursement_report。
 
 用法：
   python scripts/run_profit_diagnosis.py                                  # 默认今天，本地 Markdown
   python scripts/run_profit_diagnosis.py --end 2026-09-30 --period-days 30
   python scripts/run_profit_diagnosis.py --shop-ids 10001,10002 --out /tmp/profit.md
   python scripts/run_profit_diagnosis.py --caliber shipment               # 切换利润口径
-  python scripts/run_profit_diagnosis.py --feishu                         # 写飞书（演示环境默认阻断）
   python scripts/run_profit_diagnosis.py --check-only                     # 只做前置校验
 """
 
@@ -26,7 +27,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from _bootstrap import SKILL_ROOT, load_diagnosis, load_reports, load_shops, load_thresholds
+from _bootstrap import SKILL_ROOT, load_diagnosis, load_shops, load_thresholds
 
 from diagnose import diagnose  # noqa: E402
 from fetch_profit import FetchResult, assemble_all, resolve_windows  # noqa: E402
@@ -44,14 +45,6 @@ def _parse_date(text: str | None) -> date:
     return date.fromisoformat(text)
 
 
-def _resolve_report_id(override: str | None) -> str | None:
-    if override:
-        return override
-    reports = (load_reports().get("reports") or {})
-    profit = reports.get("profit") or {}
-    return (profit.get("id") or "").strip() or None
-
-
 def _resolve_shop_ids(override: str | None) -> list[str]:
     if override:
         return [s.strip() for s in override.split(",") if s.strip()]
@@ -59,14 +52,9 @@ def _resolve_shop_ids(override: str | None) -> list[str]:
     return [str(s) for s in scope]
 
 
-def precheck(report_id: str | None, raw_dir: Path = RAW_DIR) -> list[str]:
+def precheck(raw_dir: Path = RAW_DIR) -> list[str]:
     """返回告警列表（空 = 全部就绪）。不抛异常，让技能能继续以降级模式运行。"""
     warnings: list[str] = []
-    if not report_id:
-        warnings.append(
-            "reports.yaml 的 reports.profit.id 为空：自定义报表（489 字段）不可用，"
-            "采购成本/头程/赔偿/延期结算类归因将标「⚠️ 需人工核查」（口径降级）。"
-        )
     if not raw_dir.exists() or not any(raw_dir.glob("*.json")):
         warnings.append(
             f"取数落盘为空（{raw_dir}）：v3 取数面由 agent 完成，"
@@ -76,19 +64,11 @@ def precheck(report_id: str | None, raw_dir: Path = RAW_DIR) -> list[str]:
     return warnings
 
 
-def _print_first_run_guidance() -> None:
-    from merchant_setup import is_deferred
-    if not is_deferred('profit'):
-        print('尚未取得适用增强报表；由助手自动发现，当前先用简版。')
-    print('本次使用简版，缺少自定义报表支持的指标将在报告中说明。')
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="利润异常诊断（只读，v3：取数已前置到 agent）")
     ap.add_argument("--end", default=None, help="报告期末日 YYYY-MM-DD（默认今天）")
     ap.add_argument("--period-days", type=int, default=None, help="本期天数（默认读 diagnosis.yaml → compare.period_days）")
     ap.add_argument("--shop-ids", default=None, help="逗号分隔店铺 ID（默认读 shops.yaml）")
-    ap.add_argument("--report-id", default=None, help="覆盖 reports.yaml 的 reports.profit.id")
     ap.add_argument("--caliber", default=None, help="利润口径 settlement / shipment（默认读配置）")
     ap.add_argument("--asin", default=None,
                     help="请求诊断的 ASIN（逗号分隔）。用于核对上游 search_contents 过滤是否生效："
@@ -98,9 +78,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="输出报告路径（默认打印到 stdout；写出时 HTML 即报告）")
     ap.add_argument("--keep-md", action="store_true",
                     help="--out 时额外写出同名 .md（调试/测试用；默认只写 .html）")
-    ap.add_argument("--feishu", action="store_true", help="写入飞书文档（演示环境默认阻断）")
-    ap.add_argument("--allow-demo-write", action="store_true", help="显式放行演示环境写入飞书（仍加水印）")
-    ap.add_argument("--folder-token", default=None, help="飞书文件夹 token")
     return _run(ap.parse_args(argv))
 
 
@@ -114,19 +91,16 @@ def _run(args: argparse.Namespace) -> int:
     if args.caliber:
         cfg.setdefault("caliber", {})["default"] = args.caliber
 
-    report_id = _resolve_report_id(args.report_id)
     shop_ids = _resolve_shop_ids(args.shop_ids)
     raw_dir = Path(args.raw_dir) if args.raw_dir else RAW_DIR
     raw_dir = raw_dir if raw_dir.is_absolute() else (SKILL_ROOT / raw_dir)
 
     print("== 前置校验 ==")
-    if not report_id:
-        _print_first_run_guidance()
-    warns = precheck(report_id, raw_dir)
+    warns = precheck(raw_dir)
     for w in warns:
         print(f"⚠️ {w}")
     if not warns:
-        print("✅ 前置校验通过（report_id 已配置 / 取数已落盘）")
+        print("✅ 前置校验通过（取数已落盘）")
     if args.check_only:
         return 0
     if any("取数落盘为空" in w for w in warns):
@@ -147,7 +121,6 @@ def _run(args: argparse.Namespace) -> int:
 
     try:
         result: FetchResult = assemble_all(
-            report_id=report_id,
             shop_ids=shop_ids,
             cur_start=cur_start,
             cur_end=cur_end,
@@ -167,7 +140,6 @@ def _run(args: argparse.Namespace) -> int:
     profit_th = (load_thresholds().get("profit") or {})
     report = diagnose(
         msku_rows=result.msku_rows,
-        custom_rows=result.custom_rows,
         skill_cfg=cfg,
         profit_thresholds=profit_th,
     )
@@ -179,7 +151,6 @@ def _run(args: argparse.Namespace) -> int:
         "coverage": result.coverage,
         "warnings": result.warnings,
         "demo_fingerprint": result.demo_fingerprint,
-        "degraded": result.degraded,
         "caliber": result.caliber,
         "report_currency": currency.get("report_currency", "USD"),
         "cost_currency": currency.get("cost_currency", "CNY"),
@@ -221,44 +192,7 @@ def _run(args: argparse.Namespace) -> int:
     else:
         print(markdown)
 
-    if args.feishu:
-        return _write_feishu(markdown, args, result, fetch_meta)
-
     print("\n提示：本技能只读，只出诊断与归因；改广告请用技能 6，清货请用技能 2。")
-    return 0
-
-
-def _write_feishu(markdown: str, args: argparse.Namespace, result: FetchResult, fetch_meta: dict) -> int:
-    try:
-        from feishu_writer import FeishuError, FeishuWriter
-    except Exception as exc:  # noqa: BLE001
-        print(f"❌ 无法加载 feishu_writer：{exc}", file=sys.stderr)
-        return 1
-    try:
-        writer = FeishuWriter()
-    except Exception as exc:  # noqa: BLE001
-        print(f"❌ 飞书初始化失败（需 app_id/app_secret）：{exc}", file=sys.stderr)
-        return 1
-
-    # 演示环境默认阻断：只有显式传 --allow-demo-write 才放行（且文档顶部已带水印）。
-    # 绝不根据「是否命中演示指纹」自动放行 —— 那样会让闸门永不放行，等于没闸门。
-    override = bool(args.allow_demo_write)
-    try:
-        writer.guard_demo(
-            {"msku": result.msku_rows, "custom": result.custom_rows, "_fp": result.demo_fingerprint},
-            override=override,
-        )
-    except FeishuError as exc:
-        print(f"⛔ 已阻断写入飞书：{exc}", file=sys.stderr)
-        return 3
-    if result.demo_fingerprint:
-        print("⚠️ 检测到演示环境，已在 --allow-demo-write 显式放行下写入，文档顶部含演示水印。")
-
-    title = markdown.splitlines()[0].lstrip("# ").strip() or "利润异常诊断"
-    doc_id = writer.create_doc(title, folder_token=args.folder_token)
-    blocks = writer.markdown_to_blocks(markdown)  # 内含 PII 文本脱敏兜底
-    writer.write_blocks(doc_id, blocks)
-    print(f"✅ 已写入飞书文档：{doc_id}")
     return 0
 
 

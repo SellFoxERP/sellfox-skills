@@ -450,5 +450,43 @@ class SkillDocRequiredIdTest(unittest.TestCase):
         self.assertEqual(params.get("id"), "IDX20260010", "update 参数模板必须携带真实指标 id")
 
 
+class V17DeFeishuLocalReportIdsTest(unittest.TestCase):
+    """[v1.7.0] 去飞书（审批=会话内人工确认）+ 报表 ID 从共享 reports.yaml 缓存改为本技能 config。"""
+
+    def test_docs_have_no_feishu_chain(self):
+        for rel in ("SKILL.md", "references/workflow.md", "config/metric_governance.yaml"):
+            text = (SKILL / rel).read_text(encoding="utf-8")
+            self.assertNotIn("push_proposal", text, rel)
+            self.assertNotIn("写飞书", text, rel)
+            self.assertNotIn("ONBOARDING", text, rel)
+            self.assertNotIn("_shared/config/reports.yaml", text, rel)
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("会话内", skill)
+        cfg = (SKILL / "config" / "metric_governance.yaml").read_text(encoding="utf-8")
+        self.assertNotIn("block_feishu_write:", cfg)
+        self.assertIn("block_external_write:", cfg)
+
+    def test_no_load_shared_reports_left(self):
+        src = (SCRIPTS / "index_governor.py").read_text(encoding="utf-8")
+        run_src = (SCRIPTS / "run_governance.py").read_text(encoding="utf-8")
+        self.assertNotIn("load_shared_reports", src + run_src)
+        for name in ("index_governor.py", "run_governance.py"):
+            self.assertNotIn("飞书", (SCRIPTS / name).read_text(encoding="utf-8"), name)
+
+    def test_target_report_ids_from_local_config(self):
+        # report_id 直接维护在本技能 config 的 report_ids 映射（网页端确认后回填）。
+        cfg = {"target_reports": ["daily_ops", "profit"],
+               "report_ids": {"daily_ops": "123", "profit": ""}}
+        ids, missing = gov.target_report_ids(cfg)
+        self.assertEqual(ids, ["123"])
+        self.assertEqual(missing, ["profit"])
+        self.assertEqual(gov.target_report_ids({"target_reports": [], "report_ids": {}}), ([], []))
+
+    def test_missing_report_hint_points_to_local_config(self):
+        src = (SCRIPTS / "run_governance.py").read_text(encoding="utf-8")
+        self.assertIn("report_ids", src)
+        self.assertIn("不猜 ID", src)
+
+
 if __name__ == "__main__":
     unittest.main()

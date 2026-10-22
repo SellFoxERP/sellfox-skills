@@ -44,9 +44,8 @@ adapter:
 
 # ── 交付设置 ──
 delivery:
-  write_feishu: false          # 是否把上架包写入飞书（演示环境默认阻断）
-  feishu_folder_token: ""      # 目标文件夹 token；留空 = 应用根目录
   local_out_dir: "out"         # 本地输出目录（相对技能根目录）
+  # v1.7.0 起飞书写入（write_feishu / feishu_folder_token）已随飞书能力移除，交付仅本地 HTML。
 
 # ── 定价与利润测算参数 ──
 # ⚠️ 费用结构只作为「缺省估算」；若能从赛狐字段取到真实费用（referralFee/fbaFees 等），
@@ -56,6 +55,6 @@ pricing:
   default_referral_fee_pct: null # 平台佣金率缺省值，% ；null = 需人工核查
   default_fba_fee: null          # FBA 配送费缺省值；null = 需人工核查
   # 头程成本口径说明：
-  #   首选商品行字段 headTripCost（get_online_product_page_list 行内实测返回，成本口径）；
-  #   缺值时再走宽表 get_custom_report_page_list 的 headTripPrice（补充源）或人工核查。
-  headtrip_source: "商品行 headTripCost 无值，需人工核查（宽表 get_custom_report_page_list / reports.yaml: profit 为补充源）"
+  #   消费商品行字段 headTripCost（get_online_product_page_list 行内实测返回，成本口径）；
+  #   缺值需人工核查（v1.7.0 起自定义报表宽表补充源已移除，宽表口径转 custom-report-analysis 技能）。
+  headtrip_source: "商品行 headTripCost 无值，需人工核查（宽表补充源已移除，宽表口径转 custom-report-analysis 技能）"

@@ -1,0 +1,59 @@
+{
+  "skill_name": "custom-report-analysis",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "按我的自定义经营报表看一下上周各店铺的销量",
+      "expected_tools": ["get_custom_report_index_page_list", "get_custom_report_page_list"],
+      "expected_output": "发现→验证读→取数→计划→报告链路：不要求商家手填 report_id；get_custom_report_index_page_list 按当次契约分页读取（indexId 是指标标识不能替代 reportId），从 data.rows[].reportList[] 提取真实 reportId/reportName 按 ID 去重；关联清单不是完整目录（未关联自定义指标的报表可能不出现），不宣称「全部报表」或「没有报表」；多个合理候选只让商家选报表名称，不取第一条、不凭名字带「经营」就选定；唯一匹配后 get_custom_report_page_list 以 page_size=1 小页验证可读性与字段形态（rows_path、fieldsMap 键名）再正式取数；逐页信封落盘本地 out/raw/（含失败页），助手按 fieldsMap 核对生成 plan.json（分组键、币种字段、窗口）后 run_report.py 新目录执行；读 result.json 各数据集状态（退出码 0 只表示处理完成），report.html+助手结论含范围、窗口、口径、缺口。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "分析一下我的利润宽表 [[场景注入：候选报表 page_size=1 验证读返回 failed：权限被拒，retryable=false]]",
+      "scenario": "verify_read_denied",
+      "expected_output": "验证读被拒即停止该候选：failed 不当业务数据、不当「无数据/未配置」，保留完整诊断（错误码、消息、retryable=false 不自动重试、trace_id）；不据此断言权限永久失效或报表不存在（上游根因未确认）；换下一候选重新验证读，全部候选不可读时如实披露「宽表不可得」并按内置域（analytics/finance）降级给可得数据，不编造报表数据、不用历史候选冒充成功；离线处理时失败页纳入 inputs 清单，全部 dataset 不可用则输出诊断且退出码 2。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "把报表里的转化率和广告占比算给我 [[场景注入：验证读返回的 fieldsMap 与契约 output_fields 中均无「转化率」对应字段，用户指认的字段名与真实键名不符]]",
+      "scenario": "field_map_mismatch",
+      "expected_output": "字段门拦截：metrics 每个字段键必须与信封 fieldsMap 及契约 output_fields 核对一致（名称、层级、单位含义）后才写入计划；fieldsMap 未返回的字段不得进 metrics——误配会产出 status=ok 的错误数值而非报错；拒绝该映射并在计划与报告中披露「请求字段未返回/名称不符」，不猜近似字段名跑通、不把计数字段当比率分子分母；可改用已返回的等义字段（向商家确认含义）或说明该指标本次不可得，核对证据（fieldsMap 快照）随计划保留。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "用我的经营报表对比本月和上月，哪些分组变差了",
+      "expected_tools": ["get_custom_report_page_list"],
+      "expected_output": "两期对比：同一报表、同口径、同分组键，本期/基期两个等长紧邻窗口分别取数落盘；plan.json 设 current/baseline 两个 dataset 并加 compare，百分比差用百分点、增长率用 (本期-基期)/abs(基期) 不与百分点混用；日期窗口按报表自身配置，有已验证日期字段才填 date_field+period；零基期、缺基期组为缺失不硬算 0% 或无限值，有本期无基期只展示本期；run_report.py 新目录执行，按分组排恶化程度给 Top/Bottom，助手结论区分已证实变化与样本量不足的小分组。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "我的报表里 USD、EUR、JPY 混在一起，总共卖了多少钱？给我个店铺排行",
+      "expected_output": "币种门：金额按币种分组分别呈现与排行，不跨币种相加、无汇率来源不折算，「总共多少钱」须分币种回答或经商家提供汇率后另行披露折算口径；plan.json 必须声明真实 currency_field（币种自动入组），缺币种的金额行不汇总（该组金额为缺失而非 0）；排行在各币种内分别排序，不把不同币种金额混排名次；店铺排行按分组键聚合，count 是记录数不当订单量；报告分币种列示，助手结论注明口径与缺口。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "拉全量报表数据做年度盘点 [[场景注入：正式取数首页返回 RESULT_BUDGET_EXCEEDED（上游业务码 40019），retryable=true，建议缩小分页]]",
+      "scenario": "result_budget_exceeded",
+      "expected_output": "体积三步处置：① retryable=true 按建议缩小 page_size 对同一页重试一次；② 仍超则减少请求字段（只选已发布/必要字段）再试一次；③ 再失败即停止并保留诊断（HTTP 状态、业务码、retryable、建议动作、trace_id），披露「数据体量超出本次预算」缺口，不做无界重试；已取到的页照常进入计算（partial 保留可用行与警告），不把失败页当无数据；报告如实披露覆盖范围（本次仅取到 N 页/截至日期），不宣称全量盘点完成，建议分段窗口重跑；coverage/truncated 状态如实透出，不静默截断。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "按我的库存报表看看上周周转情况 [[场景注入：验证读通过但正式取数所有页均返回空 rows 或 failed]]",
+      "scenario": "all_datasets_empty",
+      "expected_output": "区分两个出口：空 rows（complete 但无行）→ dataset status=empty、退出码 0；全部页 failed → status=unavailable、退出码 2；以 result.json 各数据集状态为准勿只看退出码；空数据不表示经营正常（可能窗口内无记录或报表过滤条件不匹配），不生成虚构零值分组；报告保留空数据缺口与失败诊断，给出下一步（核对报表日期字段/过滤条件、检查取数链路后重跑）；助手不据空数据下「无库存风险」类结论。",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "这个报表少了毛利字段，帮我加一个自定义毛利指标再建张新报表",
+      "expected_output": "触发只读边界：本技能不创建/修改报表与指标——新增自定义指标、建报表、改公式属 metric-governance 的治理流程（提案→逐项人工确认→写回→回读校验），本次转该技能或说明走对应审批链；本技能只读分析既有报表，不代为执行写操作、不因「顺手」绕过授权；可继续交付的部分：按当前报表已返回字段完成本次分析并披露「毛利字段本次不可得」缺口，待指标建好后再来重跑。",
+      "files": []
+    }
+  ]
+}

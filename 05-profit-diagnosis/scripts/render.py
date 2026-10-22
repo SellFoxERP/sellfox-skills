@@ -3,9 +3,11 @@
 
 输出「利润异常清单 + 归因」。设计要点：
 
-  * **每条归因都带来源工具** —— 171+489 字段来自两个不通用报表，不标来源的归因无法复核。
+  * **每条归因都带来源工具** —— 归因因子全部来自 MSKU 利润报表，不标来源的归因无法复核。
   * **顶部必须标利润口径**（settlement / shipment）—— 不标注必然与财务对不上账。
-  * **延期结算与赔偿单列一节** —— 这两类是最容易漏看的钱（deferredAmount 等只在自定义报表）。
+  * **宽表因子固定披露** —— 采购成本/头程/赔偿金额/延期结算等宽表归因已由
+    `custom-report-analysis` 技能承接，本报告固定标注（不是临时降级，是固定分工）。
+  * **赔偿条数核对单列一节** —— 赔偿是最容易漏看的钱（get_amazon_reimbursement_report）。
   * **诚实边界区块必填** —— 覆盖范围（含截断披露）/ 币种 / 需人工核查项 / 演示水印。
 """
 
@@ -46,7 +48,6 @@ def render_report(
     """渲染 Markdown 报告。"""
     caliber = fetch_meta.get("caliber", "settlement")
     demo_fp = fetch_meta.get("demo_fingerprint")
-    degraded = bool(fetch_meta.get("degraded"))
     top_n = int(fetch_meta.get("top_n", 20))
     include_deferred = bool(fetch_meta.get("include_deferred_section", True))
 
@@ -57,7 +58,7 @@ def render_report(
     if demo_fp:
         lines.append(
             f"> ⚠️ **演示数据，非真实经营数据**（指纹：`{demo_fp}`）。"
-            "本报告数值不可用于任何业务口径验证；写飞书默认阻断。"
+            "本报告数值不可用于任何业务口径验证。"
         )
         lines.append("")
 
@@ -72,11 +73,11 @@ def render_report(
         f"- 报表币种：`{fetch_meta.get('report_currency', 'USD')}`；成本口径币种：`{fetch_meta.get('cost_currency', 'CNY')}`"
         "（两者不直接相减；本技能不做跨币种合并，汇率变化在「数据说明」中提示）"
     )
-    if degraded:
-        lines.append(
-            "- ⚠️ **口径降级**：未配置自定义报表 `report_id`，本次只用 `get_profit_report_by_msku`。"
-            "采购成本/头程/赔偿/延期结算类归因**不可用**，见下方「需人工核查」。"
-        )
+    lines.append(
+        "- ℹ️ **口径分工（固定）**：宽表因子归因（采购成本 purchaseCost / 头程 headTripPrice / "
+        "赔偿金额 reimbursementAmount / 延期结算 deferredAmount 等）由 `custom-report-analysis` "
+        "技能承接，本技能只用 `get_profit_report_by_msku` 做归因。"
+    )
     lines.append("")
 
     # ---- 核心结论 ----
@@ -267,40 +268,21 @@ def _render_one(diag: MskuDiagnosis, *, currency: str) -> List[str]:
 
 
 def _render_deferred(report: DiagnosisReport, fetch_meta: Dict[str, Any]) -> List[str]:
-    """延期结算与赔偿——最容易漏看的钱。"""
+    """赔偿条数核对 —— 最容易漏看的钱（get_amazon_reimbursement_report，保留源）。
+
+    延期结算/赔偿**金额**因子原属自定义报表宽表，已由 custom-report-analysis 技能承接；
+    本区块固定披露该分工，并给出赔偿报告的条数级核对结果。
+    """
     out: List[str] = ["## 延期结算与赔偿（易漏的钱）", ""]
-    rows: List[str] = []
-    for diag in report.mskus:
-        for f in diag.factors + diag.unavailable_factors:
-            if f.canonical in (
-                "deferred_amount", "reimbursement_amount",
-                "warehouse_lost_amount", "missing_from_inbound_amount",
-            ):
-                cur = "无数据" if f.current is None else f"{f.current:,.2f}"
-                base = "无数据" if f.baseline is None else f"{f.baseline:,.2f}"
-                rows.append(f"| `{diag.msku}` | {f.label} | `{f.raw_field}` | {f.tool} | {base} | {cur} |")
-    if rows:
-        out.append("| MSKU | 项目 | 字段 | 来源工具 | 基期 | 本期 |")
-        out.append("|---|---|---|---|---|---|")
-        out.extend(rows[:50])
-        if len(rows) > 50:
-            out.append(f"| … | （共 {len(rows)} 行，仅列前 50） | | | | |")
-        out.append("")
-        out.append(
-            "> ⚠️ 这些字段**只存在于 `get_custom_report_page_list`**（489 字段宽表），"
-            "不在 `get_profit_report_by_msku`。若未配置自定义报表 `report_id`，此区块必然为空。"
-        )
-        out.append(
-            "> 赔偿类可进一步用 `get_amazon_reimbursement_report` 交叉核对是否漏领"
-            f"（本次记录数 / 状态：{fetch_meta.get('reimbursement_count', '未取数')}）。"
-        )
-    else:
-        out.append(
-            "本次未取到延期结算/赔偿类数据。"
-            "原因可能为：(a) 未配置自定义报表 `report_id`（口径降级）；"
-            "(b) 该期确无此类金额（**标「无数据」，不写 0**）；"
-            "(c) 主源 `get_profit_report_by_msku` 取数失败或未取回行 —— 无 MSKU 锚点，"
-            "自定义报表的延期/赔偿数值无法挂靠展示（失败原因见「数据说明」警示区）。"
-        )
+    out.append(
+        "> ℹ️ 延期结算（deferredAmount）与赔偿**金额**（reimbursementAmount / "
+        "warehouseLostAmount / missingFromInboundAmount）只存在于自定义报表宽表，"
+        "相关金额归因由 `custom-report-analysis` 技能承接，本报告不取值、不编造。"
+    )
+    out.append(
+        "> 赔偿**条数级**核对仍由本技能完成：`get_amazon_reimbursement_report`"
+        f"（本次记录数 / 状态：{fetch_meta.get('reimbursement_count', '未取数')}）；"
+        "两边都需核对时，先在本报告看条数，再到 custom-report-analysis 的宽表报告对金额。"
+    )
     out.append("")
     return out

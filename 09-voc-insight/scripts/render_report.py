@@ -2,7 +2,7 @@
 """评论 VOC 归因 —— Step 4：渲染 VOC 报告（Markdown）。
 
 模板见 ``references/report-template.md``。本模块只做渲染，不取数、不写系统。
-强制包含：顶部数据说明（含口径降级/演示水印/截断披露/币种无关说明）、
+强制包含：顶部数据说明（含固定口径横幅/演示水印/截断披露/币种无关说明）、
 问题 ASIN、主题归因（模式 vs 个别反馈）、行动建议、需人工核查清单、诚实边界。
 
 用法：
@@ -73,13 +73,10 @@ def _header(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
     fp = signals.get("demo_fingerprint")
     if fp:
         lines.append(f"> ⚠️ **演示数据，非真实经营数据**（命中指纹：{fp}）。")
-    degraded = src.get("degraded")
-    if degraded and degraded != "none":
-        # 降级横幅：优先用 fetch_signals 按三态归因记录的 degraded_banner
-        # （未配置 / 发现失败 / 候选验证被拒，文案如实），旧版 signals 退回第一条 warning。
-        banner = src.get("degraded_banner") or (signals.get("warnings") or [""])[0] \
-            or "⚠️ 口径降级：缺少自定义报表 report_id。"
-        lines.append(f"> {banner}")
+    # 固定口径横幅（fetch_signals 记录的 handoff_banner）：宽表信号由 custom-report-analysis 承接。
+    handoff = src.get("handoff_banner")
+    if handoff:
+        lines.append(f"> {handoff}")
     banner = analysis.get("banner")
     if banner:
         lines.append(f"> {banner}")
@@ -87,11 +84,12 @@ def _header(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
     lines.append(f"- 覆盖范围：店铺 {'、'.join(signals.get('_shops') or ['全部'])}")
     lines.append(f"- 时间窗口：近 {win.get('days', '?')} 天"
                  f"（当前 {win.get('current', ['?','?'])[0]} ~ {win.get('current', ['?','?'])[-1]}；"
-                 f"基线 前一窗口 {win.get('previous', ['?','?'])[0]} ~ {win.get('previous', ['?','?'])[-1]}）")
+                 f"基线 前一窗口 {win.get('previous', ['?','?'])[0]} ~ {win.get('previous', ['?','?'])[-1]}，"
+                 "快照路径不消费）")
     lines.append("- 数据源（字段归属，逐字段标注）：")
-    lines.append(f"  - `lowReviewNum` / `reviewNum` / `reviewRate` — `get_custom_report_page_list`"
-                 f"（489 宽表，report_id={'已配置' if src.get('report_id') else '⚠️ 未配置'}）")
-    lines.append("  - `rating` / `ratingCount` — `get_custom_report_page_list`、`get_online_product_page_list`")
+    lines.append("  - `rating` / `ratingCount` — `get_online_product_page_list`（**快照，无历史基线**）")
+    lines.append("  - `lowReviewNum` / `reviewNum` / `reviewRate` — 489 宽表，"
+                 "由 `custom-report-analysis` 技能承接，本报告不含")
     lines.append(f"  - 评论原文 — 外部评论 MCP（{'已接入' if not analysis.get('degraded') else '⚠️ 未接入 / 无数据'}）")
     # 取数失败逐条披露（workflow.md §7：数据说明必须记录 error_code；该源已按无数据处理）
     err_details = signals.get("error_details") or []
@@ -132,19 +130,17 @@ def _header(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
 
 def _flagged_section(signals: Dict[str, Any]) -> str:
     flagged = signals.get("flagged") or []
-    lines = ["## 1. 问题 ASIN（来自赛狐聚合指标，零外部依赖）", ""]
+    lines = ["## 1. 问题 ASIN（online 评分快照，零外部依赖）", ""]
     if not flagged:
-        # 空结果的三种真实原因各说各话：取数失败 ≠ 缺历史基线 ≠ 未触发阈值
+        # 空结果的真实原因各说各话：取数失败 ≠ 无环比基线 ≠ 未触发阈值
         codes = _error_codes(signals)
         snapshot_intro = ""
         if codes:
             lines.append(f"取数失败（error_code：{'、'.join(codes)}），原因见「0. 数据说明」；"
                          "无法定位问题 ASIN，不代表没有问题。")
-        elif not (signals.get("counts") or {}).get("previous_rows"):
-            lines.append("缺少历史基线，无法判断评分是否下降；不代表没有问题。")
-            snapshot_intro = "以下展示已取到的评分快照。"
         else:
-            lines.append("本次可比较样本未触发配置阈值。")
+            lines.append("快照内无「评分低且样本足够」的 ASIN。")
+            snapshot_intro = "以下展示已取到的评分快照。"
         observed = signals.get("observed") or []
         if observed:
             if snapshot_intro:
@@ -153,24 +149,27 @@ def _flagged_section(signals: Dict[str, Any]) -> str:
             for row in observed:
                 lines.append(f"| {vc.key_of(row.get('asin')) or '无数据'} | {_fmt(row.get('rating'))} | {_fmt(row.get('ratingCount'))} |")
         lines.append("")
+        lines.append("> ⚠️ 快照无历史基线，**无法判断评分是否下降**；差评数（lowReviewNum）与好评率（reviewRate）"
+                     "环比由 `custom-report-analysis` 技能承接。")
+        lines.append("")
         return "\n".join(lines)
-    lines.append("| ASIN | 店铺 | 标题 | 差评数(前→今) | 评分(前→今) | 好评率(前→今) | 命中信号 |")
+    lines.append("| ASIN | 店铺 | 标题 | 评分 | 评分数 | 销量 | 命中信号 |")
     lines.append("|---|---|---|---|---|---|---|")
     for r in flagged:
         m = r.get("metrics") or {}
-        low = m.get("lowReviewNum") or {}
         rate = m.get("rating") or {}
-        rr = m.get("reviewRate") or {}
+        rc = m.get("ratingCount") or {}
         sigs = "、".join(f.get("signal", "") for f in (r.get("flags") or []))
         lines.append(
             f"| {r.get('asin')} | {r.get('shop_id') or '-'} | {(r.get('title') or '-')[:28]} "
-            f"| {_fmt(low.get('prev'))} → {_fmt(low.get('now'))} "
-            f"| {_fmt(rate.get('prev'))} → {_fmt(rate.get('now'))} "
-            f"| {_fmt(rr.get('prev'))} → {_fmt(rr.get('now'))} "
+            f"| {_fmt(rate.get('now'))} "
+            f"| {_fmt(rc.get('now'))} "
+            f"| {_fmt(r.get('sale_num'))} "
             f"| {sigs} |"
         )
     lines.append("")
-    lines.append("> 排序依据：影响面权重（销量 × 命中信号数），仅为**排序**用，不是精确指标。")
+    lines.append("> 排序依据：影响面权重（销量），仅为**排序**用，不是精确指标；"
+                 "命中条件为快照评分 ≤ 阈值且评分数 ≥ 小样本下界（见数据说明）。")
     lines.append("")
     return "\n".join(lines)
 
@@ -274,11 +273,11 @@ def _longest_common_run(a: str, b: str) -> int:
 
 
 def _is_banner_duplicate(text: str, banner_key: str) -> bool:
-    """条目是否与降级横幅同义（eval3-2026-10-22 N1'：横幅整段被再列为清单条目）。
+    """条目是否与固定口径横幅同义（eval3-2026-10-22 N1'：横幅整段被再列为清单条目）。
 
     判据（避免把「口径字段清单」误伤为同义）：
     ① 归一化后完全相同；② 双方携带同一 error_code **且**存在 ≥12 字连续相同片段
-    （横幅/条目对同一失败各写一遍长文案时，必共享「error_code：X … report_id 未绑定」级长 run）。
+    （横幅/条目对同一失败各写一遍长文案时，必共享「error_code：X …」级长 run）。
     """
     if not banner_key:
         return False
@@ -293,26 +292,19 @@ def _is_banner_duplicate(text: str, banner_key: str) -> bool:
 
 def _manual_section(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
     src = signals.get("source") or {}
-    # 降级横幅已置顶「0. 数据说明」：清单再列同义条目只造成复读——横幅优先，清单跳过同义项。
-    degraded = src.get("degraded")
-    banner_key = _item_key(src.get("degraded_banner") or "") if (degraded and degraded != "none") else ""
+    # 固定口径横幅已置顶「0. 数据说明」：清单再列同义条目只造成复读——横幅优先，清单跳过同义项。
+    banner_key = _item_key(src.get("handoff_banner") or "")
     items: List[str] = []
     items += [it for it in (signals.get("manual_checks") or [])
               if not _is_banner_duplicate(it, banner_key)]
     for w in (signals.get("warnings") or []):
-        if "演示" in w or "降级" in w:
+        if "演示" in w or "降级" in w or "固定口径" in w:
             if _is_banner_duplicate(w, banner_key):
                 continue  # 横幅原文复读，跳过（信息保留在「0. 数据说明」置顶处）
             # 统一由本节补「- ⚠️ 」前缀，先剥掉 warning 自带的标记，避免「⚠️ ⚠️」双前缀
             items.append(_MARK_PREFIX_RE.sub("", w))
     if analysis.get("degraded"):
         items.append("评论原文与主题归因：需人工核查（未接入外部评论源）。")
-    if not signals.get("source", {}).get("report_id"):
-        # 降级原因属上游失败（发现失败/候选验证被拒）时，manual_checks 已带如实文案，
-        # 再补「需配置 report_id」会把上游故障误导成用户没配置 → 只在真·未配置时补
-        reason = (signals.get("source") or {}).get("degraded_reason") or "not_configured"
-        if reason == "not_configured" and not any("lowReviewNum" in it for it in items):
-            items.append("lowReviewNum / reviewNum / reviewRate：需自定义报表 report_id。")
     items.append("评论原文的完整性与代表性（外部源抽样可能偏倚）：需人工判断。")
     items.append("外部评论源的合规性（ToS/授权/法律）：需人工确认。")
     lines = ["## 4. 需人工核查清单", ""]
@@ -334,9 +326,11 @@ def _boundary_section() -> str:
         "- **不做全量评论归因**：外部评论源多为抽样/受限，结论代表抽样范围内的反馈，不等于总体。",
         "- **不把单条差评当普遍问题**：未达多源印证阈值的只列为「个别反馈」。",
         "- **赛狐官方 MCP 拿不到评论原文**：只有聚合指标；原文靠外部 MCP，可用性取决于是否接入。",
+        "- **不做评分环比与差评数分析**：online 快照无历史基线；lowReviewNum / reviewRate 等"
+        "宽表信号由 `custom-report-analysis` 技能承接。",
         "- **不修改任何 Listing、不反馈供应链系统**：只出建议；执行由人完成。",
         "- **外部评论源按次/按条计费**，且抓取型源可能有 ToS/法律风险 —— 由使用者自行确认。",
-        "- 空数据标「无数据」，未写 0；降级口径已在上方标注。",
+        "- 空数据标「无数据」，未写 0；口径边界已在上方标注。",
         "",
     ])
 
@@ -375,7 +369,7 @@ def main() -> int:
     p.add_argument("--optimization", default=None, help="可选：优化素材需求单 JSON")
     p.add_argument("--out", default="out/voc-report.md")
     p.add_argument("--keep-md", action="store_true",
-                   help="额外留档同名 .md（默认只写 .html，仅供调试/飞书载荷）")
+                   help="额外留档同名 .md（默认只写 .html，仅供调试）")
     p.add_argument("--print", action="store_true", help="同时在终端打印报告")
     return run(p.parse_args())
 

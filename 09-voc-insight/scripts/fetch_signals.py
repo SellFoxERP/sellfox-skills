@@ -7,26 +7,24 @@
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
   * **取数面 = agent**：按 `references/workflow.md` 的**取数计划**调
     `mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/`：
-      custom_current.json    get_custom_report_page_list（当前窗口）→ rows
-      custom_previous.json   get_custom_report_page_list（上一窗口）→ rows
-      online_products.json   get_online_product_page_list（降级源） → rows
+      online_products.json   get_online_product_page_list（主路径，评分快照）→ rows
   * **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/coverage 截断），
-    并组装出与旧版完全相同形状的 `signals.json` —— analyze_themes / render_report /
+    并组装出与旧版相同形状的 `signals.json` —— analyze_themes / render_report /
     build_optimization_brief 无需改动。
 
-环比口径：对比 custom_current 与 custom_previous 两段落盘信封，逐 ASIN 相减
-（报表按日期范围聚合，`rating` 等字段不是时间序列，只能两窗口相减）。
-主键用 `shopId + asin`（同 ASIN 跨店是不同对象）。
-
-无 `report_id`（或 custom 信封缺失）→ 降级用 online_products.json：
-仅 rating/ratingCount，**无差评数、无环比基线** → 显式标注「无环比基线」，不报问题 ASIN。
+口径（2026-10-22 起，自定义报表已移出本技能）：
+  * 主路径 = `get_online_product_page_list` **评分快照**（rating / ratingCount）。
+  * online 侧**无差评数字段**（lowReviewNum / reviewNum / reviewRate 只在 489 宽表）、
+    **无历史基线**（online 无历史），因此无法做评分环比 —— 这是固定口径，不是临时降级；
+    宽表分析（差评数环比、好评率环比等）由 `custom-report-analysis` 技能承接。
+  * 快照按 `shopId + asin` 去重（同 ASIN 跨店是不同对象），按销量降序给出
+    低分 ASIN 候选清单（`rating` 低于阈值的行），供人工/外部评论源抽查。
 
 用法::
 
     # 1) agent 先按 workflow.md 取数计划落盘 out/raw/*.json（脚本零 HTTP、零 Key）
     # 2) 校验 + 组装：
     python3 scripts/fetch_signals.py --days 7 --out out/signals.json
-    python3 scripts/fetch_signals.py --report-id 123456 --out out/signals.json
 """
 
 from __future__ import annotations
@@ -53,26 +51,20 @@ except ImportError as exc:  # _shared 缺失：给出可操作的指引，而不
     ) from exc
 
 
-# 只保留需要的字段，避免 489 字段撑爆上下文。
-_KEEP = {
-    "asin", "parentAsin", "msku", "sku", "shopId", "marketplaceId", "title", "mainImage",
-    "saleNum", "rating", "ratingCount", "lowReviewNum", "reviewNum", "reviewRate",
-    "nowDate",
-}
-
+# 只保留需要的字段，避免 79 字段全量撑爆上下文。
 _KEEP_ONLINE = {
     "asin", "parentAsin", "sku", "shopId", "marketplaceId", "title",
     "mainImage", "saleNum", "rating", "ratingCount",
 }
 
 
-def _trim(rows: List[Dict[str, Any]], keep: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-    keep = keep or _KEEP
-    return [{k: v for k, v in r.items() if k in keep} for r in (rows or []) if isinstance(r, dict)]
+def _trim(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [{k: v for k, v in r.items() if k in _KEEP_ONLINE}
+            for r in (rows or []) if isinstance(r, dict)]
 
 
 def _window(end: _dt.date, days: int, offset: int) -> Tuple[_dt.date, _dt.date]:
-    """返回 [start, end]；offset=0 当前窗口，offset=1 上一窗口。"""
+    """返回 [start, end]；offset=0 当前窗口，offset=1 上一窗口（快照路径不消费上一窗口）。"""
     hi = end - _dt.timedelta(days=offset * days)
     lo = hi - _dt.timedelta(days=days - 1)
     return lo, hi
@@ -111,8 +103,6 @@ def _cov_truncation(env: RawEnvelope, name: str) -> Optional[str]:
 
 #: 落盘步骤 → 网关工具（error_details 里逐条标注，报告数据说明直接消费）。
 _STEP_TOOLS = {
-    "custom_current": "get_custom_report_page_list",
-    "custom_previous": "get_custom_report_page_list",
     "online_products": "get_online_product_page_list",
 }
 
@@ -154,167 +144,59 @@ def _check_envelope(
         disclosures.append(t)
 
 
-def _index(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """按 shopId+asin 建索引（同 ASIN 跨店是不同对象）。"""
-    idx: Dict[str, Dict[str, Any]] = {}
-    for r in rows or []:
-        rid = vc.record_id(r)
-        idx.setdefault(rid, r)
-    return idx
+#: 快照候选清单里「低分」的判定阈值（小样本不判，与旧环比口径的小样本保护对称）。
+_RATING_LOW_DEFAULT = 4.0
 
 
-def build_signals(
-    current: List[Dict[str, Any]],
-    previous: List[Dict[str, Any]],
+def build_low_rating_rows(
+    observed: List[Dict[str, Any]],
     *,
-    threshold_low: int,
-    threshold_rating: float,
+    rating_low: float,
     min_rating_count: int,
-    min_low_review_num: int,
-    signals_enabled: List[str],
 ) -> List[Dict[str, Any]]:
-    """逐 ASIN 计算环比并打标。返回候选问题 ASIN 列表（已附证据）。"""
-    cur_idx = _index(current)
-    prev_idx = _index(previous)
-    out: List[Dict[str, Any]] = []
+    """从快照里挑出「评分偏低且样本足够」的 ASIN，按销量降序（影响面粗排）。
 
-    for rid, cur in cur_idx.items():
-        prev = prev_idx.get(rid) or {}
-        asin = vc.asin_of(cur)
+    这不是环比信号（online 无历史基线），只是快照筛选：帮人把注意力集中到
+    最可能出问题的少数 ASIN 上。空数据/样本不足的行**不列入**，也不写 0。
+    """
+    out: List[Dict[str, Any]] = []
+    for r in observed or []:
+        asin = vc.asin_of(r)
         if not asin:
             continue
-
-        low_now = vc.to_float(cur.get("lowReviewNum"))
-        low_prev = vc.to_float(prev.get("lowReviewNum"))
-        rate_now = vc.to_float(cur.get("rating"))
-        rate_prev = vc.to_float(prev.get("rating"))
-        rr_now = vc.to_float(cur.get("reviewRate"))
-        rr_prev = vc.to_float(prev.get("reviewRate"))
-        rc_now = vc.to_float(cur.get("ratingCount"))
-
-        flags: List[Dict[str, Any]] = []
-
-        # 信号 1：差评数上升
-        if "low_review_num_rise" in signals_enabled:
-            low_delta = (low_now - low_prev) if (low_now is not None and low_prev is not None) else None
-            if (low_delta is not None and low_delta > 0 and (low_now or 0) >= min_low_review_num) or (
-                low_delta is None and low_now is not None and low_now >= min_low_review_num
-            ):
-                flags.append({
-                    "signal": "low_review_num_rise",
-                    "field": "lowReviewNum",
-                    "source": "custom",
-                    "now": low_now,
-                    "prev": low_prev,
-                    "threshold": f"环比上升≥{threshold_low}",
-                })
-
-        # 信号 2：评分下降（小样本不判）
-        if "rating_drop" in signals_enabled:
-            if rc_now is not None and rc_now >= min_rating_count and rate_now is not None and rate_prev is not None:
-                drop = rate_prev - rate_now
-                if drop >= threshold_rating:
-                    flags.append({
-                        "signal": "rating_drop",
-                        "field": "rating",
-                        "source": "custom",
-                        "now": rate_now,
-                        "prev": rate_prev,
-                        "threshold": f"环比下降≥{threshold_rating}",
-                    })
-
-        # 信号 3：好评率下滑（小样本不判 —— 与 rating_drop 对称，复用同一 min_rating_count 下界）
-        if "review_rate_drop" in signals_enabled and rr_now is not None and rr_prev is not None:
-            if rc_now is not None and rc_now >= min_rating_count and (rr_prev - rr_now) > 0:
-                flags.append({
-                    "signal": "review_rate_drop",
-                    "field": "reviewRate",
-                    "source": "custom",
-                    "now": rr_now,
-                    "prev": rr_prev,
-                    "threshold": "环比下降",
-                })
-
-        if not flags:
+        rating = vc.to_float(r.get("rating"))
+        count = vc.to_float(r.get("ratingCount"))
+        if rating is None or count is None or count < min_rating_count:
             continue
-
+        if rating > rating_low:
+            continue
         out.append({
             "asin": asin,
-            "parent_asin": vc.key_of(cur.get("parentAsin")) or vc.key_of(prev.get("parentAsin")),
-            "msku": vc.key_of(cur.get("msku")) or vc.key_of(prev.get("msku")),
-            "sku": vc.key_of(cur.get("sku")) or vc.key_of(prev.get("sku")),
-            "shop_id": vc.key_of(cur.get("shopId")) or vc.key_of(prev.get("shopId")),
-            "marketplace_id": vc.key_of(cur.get("marketplaceId")) or vc.key_of(prev.get("marketplaceId")),
-            "title": vc.key_of(cur.get("title")) or vc.key_of(prev.get("title")),
-            "sale_num": vc.to_float(cur.get("saleNum")),
+            "parent_asin": vc.key_of(r.get("parentAsin")),
+            "sku": vc.key_of(r.get("sku")),
+            "shop_id": vc.key_of(r.get("shopId")),
+            "marketplace_id": vc.key_of(r.get("marketplaceId")),
+            "title": vc.key_of(r.get("title")),
+            "sale_num": vc.to_float(r.get("saleNum")),
             "metrics": {
-                "lowReviewNum": {"now": low_now, "prev": low_prev, "source": "custom"},
-                "rating": {"now": rate_now, "prev": rate_prev, "source": "custom"},
-                "reviewRate": {"now": rr_now, "prev": rr_prev, "source": "custom"},
-                "ratingCount": {"now": rc_now, "source": "custom"},
+                "rating": {"now": rating, "prev": None, "source": "online"},
+                "ratingCount": {"now": count, "source": "online"},
             },
-            "flags": flags,
-            # 影响面排序权重：销量 × 信号强度（粗略，仅供排序，不是精确指标）
-            "_impact": (vc.to_float(cur.get("saleNum")) or 0.0) * len(flags),
+            "flags": [{"signal": "low_rating_snapshot",
+                       "field": "rating",
+                       "source": "online",
+                       "now": rating,
+                       "prev": None,
+                       "threshold": f"快照评分≤{rating_low} 且评分数≥{min_rating_count}"}],
+            "_impact": (vc.to_float(r.get("saleNum")) or 0.0),
         })
-
     out.sort(key=lambda r: (r.get("_impact") or 0.0), reverse=True)
     return out
-
-
-#: 无 report_id 降级时的人工核查文案（三态，与 config/voc.yaml → degradation 的 banner 对应）。
-#: 关键纪律：上游失败（发现失败 / 候选验证被拒）不得写成「先配置 report_id」。
-_NO_REPORT_MANUAL = {
-    "not_configured": (
-        "lowReviewNum / reviewNum / reviewRate 需自定义报表；当前仅有 online 侧 rating/ratingCount，"
-        "且无上一窗口基线（online 无历史），无法做环比 → 需人工核查或先配置 report_id。"
-    ),
-    "discovery_failed": (
-        "自定义报表自动发现失败（error_code：{error_codes}）：lowReviewNum / reviewNum / reviewRate 不可用。"
-        "这不是「未配置 report_id」—— 需人工核对发现链路（报表目录接口）后重跑发现，补配置解决不了。"
-    ),
-    "candidate_verification_rejected": (
-        "报表候选已发现，但候选验证读取被上游拒绝（error_code：{error_codes}），report_id 未绑定："
-        "需人工在赛狐网页端核对报表可用性 —— 不是未配置 report_id，重新配置无法解决。"
-    ),
-}
-
-
-def _probe_no_report_reason(raw_dir: Path) -> Tuple[str, List[str]]:
-    """无 report_id 时的降级原因归因（**只认落盘证据**，不臆测）。
-
-    三态（与 ``config/voc.yaml → degradation`` 文案一一对应）：
-    - ``candidate_verification_rejected``：发现已完成，custom_* / report_validate* 等
-      宽表信封 status=failed 且带 error_code → 候选验证读取被上游拒，report_id 因此未绑定；
-    - ``discovery_failed``：*index* 信封 status=failed → 报表自动发现本身失败；
-    - ``not_configured``：无任何失败证据 → 真·未配置（现行文案）。
-    """
-    verify_codes: List[str] = []
-    discovery_codes: List[str] = []
-    for p in sorted(raw_dir.glob("*.json")):
-        if p.name == "online_products.json":
-            continue
-        try:
-            env = load_envelope(p)
-        except Exception:
-            continue  # 损坏文件不构成失败证据（主路径另有 corrupt 拦截）
-        if env.status in ("complete", "partial") or not env.error_code:
-            continue
-        if "index" in p.name.lower():
-            discovery_codes.append(str(env.error_code))
-        else:
-            verify_codes.append(str(env.error_code))
-    if verify_codes:
-        return "candidate_verification_rejected", verify_codes
-    if discovery_codes:
-        return "discovery_failed", discovery_codes
-    return "not_configured", []
 
 
 def run(args: argparse.Namespace) -> int:
     voc_cfg = vc.load_skill_config("voc")
     disc_cfg = voc_cfg.get("discovery") or {}
-    th_after_sales = vc.load_shared_section("thresholds", "after_sales")
 
     end = _dt.date.fromisoformat(args.end_date) if args.end_date else _dt.date.today()
     days = int(args.days or (voc_cfg.get("stat_windows") or {}).get("short_days", 7))
@@ -323,35 +205,31 @@ def run(args: argparse.Namespace) -> int:
     if not raw_dir.is_absolute():
         raw_dir = vc.SKILL_DIR / raw_dir
 
-    # 阈值：本技能特有下界来自 config/voc.yaml → discovery；
-    #      low_review 与 rating_drop_abs 的单一真源在 _shared/config/thresholds.yaml → after_sales。
-    min_low = int(disc_cfg.get("min_low_review_num", 2))
+    # 快照「低分」阈值与小样本下界：单一真源在 config/voc.yaml → discovery。
     min_rating_count = int(disc_cfg.get("min_rating_count", 20))
-    # rating_drop_abs 的单一真源是 _shared/config/thresholds.yaml → after_sales；
-    # 若底座缺失，退化为兜底值并**显式标注来源**（不把兜底值混进真实数据）。
-    if "rating_drop_abs" in th_after_sales:
-        threshold_rating = float(th_after_sales["rating_drop_abs"])
-        threshold_rating_source = "_shared/config/thresholds.yaml → after_sales.rating_drop_abs"
-    else:
-        threshold_rating = 0.2
-        threshold_rating_source = "⚠️ 兜底默认值（阈值配置缺失，需人工核查）"
-    threshold_low = 0
-    signals_enabled = list(disc_cfg.get("signals") or ["low_review_num_rise", "rating_drop", "review_rate_drop"])
+    rating_low = float(disc_cfg.get("snapshot_rating_low", _RATING_LOW_DEFAULT))
     max_asins = int(disc_cfg.get("max_flagged_asins", 20))
-    report_key = disc_cfg.get("report_key", "daily_ops")
 
     notes_warnings: List[str] = []
     notes_manual: List[str] = []
     disclosures: List[str] = []
     errors: List[str] = []
     error_details: List[Dict[str, Any]] = []
-    degraded_reason: str = "none"
-    degraded_error_codes: List[str] = []
-    degraded_banner: Optional[str] = None
-
-    report_id = args.report_id or vc.resolve_report_id(report_key)
-    degraded = "none"
     demo_fp: Optional[str] = None
+
+    # 固定口径披露（不是临时降级）：宽表信号由 custom-report-analysis 承接。
+    # 横幅文案单一真源在 config/voc.yaml → degradation.no_custom_report.banner。
+    handoff_banner = str(
+        ((voc_cfg.get("degradation") or {}).get("no_custom_report") or {}).get("banner")
+        or ("⚠️ 固定口径：自定义报表（489 宽表）已移出本技能，"
+            "lowReviewNum / reviewNum / reviewRate 及其环比不可用；"
+            "差评数与宽表分析由 custom-report-analysis 技能承接。")
+    )
+    notes_warnings.append(handoff_banner)
+    notes_manual.append(
+        "lowReviewNum / reviewNum / reviewRate：需自定义报表宽表 → 由 custom-report-analysis 技能承接；"
+        "评分环比基线（online 无历史）无法构造，需人工比对历史或改用宽表。"
+    )
 
     # --- 落盘目录前置检查（v3：取数是 agent 的责任）--------------------------
     if not raw_dir.exists() or not any(raw_dir.glob("*.json")):
@@ -362,100 +240,46 @@ def run(args: argparse.Namespace) -> int:
         )
 
     current: List[Dict[str, Any]] = []
-    previous: List[Dict[str, Any]] = []
 
-    def _scan_demo(envs: List[Optional[RawEnvelope]]) -> None:
-        nonlocal demo_fp
-        for env in envs:
-            if demo_fp:
-                return
-            if env is None:
-                continue
-            fp = detect_demo_environment(env.obj)
-            if fp:
-                demo_fp = fp
+    # 主路径：online 评分快照（取数计划唯一必选步骤）
+    online_env, online_problem = _load_raw(raw_dir, "online_products")
+    if online_problem == "missing":
+        raise SystemExit(
+            "❌ 缺少 out/raw/online_products.json（取数计划唯一必选步骤，"
+            "get_online_product_page_list）。请由 agent 按取数计划落盘后重跑本脚本。"
+        )
+    if online_problem is not None:
+        raise SystemExit(
+            f"❌ out/raw/online_products.json 存在但解析失败（损坏）—— {online_problem}。\n"
+            "   这不是「未落盘」：请先检查文件完整性（是否被截断/半写/非法 JSON），\n"
+            "   修复或由 agent 重新完整落盘后重跑。"
+        )
+    _check_envelope(online_env, "online_products", errors, disclosures, notes_warnings, error_details)
+    fp = detect_demo_environment(online_env.obj)
+    if fp:
+        demo_fp = fp
+    current = _trim(online_env.rows("rows"))
 
-    # 报表发现信封（index_discovery.json，get_custom_report_index_page_list）也纳入演示扫描
-    # （eval3-2026-10-22 N2'）：上游可能只在报表名/指标名留「演示」标识（reportName 含
-    # 「演示」即命中指纹）；发现信封缺失/损坏不阻断（发现不是必经步骤，只影响指纹覆盖面）。
-    discovery_env, _discovery_problem = _load_raw(raw_dir, "index_discovery")
-
-    if report_id:
-        # 主路径：宽表两窗口环比（取数计划步骤 1/2）
-        cur_env, cur_problem = _load_raw(raw_dir, "custom_current")
-        prev_env, prev_problem = _load_raw(raw_dir, "custom_previous")
-        problems = (("custom_current", cur_problem), ("custom_previous", prev_problem))
-        missing = [n for n, pr in problems if pr == "missing"]
-        corrupt = [n for n, pr in problems if pr is not None and pr.startswith("corrupt")]
-        if missing:
-            raise SystemExit(
-                f"❌ 缺少取数计划落盘：{', '.join(f'out/raw/{m}.json' for m in missing)}（步骤 1/2，"
-                f"get_custom_report_page_list 两窗口）。report_id 已配置（{report_id}），"
-                "请由 agent 按取数计划落盘后重跑本脚本。"
-            )
-        if corrupt:
-            # 与「文件缺失」区分：文件在但读不了 → 先查完整性，不是重走取数计划就能解决
-            raise SystemExit(
-                f"❌ 落盘文件存在但解析失败（损坏）：{', '.join(f'out/raw/{m}.json' for m in corrupt)} —— "
-                + "；".join(pr for _, pr in problems if pr and pr.startswith("corrupt")) + "。\n"
-                "   这不是「未落盘」：请先检查文件完整性（是否被截断/半写/非法 JSON），\n"
-                "   修复或由 agent 重新完整落盘后重跑；不要盲目按「缺步骤」重取数。"
-            )
-        for name, env in (("custom_current", cur_env), ("custom_previous", prev_env)):
-            _check_envelope(env, name, errors, disclosures, notes_warnings, error_details)
-        _scan_demo([cur_env, prev_env, discovery_env])
-        current = _trim(cur_env.rows("rows"))
-        previous = _trim(prev_env.rows("rows"))
-    else:
-        # 降级路径：无 report_id → 只用 online 侧 rating/ratingCount（取数计划步骤 3）
-        online_env, online_problem = _load_raw(raw_dir, "online_products")
-        if online_problem == "missing":
-            raise SystemExit(
-                "❌ report_id 未配置，且缺少 out/raw/online_products.json（取数计划步骤 3，"
-                "get_online_product_page_list）。请由 agent 按取数计划落盘后重跑本脚本，"
-                "或由助手自动发现并验证适用报表后，再落盘宽表两窗口。"
-            )
-        if online_problem is not None:
-            raise SystemExit(
-                f"❌ out/raw/online_products.json 存在但解析失败（损坏）—— {online_problem}。\n"
-                "   这不是「未落盘」：请先检查文件完整性（是否被截断/半写/非法 JSON），\n"
-                "   修复或由 agent 重新完整落盘后重跑。"
-            )
-        _check_envelope(online_env, "online_products", errors, disclosures, notes_warnings, error_details)
-        _scan_demo([online_env, discovery_env])
-        current = _trim(online_env.rows("rows"), keep=_KEEP_ONLINE)
-        previous = []
-        degraded = "no_custom_report"
-        # 降级原因三态归因（只认落盘证据）：「未配置」/「发现失败」/「候选验证被拒」文案不同，
-        # 不能把上游故障误归因为用户没配置 report_id（见 config/voc.yaml → degradation）。
-        degraded_reason, degraded_error_codes = _probe_no_report_reason(raw_dir)
-        degraded_error_codes = list(dict.fromkeys(degraded_error_codes))  # 同码去重，保序
-        deg_cfg = voc_cfg.get("degradation") or {}
-        reason_key = {"not_configured": "no_custom_report"}.get(degraded_reason, degraded_reason)
-        codes_text = "、".join(dict.fromkeys(degraded_error_codes)) or "未知"
-        degraded_banner = str(
-            (deg_cfg.get(reason_key) or {}).get("banner")
-            or deg_cfg.get("no_custom_report", {}).get("banner")
-            or "⚠️ 口径降级：缺少自定义报表 report_id。"
-        ).replace("{error_codes}", codes_text)
-        notes_warnings.append(degraded_banner)
-        notes_manual.append(
-            _NO_REPORT_MANUAL.get(degraded_reason, _NO_REPORT_MANUAL["not_configured"])
-            .replace("{error_codes}", codes_text)
+    # 残留宽表落盘（custom_current/custom_previous 等）不消费，只披露承接说明。
+    stale_customs = sorted(
+        [p.name for p in raw_dir.glob("custom_current*.json")]
+        + [p.name for p in raw_dir.glob("custom_previous*.json")]
+    )
+    if stale_customs:
+        disclosures.append(
+            f"⚠️ 宽表落盘（{', '.join(stale_customs)}）已不在本技能取数范围，未消费；"
+            "差评数/好评率等宽表信号由 custom-report-analysis 技能承接。"
         )
 
-    flagged = build_signals(
-        current, previous,
-        threshold_low=threshold_low,
-        threshold_rating=threshold_rating,
+    flagged = build_low_rating_rows(
+        current,
+        rating_low=rating_low,
         min_rating_count=min_rating_count,
-        min_low_review_num=min_low,
-        signals_enabled=signals_enabled,
-    ) if report_id else []
+    )
 
     truncated = bool(flagged) and len(flagged) > max_asins
     if truncated:
-        disclosures.append(f"⚠️ 命中 {len(flagged)} 个 ASIN，超过 max_flagged_asins={max_asins}，"
+        disclosures.append(f"⚠️ 快照低分 ASIN 命中 {len(flagged)} 个，超过 max_flagged_asins={max_asins}，"
                            f"本次仅深挖 Top {max_asins}，其余未纳入（禁止静默截断）。")
         flagged = flagged[:max_asins]
 
@@ -468,34 +292,28 @@ def run(args: argparse.Namespace) -> int:
             "previous": [d.isoformat() for d in _window(end, days, 1)],
         },
         "source": {
-            "report_id": report_id,
-            "report_key": report_key,
-            "degraded": degraded,
-            # 降级原因三态（degraded=no_custom_report 时有效）：渲染层据此给如实文案
-            "degraded_reason": degraded_reason,
-            "degraded_error_codes": degraded_error_codes,
-            "degraded_banner": degraded_banner,
+            "degraded": "none",
+            # 固定口径（2026-10-22）：宽表信号由 custom-report-analysis 承接
+            "handoff_banner": handoff_banner,
             "fields": {
-                "lowReviewNum": "get_custom_report_page_list",
-                "reviewNum": "get_custom_report_page_list",
-                "reviewRate": "get_custom_report_page_list",
-                "rating": "get_custom_report_page_list / get_online_product_page_list",
-                "ratingCount": "get_custom_report_page_list / get_online_product_page_list",
+                "rating": "get_online_product_page_list（快照，无历史基线）",
+                "ratingCount": "get_online_product_page_list（快照，无历史基线）",
+                "lowReviewNum": "custom-report-analysis 技能承接（489 宽表）",
+                "reviewNum": "custom-report-analysis 技能承接（489 宽表）",
+                "reviewRate": "custom-report-analysis 技能承接（489 宽表）",
             },
         },
         "thresholds": {
-            "rating_drop_abs": threshold_rating,
+            "snapshot_rating_low": rating_low,
             "min_rating_count": min_rating_count,
-            "min_low_review_num": min_low,
             "sources": {
-                "rating_drop_abs": threshold_rating_source,
+                "snapshot_rating_low": "config/voc.yaml → discovery.snapshot_rating_low",
                 "min_rating_count": "config/voc.yaml → discovery.min_rating_count",
-                "min_low_review_num": "config/voc.yaml → discovery.min_low_review_num",
             },
         },
         "flagged": flagged,
         "observed": current,
-        "counts": {"current_rows": len(current), "previous_rows": len(previous), "flagged": len(flagged)},
+        "counts": {"current_rows": len(current), "previous_rows": 0, "flagged": len(flagged)},
         "warnings": notes_warnings,
         "manual_checks": notes_manual,
         "disclosures": disclosures,
@@ -508,15 +326,14 @@ def run(args: argparse.Namespace) -> int:
     vc.write_json(args.out, payload)
 
     # 人类可读摘要
-    print(f"问题 ASIN：{len(flagged)} 个（窗口近 {days} 天，基线为前一窗口）")
+    print(f"快照低分 ASIN 候选：{len(flagged)} 个（online 评分快照，无环比基线）")
     for r in flagged[:10]:
-        sigs = ", ".join(f["signal"] for f in r.get("flags", []))
-        print(f"  - {r['asin']}（{r.get('title') or '无标题'}）｜ {sigs}")
+        print(f"  - {r['asin']}（{r.get('title') or '无标题'}）｜ rating {r['metrics']['rating']['now']}")
     if not flagged:
         if errors:
             print(f"  （未发现；但取数有 {len(errors)} 个错误，见 errors）")
         else:
-            print("  （未发现达标问题 ASIN；若 report_id 未配置则为口径降级所致）")
+            print("  （快照内无「评分低且样本足够」的 ASIN；评分环比与差评数由 custom-report-analysis 承接）")
     for w in payload["warnings"]:
         print(f"  {w}")
     for d in disclosures:
@@ -529,7 +346,6 @@ def main() -> int:
     p = argparse.ArgumentParser(description="校验落盘并组装问题 ASIN 信号（评论 VOC Step 1，零网络）")
     p.add_argument("--days", type=int, default=None, help="窗口天数（默认 config/voc.yaml→stat_windows.short_days）")
     p.add_argument("--end-date", default=None, help="窗口结束日 YYYY-MM-DD（默认今天）")
-    p.add_argument("--report-id", default=None, help="自定义报表 ID（默认读 _shared/config/reports.yaml；须与 agent 落盘时所用一致）")
     p.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     p.add_argument("--out", default="out/signals.json", help="输出 JSON 路径（相对技能根）")
     return run(p.parse_args())

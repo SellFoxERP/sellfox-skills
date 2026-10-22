@@ -100,23 +100,6 @@ def load_shared_section(file_name: str, section: str) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def load_reports() -> Dict[str, Any]:
-    """读 _shared/config/reports.yaml。"""
-    ConfigLoader = _shared_import()
-    try:
-        return ConfigLoader(str(SHARED_ROOT)).load("reports") or {}
-    except Exception:
-        return {}
-
-
-def resolve_report_id(report_key: str) -> Optional[str]:
-    """按 report_key（如 daily_ops）解析 report_id；空串视为未配置 → 返回 None。"""
-    cfg = load_reports()
-    section = ((cfg.get("reports") or {}).get(report_key) or {})
-    rid = section.get("id")
-    return str(rid) if rid not in (None, "") else None
-
-
 # ---------------------------------------------------------------------------
 # 数值 / 字段规范化（字段值形态因工具而异：字符串、{"key":..}、数组）
 # ---------------------------------------------------------------------------

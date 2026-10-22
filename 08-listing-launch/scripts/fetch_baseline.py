@@ -211,7 +211,7 @@ def summarize_product(row: Dict[str, Any]) -> Dict[str, Any]:
         "fba_fees": as_float(row.get("fbaFees")),
         "variable_closing_fee": as_float(row.get("variableClosingFee")),
         # 头程：线上实测商品行内返回 headTripCost（成本口径，业务口径未验证），
-        # estimate_pricing 优先消费；缺值再走宽表 headTripPrice / 人工。
+        # estimate_pricing 消费；缺值需人工核查（宽表口径转 custom-report-analysis 技能）。
         "headtrip_cost": as_float(row.get("headTripCost")),
         "profit_price": as_float(row.get("profitPrice")),
         "profit_rate": as_float(row.get("profitRate")),

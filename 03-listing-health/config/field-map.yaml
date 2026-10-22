@@ -4,12 +4,16 @@
 # 权威依据：_shared/FIELD_DICTIONARY.md。
 # 只登记「已核对存在」的字段。凡字段实际不在所列工具中，就是降级/需人工核查。
 #
+# v1.7.0 起本技能不再调用 get_custom_report_page_list（宽表字段分析由 custom-report-analysis
+# 技能承接）：下文标注 source=custom 的字段在本技能中固定标「需人工核查」，
+# 字段归属仅作核对备查；analyze 契约若实测含同名字段可作替代源（以当次契约为准）。
+#
 # sources:
-#   online  = get_online_product_page_list   （分页类，列表字段 data.rows；79 字段）
-#   custom  = get_custom_report_page_list     （分页类，data.rows；489 字段；需 report_id）
+#   online  = get_online_product_page_list   （分页类，列表字段 data.rows；79 字段；本技能主源）
+#   custom  = get_custom_report_page_list     （分页类，data.rows；489 字段；已移交 custom-report-analysis）
 #   analyze = get_product_analyze_list        （分页类，字段集合取决于 fields 入参；线上契约 fields
 #             实测含 sessions/pageView/buyBoxPercent/conversionRate/availableDays/fbmAvailableDays/
-#             lowReviewNum/reviewNum/rank/bigBsrRank 等，可作宽表的替代源，以当次契约为准）
+#             lowReviewNum/reviewNum/rank/bigBsrRank 等，可作宽表字段的替代源，以当次契约为准）
 #   label   = get_product_by_label            （分页类，入参页名 page_num）
 # ============================================================================
 
@@ -23,12 +27,12 @@ checks:
   buyBoxPercent:
     field: buyBoxPercent
     source: custom
-    note: 首选源为 489 字段宽表（实测样例 92.5）；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）。online 侧无此字段。
+    note: 宽表已移交 custom-report-analysis（本技能固定标「需人工核查」）；analyze 契约 fields 亦含此字段，可作替代源（以当次契约为准）。online 侧无此字段。
 
   buyBoxWinner:
     field: buyBoxWinner
     source: online
-    note: 布尔，实测样例 true。无 report_id 时用它作为「丢购物车」的退化信号。
+    note: 布尔，实测样例 true。宽表已移交 custom-report-analysis，本技能固定用它作为「丢购物车」的退化信号。
 
   listingId:
     field: listingId
