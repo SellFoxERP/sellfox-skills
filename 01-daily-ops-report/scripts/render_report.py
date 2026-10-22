@@ -35,6 +35,7 @@ if not _SHARED_ROOT.exists():
     raise SystemExit(f"_shared 路径不可用：{_SHARED_ROOT}。请设置 config/paths.yaml 的 shared_root。")
 sys.path.insert(0, str(_SHARED_ROOT / "scripts"))
 from config_loader import load_yaml_file  # noqa: E402
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
 
 _SKILL_CFG = load_yaml_file(_SKILL_ROOT / "config" / "daily_report.yaml")
 
@@ -235,18 +236,24 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     multi = analysis.get("multiplatform") or {}
     if multi.get("available"):
         labels = {"salePrice": "销售额", "orderNum": "订单量", "productNum": "商品数"}
+        env_rows = multi.get("envelope_rows")
+        exp_rows = multi.get("rows", 0)
+        rows_desc = (
+            f"共 {env_rows} 行（展开为 {exp_rows} 个日条目）" if isinstance(env_rows, int)
+            else f"共 {exp_rows} 个日条目"
+        )
         L.append("## 【跨平台销量】非亚马逊平台")
         L.append("")
         L.append(f"- 覆盖平台：{'、'.join(multi.get('platforms') or ['未知'])}"
-                 f"（来源：get_multiplatform_sale_stats，共 {multi.get('rows', 0)} 行）")
+                 f"（来源：get_multiplatform_sale_stats，{rows_desc}）")
         L.append("")
-        L.append("| 指标 | 平台 | 币种 | 数值（本币，未折算） | 行数 |")
+        L.append("| 指标 | 平台 | 币种 | 数值（本币，未折算） | 日条目数 |")
         L.append("|---|---|---|---|---|")
         for g in multi.get("groups") or []:
             label = labels.get(g.get("metric"), g.get("metric"))
             L.append(f"| {label} | {g.get('platform')} | {g.get('currency')} | {_fmt(g.get(g.get('metric')))} | {g.get('rows', 0)} |")
         L.append("")
-        L.append(f"> ⚠️ {multi.get('note')}")
+        L.append(f"> ⚠️ {multi.get('note')} 行数为展开后的日条目口径（信封行 × 日条目），与信封 coverage 行数口径不同。")
         L.append("")
 
     # ---------- 数据说明（必填）----------
@@ -261,10 +268,14 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append("- 数据源：赛狐 ERP（get_profit_report_by_shop / get_custom_report_page_list / get_order_page_list / get_sp_campaign_list）")
     meta = bundle.get("meta") or {}
     if isinstance(meta.get("shops_total"), int):
-        regions = meta.get("shop_regions") or []
+        regions = meta.get("shop_regions") or meta.get("sites_returned") or []
         region_s = "、".join(str(x) for x in regions) if regions else "未知"
+        scope_echo = ""
+        mp_filter = meta.get("marketplace_filter")
+        if isinstance(mp_filter, list) and mp_filter:
+            scope_echo = f"；请求范围：仅 {'、'.join(str(x) for x in mp_filter)} 站"
         L.append(f"- 店铺/站点覆盖范围：{meta.get('shops_total')} 家店铺；站点：{region_s}"
-                 f"（覆盖店铺数 {meta.get('shops_covered')}/{meta.get('shops_total')}，按唯一店铺 ID 计）")
+                 f"（覆盖店铺数 {meta.get('shops_covered')}/{meta.get('shops_total')}，按唯一店铺 ID 计）{scope_echo}")
     L.append("")
 
     deg = analysis.get("degradations") or []
@@ -302,7 +313,8 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append("| 参数 | 取值 | 来源 |")
     L.append("|---|---|---|")
     L.append(f"| 预警阈值 | thresholds.yaml | 配置命中 |")
-    L.append(f"| 利润口径 | {cfg.get('profit_caliber_type','settlement')} | 配置命中 |")
+    caliber_src = "CLI --caliber 覆盖" if cfg.get("profit_caliber_source") == "cli" else "配置命中"
+    L.append(f"| 利润口径 | {cfg.get('profit_caliber_type','settlement')} | {caliber_src} |")
     rid = ((bundle.get("data") or {}).get("msku_report") or {}).get("report_id")
     L.append(f"| daily_ops report_id | {rid or '缺失（已降级）'} | {'配置命中' if rid else '默认值 ⚠️'} |")
     L.append("")
@@ -354,7 +366,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     out = _path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md, encoding="utf-8")
-    print(f"✅ 日报已渲染：{out}")
+    html_path = write_html_report(md, out)
+    print(f"✅ 日报已渲染：{out} / {html_path}")
 
     if args.feishu:
         try:

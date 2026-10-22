@@ -89,6 +89,8 @@ python scripts/run_inventory_health.py --date 2026-09-29 --out out/inventory.md
 python scripts/run_inventory_health.py --check-only    # 只做前置校验（含落盘检查）
 ```
 
+报告输出 `out/inventory.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
+
 - `fetch_inventory.py`（v3 改造）：校验 `out/raw/`（存在性 / status / 空数据 / 演示指纹 /
   coverage 截断），组装出与旧版相同形状的记录 —— `replenishment.py` / `render.py` 零改动；
 - 也可单独跑共享校验器或组装器：
@@ -120,16 +122,19 @@ python scripts/run_inventory_health.py --check-only    # 只做前置校验（�
 - 自定义报表是 **489 字段宽表**。v3 落盘是**原样信封**（裁剪不在取数侧做），真正的裁剪
   发生在计算面：`fetch_inventory.py` 的 `CUSTOM_FIELDS` 把需要的字段归一化成一个扁平记录，
   其余丢弃。新增字段时改这张映射表，不要在下游到处 `.get()`。
-- ⚠️ 最容易踩的隐性坑：宽表/在线产品的**维度字段是列表**，不是字符串：
+- ⚠️ 最容易踩的隐性坑：宽表/在线产品的**维度字段形态不稳定**——**以当轮契约与实测落盘为准**，
+  列表 / 纯字符串 / integer 均出现过（跨日数据轮换会变）：
 
-| 字段 | 实测样例 |
+| 字段 | 已实测过的形态 |
 |---|---|
-| `msku` | `["MSKU-DEMO-001"]` |
-| `asin` / `parentAsin` / `fnsku` / `shopId` / `marketplaceId` / `title` | `[{"key": "B0DEMO0001"}]` |
-| `sku` / `spu` | `["SKU-DEMO-001"]` |
+| `msku` | 列表 `["MSKU-DEMO-001"]`（10-16 前）｜纯字符串 `"MYJJ-PILLOW-GY45"`（10-22 在线产品） |
+| `asin` / `parentAsin` / `fnsku` / `marketplaceId` / `title` | `[{"key": "B0DEMO0001"}]`（dict 列表）｜纯字符串（真实形态数据） |
+| `shopId` | `[{"key": "演示店铺001"}]`｜纯字符串 `"826471"`｜integer `826471`（10-22 在线产品） |
+| `sku` / `spu` | 列表 `["SKU-DEMO-001"]`｜纯字符串 |
 
-直接把 `msku` 当字符串用会得到 `"['MSKU-DEMO-001']"` 或报错。统一走
-`fetch_inventory.first_scalar()` / `pick()` 归一化（列表 → 取第一个非空；dict → 取 `key`/`value`/`name`）。
+按任一形态写死（当字符串解、或硬取 `[0]`）都会在形态漂移时出错。统一走
+`fetch_inventory.first_scalar()` / `pick()` 归一化（列表 → 取第一个非空；dict → 取 `key`/`value`/`name`；
+标量原样返回）——两种形态都兼容，不要在取数/组装侧自行解包。
 
 ---
 

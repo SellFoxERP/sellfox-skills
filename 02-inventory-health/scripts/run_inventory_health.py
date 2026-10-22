@@ -38,6 +38,7 @@ from _shared_bootstrap import add_shared_to_path, shared_root
 add_shared_to_path()
 
 from config_loader import ConfigLoader, load_yaml_file  # noqa: E402
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
 
 from fetch_inventory import FetchResult, assemble_all  # noqa: E402
 from replenishment import build_lead_time_specs, compute  # noqa: E402
@@ -153,7 +154,13 @@ def _run(args: argparse.Namespace) -> int:
         return 2
 
     if not result.records:
-        print("⚠️ 未取回任何 MSKU 记录（可能是无数据，而非失败）。请核对落盘文件与店铺范围。")
+        # 主源与降级源均不可用：报告照常产出（横幅在 render 层），但 rc=2 信号「无有效数据」，
+        # 不允许 rc=0 的全 0 项空报告被读成「体检通过」。
+        print(
+            "⚠️ 未取回任何 MSKU 记录：主源与降级源均不可用时本报告无有效数据项"
+            "（可能是无数据，而非全部健康）。请核对落盘文件与店铺范围。",
+            file=sys.stderr,
+        )
 
     # 到货周期：解析不到 → 一次性批量询问（非交互用 --answers）
     override: dict | None = None
@@ -188,6 +195,7 @@ def _run(args: argparse.Namespace) -> int:
         "demo_fingerprint": result.demo_fingerprint,
         "degraded": result.degraded,
         "degrade_reason": result.degrade_reason,
+        "no_valid_data": result.no_valid_data,
         "window_days": int(skill_cfg.get("report_window_days", 30)),
         "sales_currency": currency.get("sales_currency", "USD"),
         "cost_currency": currency.get("cost_currency", "CNY"),
@@ -201,7 +209,8 @@ def _run(args: argparse.Namespace) -> int:
             out_path = SKILL_DIR / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(markdown, encoding="utf-8")
-        print(f"✅ 已写入 {out_path}")
+        html_path = write_html_report(markdown, out_path)
+        print(f"✅ 已写入 {out_path} / {html_path}")
     else:
         print(markdown)
 
@@ -209,7 +218,7 @@ def _run(args: argparse.Namespace) -> int:
         return _write_feishu(markdown, args, result)
 
     print("\n提示：本技能只出建议，不下采购单。到货周期可在 lead_time.yaml 维护。")
-    return 0
+    return 2 if not result.records else 0
 
 
 def _write_feishu(markdown: str, args: argparse.Namespace, result: FetchResult) -> int:

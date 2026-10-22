@@ -114,6 +114,17 @@ def run(args: argparse.Namespace) -> int:
         product = {}
         notes.need_manual(f"目标 {args.search_content} 精确匹配 {len(matches)} 个商品；不采用首行价格或属性，请明确唯一商品。")
 
+    # 上游 asin 过滤失效披露（eval3-2026-10-22 N1）：按 ASIN 检索但落盘返回了非目标行
+    # （get_online_product_page_list 忽略过滤返回全量）→ 数据正确性由上方本地精确匹配兜底，
+    # 把「过滤未生效（N→M）」这一上游事实落进数据说明（纯披露层，兜底已有）。
+    if target_asins:
+        total_rows = len(baseline.get("products", []))
+        if total_rows > len(matches):
+            notes.warn(
+                f"上游过滤未生效（online_product 按 asin 检索仍返回 {total_rows} 行全量），"
+                f"已按本地 ASIN 关联过滤（{total_rows}→{len(matches)}）"
+            )
+
     # 文案：优先用外部传入（AI 助手 生成后落盘），否则用骨架。
     if args.copy_json and Path(args.copy_json).exists():
         copy = json.loads(Path(args.copy_json).read_text(encoding="utf-8"))
@@ -159,6 +170,15 @@ def run(args: argparse.Namespace) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = Path(args.out) if args.out else out_dir / f"listing-package-{stamp}.md"
     out_path.write_text(md, encoding="utf-8")
+    # HTML 主报告出口：同名 .html（md 留档不变；_common 挂 _shared/scripts）。
+    from _common import ensure_shared_path  # 局部导入（与写飞书分支同模式）
+
+    if ensure_shared_path():
+        from report_html import write_html_report  # type: ignore  # 由 _shared 提供
+
+        html_path = write_html_report(md, out_path)
+    else:  # pragma: no cover  # _shared 缺位时降级为只写 md
+        html_path = None
 
     # 附件：需求单 + 各步骤结构化结果，便于 AI 助手 后续调用外部 MCP。
     brief_path = out_path.with_suffix(".asset-brief.json")
@@ -171,7 +191,8 @@ def run(args: argparse.Namespace) -> int:
     )
 
     print(md)
-    print(f"\n---\n已写入：{out_path}\n素材需求单：{brief_path}")
+    print(f"\n---\n已写入：{out_path}\n素材需求单：{brief_path}"
+          + (f"\nHTML 主报告：{html_path}" if html_path else ""))
     print(f"成本闸：{gate['action']}（需确认={gate['required']}，已确认={gate['confirmed']}）")
 
     # 可选：写飞书（演示环境默认阻断）。

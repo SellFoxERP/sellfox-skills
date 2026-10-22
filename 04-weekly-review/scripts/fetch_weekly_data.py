@@ -179,6 +179,12 @@ def assemble_rankings(
     """
     env, err = _load(raw_dir, "profit_msku")
     source, rows = _consume_envelope(env, err, TOOL_PROFIT_MSU, "Top/Bottom 榜单", "reportList")
+    # 覆盖量化：榜单「仅覆盖 N 行」必须带上服务端全量总数（无则标「总数未知」），
+    # 否则 Top K 不可达（全量 < K）时用户无从判断头部集中度结论的覆盖上限。
+    if env is not None:
+        cov_total = (env.coverage or {}).get("total_count")
+        if isinstance(cov_total, int):
+            source["rank_rows_total"] = cov_total
 
     def _key(row: Dict[str, Any], field: str) -> float:
         v = _num(row.get(field))
@@ -289,15 +295,24 @@ def fetch_all(
     envs.append(env)
 
     # 2) 店铺级利润多窗口（本期 / 上期 / 上月同期 / 本月累计 / 去年同期）
+    # 失真披露措辞按 period 类型（周报→该周；月报→该月），不写死「该周」。
+    period_word = "该月" if plan.get("period") == "month" else "该周"
     for out_key, step, label in PROFIT_WINDOW_STEPS:
         if out_key == "profit_yoy" and "yoy" not in plan["windows"]:
             continue  # 同比关闭时不输出该键（与旧版一致）
         src, rows, env = assemble_profit_window(raw_dir, step, label)
         if env is not None:
-            period = env.obj.get("period") or {}
-            start, end = period.get("start_date"), period.get("end_date")
+            env_period = env.obj.get("period") or {}
+            start, end = env_period.get("start_date"), env_period.get("end_date")
+            # 同比基期按月 yyyyMM（超 6 个月窗口按契约改按月）：整月口径标记，
+            # compute 层据此在数据说明标注「与本期窗口非等长，仅作方向参考」。
+            if out_key == "profit_yoy" and any(
+                isinstance(v, str) and len(v) == 6 and v.isdigit() for v in (start, end)
+            ):
+                src["yoy_month_granularity"] = True
             if start and end and detect_date_filter_unreliable(env.data, str(start), str(end)):
-                src["note"] = "返回业务日期与请求窗口不符；数值仅展示返回样本，不能解释为该周经营结果。"
+                src["note"] = (f"返回业务日期与请求窗口不符；数值仅展示返回样本，"
+                               f"不能解释为{period_word}经营结果。")
                 src["truncation"] = (src.get("truncation") or "") + " " + src["note"]
         sources[out_key] = src
         data[out_key] = rows

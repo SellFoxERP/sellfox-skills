@@ -41,6 +41,19 @@
 `bizDay` 为 **int**——解析按 `num()` 两种都收；null/省略/解析失败 → None，绝不当 0；
 日期键全链路归一为 `str` 再排序。
 
+**契约自带组合（口径原文即定义，别自己拼）**：
+
+```
+orderIncome       = 销售额 + 买家运费 + 礼品包装费 + 监管费 + COD收费
+refund            = 销售额退回 + 数字服务费退款 + 佣金退款 + 退款管理费 + FBA配送费退款
+                    + 买家运费退款 + 促销折扣退款 + 税费退款 + 其他退款
+customFee         = 测评费 + 店铺其他费 + 产品其他费 + 固定费用 + 每月固定费用
+orderMCFIFO/FIXED = 采购成本 + 头程费用（先入先出 / 固定方式）
+get_order_detail：  totalRevenue = 产品金额 + 退款 + 促销折扣 + 买家运费
+                    totalCost    = FBA运费 + 销售佣金 + 其他费 + 采购 + 头程 + fbm运费 + 测评 + 税费
+orderExpend / serviceFeeExpend 各含十余项（构成读字段描述）→ 用桥接组合项定位，别下钻"廿几项之和"
+```
+
 ## 二、弃用（契约标「（弃用）」者不得作证据）
 
 `disposalFee`/`removalFee` → 改用 `fbaDisposalFee`/`fbaRemovalFee`；order 侧另有十余项弃用字段，

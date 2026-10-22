@@ -103,6 +103,9 @@ class BusinessDataTest(unittest.TestCase):
         self.assertEqual(ds['accepted_rows'],1)
         self.assertEqual(ds['excluded']['date'],2)
         self.plan['mode']='sample'
+        with self.assertRaises(business.PlanError):
+            self.run_plan()  # sample 无授权依据 → 拒绝（与 topic 链强制闸一致）
+        self.plan['sample_reason']='用户明确要求的返回样本演示'
         ds=self.run_plan()['datasets']['current']
         # Missing date also prevents use as a dedupe key.
         self.assertEqual(ds['accepted_rows'],2)

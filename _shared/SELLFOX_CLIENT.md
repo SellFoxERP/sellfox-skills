@@ -5,6 +5,10 @@
 
 ## 1. 发现与契约
 
+- **元工具命名以当前连接的 tools/list 为准**：三个元工具（发现候选 / 读契约 / 执行）在不同网关版本
+  命名可能不同——实测见过 `help`/`search`/`action` 与 `sf_discover`/`sf_describe`/`sf_execute`
+  两套形态，语义一一对应；本仓库文档统一以 `help/search/action` 指代，调用前按实际名称适配，
+  不因改名当作连接故障。
 - 不知道业务 `tool_id`：向 `help` 传完整业务问题，可用 domain/platform/operation 收窄。
 - `selection_status=needs_clarification` 先澄清，`no_match` 不猜工具 ID。
 - `help(include_schema=true)` 返回 `schema_included=true` 且完整契约时可直接 `action`。

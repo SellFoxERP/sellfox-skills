@@ -51,7 +51,7 @@
 |---|---|
 | tool_id / contract_version | 必须匹配信封中的工具 ID；可选 contract_version 可强制版本一致 |
 | rows_path / row_mode | 明确列表路径，如 data.rows / data.reportList / data.itemList；单条对象用 object 模式，不默认猜列表 |
-| group_by | 显式分组字段数组，支持 `inventoryManage.availableQuantity` 这类点分路径；可显式索引如 `mskuList.0`，但须先确认该数组恰有一个目标，不能取第一项代表多个商品，不隐式展开数组。嵌套多元素日数组（如 `productSaleDayOpenVo` 含多个日单元）不能整体映射或默认取 `.0`：先按元素内日期字段与请求窗口核对，取唯一匹配的元素并显式索引；无法唯一匹配（多元素同窗或日期缺失）时拒绝该映射并在计划中披露，改由助手分日取数或人工核对，不默认取首元素 |
+| group_by | 显式分组字段数组，支持 `inventoryManage.availableQuantity` 这类点分路径；可显式索引如 `mskuList.0`，但须先确认该数组恰有一个目标，不能取第一项代表多个商品，不隐式展开数组。嵌套多元素日数组（如 `productSaleDayOpenVo` 含多个日单元）不能整体映射或默认取 `.0`：先按元素内日期字段与请求窗口核对，取唯一匹配的元素并显式索引；无法唯一匹配（多元素同窗或日期缺失）时拒绝该映射并在计划中披露，改由助手分日取数或人工核对，不默认取首元素。注意：该「分日取数」兜底依赖上游日期过滤生效；当上游忽略日期过滤（alpha 实测：单日请求仍返回固定多天数组）时该兜底不可用，应改为如实披露过滤失效并输出原始期间样本（逐行标注日期不匹配，仅作返回样本），不冒充窗口统计 |
 | dedupe_by | 显式业务键数组；未知可靠键可传 []，仅去除疑似重复页并标注去重边界 |
 | currency_field | 金额及货币相关比率必须提供；币种自动加入分组，脚本不做汇率转换 |
 | metrics | sum、count、ratio；unit 必填。count 是记录数，不自动等于订单数；ratio 用合计分子/合计分母，不平均行级百分比 |
@@ -59,7 +59,7 @@
 | date_field / period | period 存在时必须有 date_field；支持 YYYY-MM-DD 或 YYYYMMDD 日期（含整数），不猜时间戳时区 |
 | filters | 字段路径到允许值数组的映射，严格类型匹配；用于明确的店铺/对象范围，不隐式选择第一条 |
 | datasets.*.request_match | 可选请求参数键值表；要求输入含 request.params，逐项严格核对，不符则拒绝该页 |
-| mode | 默认 production，日期缺失/越界行排除；用户明确做演示才可 sample，保留样本并标警告 |
+| mode | 默认 production，日期缺失/越界行排除；用户明确做演示才可 sample，且**必须提供 `sample_reason`**（计划顶层字段，或 CLI `--sample-reason`；topic 链用 `topic.sample_reason`，同语义：说明用户授权与样本限制），缺失即拒绝执行；保留样本并标警告 |
 | compare | 可省略；按完全一致的分组键比较两个 dataset。助手先确认平台、口径、粒度、范围和期间可比 |
 
 日期无法从返回字段验证时，不填虚假字段或更改原值；可以不设置 period，明确这是未验证日期的快照。若任务必须证明统计窗口匹配，则应说明数据不足，不使用快照冒充期间统计。context 只是说明文本，不是校验规则。
@@ -75,7 +75,7 @@ python scripts/process_data.py --plan <本次任务目录>/plan.json --out-dir <
 out-dir 必须是新的目录，拒绝覆盖已有结果；运行失败不能继续使用上次的报告。
 
 - `result.json`：有效记录及每条来源、各页状态/覆盖/警告、排除计数、分组指标和对比。
-- `report.md`：可读的汇总表、数据质量说明及对比表。
+- `report.html`：主报告（自包含 HTML，可离线打开），附同名 `report.md` 留档：可读的汇总表、数据质量说明及对比表。
 - `plan.json`：本次处理映射快照，便于复核。
 
 数值使用 Decimal 计算，JSON 中精确数值保存为十进制字符串。脚本不解释费用符号或指标含义；这些由当前业务契约确定。

@@ -139,7 +139,7 @@ agent 按取数计划调 `get_custom_report_index_page_list`，`share_status=0`�
 - `reason` 写清依据（口径白皮书条目 + 字段来源）。
 - `risk_level="L2"`，`dry_run=True`；每项 `extra.contract_version = null` **占位**
   （执行前由 agent 重取写契约后填充）。
-- 提案落盘 `out/proposal_<ts>.md`（对比表）+ `.json`（机读）。
+- 提案落盘 `out/proposal_<ts>.html`（主报告，对比表，附同名 `.md` 留档）+ `.json`（机读）。
 
 `Proposal.validate(limits=thresholds["approval"])` 强校验：**单次 ≤20 条**（`max_items_per_batch`）。
 超限则**分批**，并提示用户分别审批。

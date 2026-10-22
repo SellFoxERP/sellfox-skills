@@ -208,3 +208,7 @@ python3 scripts/build_release.py
 - 实测反哺共享契约：_shared/SELLFOX_CLIENT.md 增补「coverage.complete=false ∧ has_more=false 矛盾时按 totalPage 判定并披露」「UPSTREAM_BUSINESS_ERROR 分层（upstream.stage=business 为上游拒绝）」「RESULT_BUDGET_EXCEEDED 体积处置三步」。
 - 集成：插件清单/audit 正则/README/INSTALL/coverage/cross-skill（新增 04/05/13/10 消歧 4 例，22 例）全部更新；RUNBOOK 扩至 111+22=133 例。
 - 已知边界：alpha 数据源侧 show_on_day/page_size/排序/投影多项被忽略或拒绝（数据源问题清单 10 条，详见 out/eval-live-2026-10-16/13-sales-profit-analysis.md），按协议只记录不分析；生产端点复核留给 E6。
+
+## 1.6.1 三轮稳定性评测与 HTML 报告出口
+
+2026-10-22 全项目评测升级为三轮稳定性口径：13 技能 111 例 + 跨技能 22 例，每例 3 遍独立全链（取数落盘→计算→渲染→评分），共 399 遍全部通过、零稳定性分歧；HTML 主报告出口（当日改造：渲染层继续产 Markdown 留档，同时经共享转换器 `_shared/scripts/report_html.py` 产出同名自包含 HTML 主报告，10/11/12 用厂商化副本保持零 _shared 依赖）回归 100%，每遍 .html/.md 双产出、演示水印为警示条。网关侧记录（不分析）：元工具改版命名（助手已自动探测）、同路径限流 2 req/s、alpha 数据真实化、契约跨日漂移。评测新发现约 27 条当日全部修复（P2：01 口径 CLI 覆盖、02 双源缺失静默空报告、07 提案缺演示水印、10 sample 授权闸），修复经归档信封复放验证；301 项自动化测试全绿。

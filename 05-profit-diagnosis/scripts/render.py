@@ -179,8 +179,14 @@ def render_report(
     if fetch_meta.get("warnings"):
         lines.append("**警示**")
         lines.append("")
+        # 多信封 warnings 去重（eval3-2026-10-22 N1）：每个消费的信封各贡献一条同名警示，
+        # 同一句重复 3~4 行——保留首条，重复次数以（×N）标注。
+        warn_counts: Dict[str, int] = {}
         for warn in fetch_meta["warnings"]:
-            lines.append(f"- {warn}")
+            key = str(warn)
+            warn_counts[key] = warn_counts.get(key, 0) + 1
+        for warn, n in warn_counts.items():
+            lines.append(f"- {warn}" + (f"（×{n}）" if n > 1 else ""))
         lines.append("")
 
     # 需人工核查汇总

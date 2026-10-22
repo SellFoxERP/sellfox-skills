@@ -31,6 +31,7 @@ from _bootstrap import SKILL_ROOT, load_diagnosis, load_reports, load_shops, loa
 from diagnose import diagnose  # noqa: E402
 from fetch_profit import FetchResult, assemble_all, resolve_windows  # noqa: E402
 from render import render_report  # noqa: E402
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
 
 HERE = Path(__file__).resolve().parent
 SKILL_DIR = HERE.parent
@@ -208,8 +209,10 @@ def _run(args: argparse.Namespace) -> int:
     )
 
     if args.out:
-        Path(args.out).write_text(markdown, encoding="utf-8")
-        print(f"✅ 已写入 {args.out}")
+        out_path = Path(args.out)
+        out_path.write_text(markdown, encoding="utf-8")
+        html_path = write_html_report(markdown, out_path)
+        print(f"✅ 已写入 {out_path} / {html_path}")
     else:
         print(markdown)
 

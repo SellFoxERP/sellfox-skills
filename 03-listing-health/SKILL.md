@@ -92,7 +92,7 @@ inputSchema、失配重取一次、不信 `has_more` 信 `coverage`、每步落�
 python scripts/fetch_listing_data.py --shop-ids 10001 --out data.json   # 校验 + 组装
 # 2) 诊断与渲染（零改动）
 python scripts/diagnose.py --in data.json --out problems.json
-python scripts/render_report.py --in problems.json --out report.md
+python scripts/render_report.py --in problems.json --out report.md       # 报告输出 report.html（主报告，附同名 .md 留档供飞书通道与文本核对）
 ```
 
 ### Step 2：分诊（本技能的核心）

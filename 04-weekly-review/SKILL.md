@@ -110,6 +110,7 @@ python scripts/compute_metrics.py --in weekly_data.json --out computed.json
 python scripts/render_report.py --in computed.json --out weekly_report.md
 ```
 
+报告输出 `weekly_report.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
 严格用 `references/report-template.md` 的结构；**「数据说明」区块必填**。
 
 ### Step 5（可选）：推送飞书
@@ -147,7 +148,9 @@ python scripts/push_feishu.py --markdown weekly_report.md --computed computed.js
 ## 诚实边界（摘要）
 
 - **本技能不做**：账户健康/绩效/买家消息/政策合规/评论原文（MCP 无接口）；
-  广告活动级自动归因（属技能 6）；利润逐项深度归因（属技能 5）；任何赛狐侧写操作。
+  广告活动级自动归因（属技能 6）；利润逐项深度归因（属技能 5）；
+  即席利润问数与排行（"哪些品赚钱/在亏钱""利润排行"等，属技能 13 sales-profit-analysis）；
+  任何赛狐侧写操作。
 - **需人工核查**：宽表 `salePrice` 与利润报表 `productSales` 口径是否一致；
   `servingStatus=BUDGET_CAPPED`（取值未经实测验证，不得作判定条件）；charData 未返回时的趋势图；
   榜单标识列（`get_profit_report_by_msku` 的 MSKU/ASIN/标题字段名未在 `01/06` 确认，取不到即标需人工核查）。

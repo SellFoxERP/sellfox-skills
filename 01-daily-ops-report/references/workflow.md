@@ -39,7 +39,7 @@
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/shops.json` | `get_shop_page_list` | `page_no/page_size` 为 **string** | `rows` | 40 | 店铺清单；可缓存 7 天（本地 `out/shops_cache.json`） |
-| 2 | `out/raw/profit_shop.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=昨日`（`yyyyMMdd`）；`profit_caliber_type`；`page_no/page_size` 为 **integer** | `reportList` | 40 | 店铺级利润 → L1 |
+| 2 | `out/raw/profit_shop.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=昨日`（`yyyyMMdd`）；`profit_caliber_type`；`page_no/page_size` 为 **integer** | `reportList` | 40 | 店铺级利润 → L1；**用户点名口径（结算=settlement / 发货=shipment）时取数传该值，并把同一值透传计算面 `--caliber`**（缺省 settlement 走配置） |
 | 2b | `out/raw/profit_shop_range.json`（可选） | 同上 | `show_on_day=true`；近 30 天窗口 | `reportList` | 40×30 | 仅 `baseline=slice_30d` 时取 |
 | 3 | `out/raw/msku_<shopId>.json`（每店铺批一个） | `get_custom_report_page_list` | `report_id`；`start=end=昨日`（`yyyy-MM-dd`）；`shop_ids=<单个>` | `rows` | 20/批 | 依赖 report_id；缺 → 跳过整步（降级） |
 | 4 | `out/raw/orders.json` | `get_order_page_list` | `date_type=purchase`；`date_start/end` 当日 00:00:00~23:59:59 | `rows` | 40 | 仅异常下钻样本；**含 PII**，渲染前脱敏 |
@@ -55,6 +55,11 @@
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」；
 - 翻页前先看 `totalSize` 是否值得继续，触达 max_rows 必须保留 coverage 让脚本披露。
+- **口径/范围覆盖参数**：用户点名利润口径（shipment/settlement）→ 取数参数与计算面
+  `run_daily_report.py --caliber <口径>` 用同一值（缺省读 `config/daily_report.yaml`），
+  报告口径行按实际口径标注；用户点名站点范围（如「仅美国站」）→ 取数传
+  `marketplace_ids`，并传 `--marketplace US` 让计算面核验过滤是否生效
+  （上游忽略过滤时报告会披露「站点过滤未生效」）。
 
 ### 基线的正确做法（不变）
 

@@ -126,7 +126,7 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 
 阈值全部读 `_shared/config/thresholds.yaml` 的 `ad` 段；判断逻辑在 `scripts/diagnose.py`（纯函数）。
 规则与字段来源见 `references/diagnosis-rules.md`。**输出 dry-run 提案 + 报告**，
-写到 `out/ad_proposal_<start>_<end>.{md,json}`；提案 JSON 每项含 `tool_id` 与
+写到 `out/ad_proposal_<start>_<end>.{html,md,json}`（`.html` 主报告，附同名 `.md` 留档）；提案 JSON 每项含 `tool_id` 与
 `contract_version: null` 占位（执行前须重 search 取当次版本）。
 
 ### Step 4：审批（飞书）
@@ -141,7 +141,7 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 # ① 脚本只生成「执行清单」（不调用任何写工具）：
 python scripts/optimize.py execute --proposal out/ad_proposal_2026-10-08_2026-10-14.json \
     --approve "批准 1,3,5" --operator ou_xxx
-#    → 审批解析 → 累计闸 → out/ad_execute_<start>_<end>.{md,json}
+#    → 审批解析 → 累计闸 → out/ad_execute_<start>_<end>.{html,md,json}（.html 主报告，附同名 .md 留档）
 # ② agent 逐项：重取写契约（search 取当次 contract_version）→ action → 按 read-back 计划回读
 # ③ 每项执行完落日志：
 python scripts/optimize.py record --change change.json     # → logs/ad_changes.jsonl

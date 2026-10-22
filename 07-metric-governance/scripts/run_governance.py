@@ -187,6 +187,7 @@ def main(argv=None) -> int:
 
     # 延迟导入：index_governor 在导入期解析 shared_root，故先设好环境变量。
     import index_governor as gov  # noqa: WPS433
+    from report_html import write_html_report  # HTML 主报告出口（index_governor 已挂 _shared/scripts）
 
     if args.record:
         return cmd_record(gov, args)
@@ -234,6 +235,8 @@ def main(argv=None) -> int:
             {op: gov.tree_summary(trees[op]) for op in sorted(trees)},
         )
         print(f"官方指标树全量结构（含全部层级 children，供作答/对照）：{tree_path}")
+    else:
+        tree_path = None
 
     # Step 2：现有自定义指标（读落盘 custom_indices_<page>.json，多页合并）。
     state = gov.load_existing_indices(raw_dir, cfg)
@@ -268,12 +271,28 @@ def main(argv=None) -> int:
         return f"- {d.name}：{reason}；依据字段 {', '.join(d.source_fields) or '字段待确认'}"
 
     review_lines.extend(_pending_line(d) for d in plan.pending)
-    review_lines.extend(["", "## 数据说明", *tree_notes, *state.notes])
+    review_lines.extend(["", "## 数据说明"])
+    # 官方树层级摘要进报告正文（eval3-2026-10-22 N2）：
+    # 「广告节点」等作答不再依赖另读 official_tree_*.json。
+    for op in sorted(trees):
+        if not trees[op]:
+            continue
+        summary = gov.tree_summary(trees[op])
+        level_txt = "，".join(f"L{k} {v}" for k, v in summary["nodes_by_level"].items())
+        level_part = f"（{level_txt}）" if level_txt else ""
+        review_lines.append(
+            f"- 官方指标目录(op_type={op}) 顶级 {summary['top_level']} / 共 {summary['total_nodes']} 节点"
+            f"{level_part}（基线参照，不参与差异判定）"
+            + (f"；全量树见 {Path(tree_path).name}" if tree_path else "")
+        )
+    review_lines.extend([*tree_notes, *state.notes])
     if demo_fp:
         review_lines.insert(1, "> 演示数据；本次仅生成检查结果，不写入业务系统。")
     review_path = raw_dir.parent / "governance_report.md"
-    review_path.write_text("\n".join(review_lines) + "\n", encoding="utf-8")
-    print(f"检查报告：{review_path}")
+    review_text = "\n".join(review_lines) + "\n"
+    review_path.write_text(review_text, encoding="utf-8")
+    review_html = write_html_report(review_text, review_path)  # 同名 .html 主报告（md 留档不变）
+    print(f"检查报告：{review_path}（HTML 主报告：{review_html}）")
     # 取数可信门：落盘不可信时不生成提案（防误判缺失→重复建指标）。
     if not state.reliable:
         print(
@@ -296,11 +315,16 @@ def main(argv=None) -> int:
     ts = _ts()
     out_dir.mkdir(parents=True, exist_ok=True)
     md_path = out_dir / f"proposal_{ts}.md"
-    md_path.write_text(proposal.render_markdown(limits), encoding="utf-8")
+    # 提案主报告水印（eval3-2026-10-22 N1）：人工审批所见的 proposal md/html 首行
+    # 必须带演示指纹警示（demo_fp 复用现有 demo 检测：state.demo_fingerprint or tree_demo）；
+    # HTML 链由 report_html 把首行 blockquote 渲染为警示条。
+    proposal_md = proposal.render_markdown(limits, demo_fingerprint=demo_fp)
+    md_path.write_text(proposal_md, encoding="utf-8")
     prop_md = str(md_path)
+    prop_html = write_html_report(proposal_md, md_path)  # 同名 .html 主报告（md 留档不变）
     prop_json = gov.save_json(out_dir / f"proposal_{ts}.json", gov.proposal_to_dict(proposal))
-    print("\n" + proposal.render_markdown(limits))
-    print(f"\n提案已写出：{prop_md} / {prop_json}")
+    print("\n" + proposal_md)
+    print(f"\n提案已写出：{prop_md} / {prop_json}（HTML 主报告：{prop_html}）")
     print("注：提案项 contract_version 为 null 占位——执行前由 agent 重取写契约（search detail=true）。")
 
     if not args.execute:

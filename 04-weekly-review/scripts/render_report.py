@@ -16,6 +16,10 @@ from typing import Any, Dict, List, Optional
 
 import skill_paths  # noqa: F401  （bootstrap 供后续可能的加载）
 
+skill_paths.bootstrap()  # 挂载 _shared/scripts，供下方 report_html 导入
+
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html）
+
 NA = "不适用"
 NEEDS_REVIEW = "⚠️ 需人工核查"
 
@@ -292,8 +296,10 @@ def _main() -> None:
 
     computed = json.loads(Path(args.inp).read_text(encoding="utf-8"))
     md = render(computed, include_mermaid=not args.no_mermaid)
-    Path(args.out).write_text(md, encoding="utf-8")
-    print(f"✅ 渲染完成 → {args.out}（{len(md.splitlines())} 行）")
+    out_path = Path(args.out)
+    out_path.write_text(md, encoding="utf-8")
+    html_path = write_html_report(md, out_path)
+    print(f"✅ 渲染完成 → {out_path} / {html_path}（{len(md.splitlines())} 行）")
 
 
 if __name__ == "__main__":

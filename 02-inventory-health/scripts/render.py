@@ -106,7 +106,13 @@ def render_report(
                f"｜ 🟡 P2 预警：**{c.get('P2', 0)}** 项 ｜ ✅ 健康：**{c.get('健康', 0)}** 项 "
                f"｜ ❓ 数据不足：**{c.get('未知', 0)}** 项")
     out.append(f"- 滞销清理：**{c.get('③ 滞销清理', 0)}** 项")
-    if fetch_meta.get("degraded"):
+    if fetch_meta.get("no_valid_data"):
+        # 主源与降级源均不可用：全 0 结论不可采信，绝不静默空报告
+        out.append(
+            f"- ⚠️ **主源与降级源均不可用，本报告无有效数据项**（{fetch_meta.get('degrade_reason') or '原因未知'}，"
+            "降级源 online_products 亦未取回）——核心结论按 0 计仅表示无数据，不可作为「全部健康」的依据。"
+        )
+    elif fetch_meta.get("degraded"):
         # 降级横幅按真实原因表述（组装层给的 degrade_reason）：未配置 / 报表发现被拒（带
         # error_code）/ 主源取数失败（带 error_code）——不硬编码「未配置报表 ID」。
         reason = fetch_meta.get("degrade_reason") or "未配置报表 ID"

@@ -96,6 +96,9 @@ class FixTest(unittest.TestCase):
         self.assertIn('有 3 行日期（字段 date）落在窗口外：2024-12-31~2025-01-15', report)
         self.assertIn('样例 20250115、2024-12-31、缺失', report)
         plan['mode'] = 'sample'
+        with self.assertRaises(ValueError):
+            business.process(plan, self.base)  # sample 无授权依据 → 通用处理器同样拒绝
+        plan['sample_reason'] = 'Synthetic demonstration authorized for this test'
         ds = business.process(plan, self.base)['datasets']['current']
         self.assertIsNone(ds['excluded_dates'])
         self.assertEqual(ds['excluded']['date'], 0)

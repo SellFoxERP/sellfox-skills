@@ -91,7 +91,7 @@ python scripts/run_governance.py --verify --manifest out/execute_manifest_<ts>.j
   （快照旧公式）；公式相同→已对齐；`formula_status=needs_human`→待确认（不进提案）；
 - **提案**：`approval.Proposal`（L2、dry-run、单次 ≤20 条、超限分批），
   每项 `extra.contract_version = null` 占位（执行前重取写契约），
-  落盘 `out/proposal_<ts>.md` + `.json`；
+  落盘 `out/proposal_<ts>.html`（主报告，附同名 `.md` 留档）+ `.json`；
 - **执行清单**：`--execute --approve "..."` 只生成 `out/execute_manifest_<ts>.json`
   （tool_id × 参数模板 × 旧公式快照 × `contract_version: null`），生成前过累计闸；
   演示环境默认阻断（`--allow-demo-write` 显式覆盖，仍加水印）。

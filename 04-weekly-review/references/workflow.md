@@ -93,7 +93,7 @@ python scripts/period.py --period week --anchor 2026-10-12
 | 6 | `out/raw/profit_msku.json` | `get_profit_report_by_msku` | 类型规则同店铺利润报表（分页 **integer**、日期 `yyyyMMdd`、`profit_caliber_type` 显式）；`currency`（跨币种聚合时） | `reportList` | 20 | Top/Bottom 榜单源，**单文件双榜单**（组装层本地按销售额降序/毛利升序排）；行数需 ≥ top.n+bottom.n，不足则披露覆盖不足 |
 | 7 | `out/raw/custom_current.json` | `get_custom_report_page_list` | `report_id`；`start/end=本期`（`yyyy-MM-dd`）；`product_dim=msku`；分页参数按当次契约 | `rows` | 80 | 489 字段宽表（本期）；**依赖 report_id，缺 → 跳过整步（降级）** |
 | 8 | `out/raw/custom_prev*.json`（可选） | 同上 | 同上，历史窗口（`custom_prev.json` / `custom_prev_month.json` 等） | `rows` | 80 | 计算面当前只消费 `custom_current`；历史窗口备用 |
-| 9 | `out/raw/trend.json`（可选，`trend.enabled` 时） | `get_product_analyze_detail`（先 `get_product_analyze_list` 取 `groupByStr`） | `dim_type=1`；本期窗口；`stat_time_type`（周报=1 按日 / 月报=4 按月）；⚠️ `get_product_analyze_list` 契约顶层 `anyOf` 要求 **`fields` / `field_modules` 至少一项非空**（实测缺失即 `INVALID_PARAMS rule:anyOf`），如 `fields=["asin","title","sevenSaleNum","profitPrice","profitRate"]` | — | — | 落盘 `data.charData` 所在信封；缺失时计算层自动降级为利润报表 `bizDay` 日粒度 |
+| 9 | `out/raw/trend.json`（可选，`trend.enabled` 时） | `get_product_analyze_detail`（先 `get_product_analyze_list` 取 `groupByStr`） | `dim_type=1`；本期窗口；`stat_time_type`（周报=1 按日 / 月报=4 按月）；⚠️ `get_product_analyze_list` 契约顶层 `anyOf` 要求 **`fields` / `field_modules` 至少一项非空**（实测缺失即 `INVALID_PARAMS rule:anyOf`），如 `fields=["asin","title","sevenSaleNum","profitPrice","profitRate"]`；⚠️ 其 `start_date`/`end_date` 为 **`yyyy-MM-dd`**（当次契约 `anyOf[const "", format:date]`）——勿沿用利润报表 `yyyyMMdd` 惯例，实测 `yyyyMMdd` 首调即被拒（`field_errors=[{start_date,anyOf},{end_date,anyOf}]`） | — | — | 落盘 `data.charData` 所在信封；缺失时计算层自动降级为利润报表 `bizDay` 日粒度 |
 | 10 | `out/raw/shops.json`（可选） | `get_shop_page_list` | `page_no/page_size` 为 **string** | `rows` | 40 | 本技能计算面不依赖；仅告警路由/展示备用 |
 
 **落盘纪律**（详见 `_shared/SELLFOX_CLIENT.md` §7）：
@@ -138,6 +138,7 @@ python scripts/test_regression.py   # 改动计算层后先跑回归护栏
 python scripts/render_report.py --in computed.json --out weekly_report.md
 ```
 
+报告输出 `weekly_report.html`（主报告，附同名 .md 留档供飞书通道与文本核对）。
 严格使用 `references/report-template.md` 的结构。**「数据说明」区块为必填**，缺失即视为报告不合格。
 趋势图优先用 `get_product_analyze_detail` 返回的 `charData`；缺失时降级为利润报表 `bizDay`
 日粒度序列，并标注「charData 缺失，降级」。

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 import sys
 import tempfile
 import time
@@ -107,12 +108,22 @@ def dedup_rows(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[s
     return out, {"before": len(rows), "after": len(out)}
 
 
-def summarize_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """窗口聚合：桥接 + 整体率（自算）+ 零销售行剔除（哨兵防线）。"""
+def summarize_rows(rows: List[Dict[str, Any]],
+                   signs: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+    """窗口聚合：桥接（按主符号归一为对毛利贡献方向）+ 整体率（自算）+ 零销售行剔除。"""
     live = [r for r in rows if num(r.get("productSales"))]
     gp = ssum([num(r.get("grossProfit")) for r in rows])
     sale = ssum([num(r.get("productSales")) for r in live])
-    bridge = {k: ssum_or_none([num(r.get(k)) for r in rows]) for k in BRIDGE}
+    raw = {k: ssum_or_none([num(r.get(k)) for r in rows]) for k in BRIDGE}
+    signs = signs or {}
+    bridge: Dict[str, Optional[float]] = {}
+    for k, v in raw.items():
+        if v is None:
+            bridge[k] = None
+        elif k == "orderIncome" or signs.get(k, -1) <= 0:
+            bridge[k] = v          # 收入项 / 负号存储：代数和即贡献
+        else:
+            bridge[k] = -v         # 正号存储的成本项 → 对毛利贡献为负（F1 归一）
     bridge_total = ssum([v for v in bridge.values() if v is not None]) if any(
         v is not None for v in bridge.values()) else None
     return {
@@ -186,19 +197,22 @@ def _currency_desc(rows: List[Dict[str, Any]], envs: List[RawEnvelope] = ()) -> 
     return "/".join(sorted(cs)) + " 分开未折算"
 
 
-def _dominant_signs(rows: List[Dict[str, Any]]) -> Dict[str, int]:
-    """每个费用字段在两期全部行上的主符号（求和符号；+1/-1/0=不可判）。
+def _dominant_signs(rows: List[Dict[str, Any]],
+                    fields: Optional[List[str]] = None) -> Dict[str, int]:
+    """每个字段在给定行上的主符号（中位数符号；+1/-1/0=不可判）。
 
     符号约定以实测为准（线上曾见成本正号存储）：不假设成本恒负。
+    用中位数而非求和：单日大额冲回不会把整列判向翻反。
     """
     signs: Dict[str, int] = {}
-    for f in CREDIT_FIELDS:
-        vals = [num(r.get(f)) for r in rows]
-        if not any(v is not None for v in vals):
+    for f in (fields or CREDIT_FIELDS):
+        vals = [v for v in (num(r.get(f)) for r in rows)
+                if v is not None and v != 0]   # 0（停投/无费用日）不携带符号信息
+        if not vals:
             signs[f] = 0
             continue
-        total = ssum(vals)
-        signs[f] = 1 if total > 0 else (-1 if total < 0 else 0)
+        med = statistics.median(vals)
+        signs[f] = 1 if med > 0 else (-1 if med < 0 else 0)
     return signs
 
 
@@ -341,6 +355,28 @@ def _rank_extract(r: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _rank_dedup(ext: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """榜行跨信封/跨源按商品标识（asin，缺则 msku）去重（G1）。
+
+    desc/asc 双发回落源叠加 + 上游排序被忽略（两信封行集相同）时，同一标识会出现两次；
+    同标识保留 |grossProfit| 更大的一条（并列保留首条）；无标识行不冒险去重，原样保留。
+    返回 (去重后行, {'before': N, 'after': M})。
+    """
+    out: List[Dict[str, Any]] = []
+    seen: Dict[str, int] = {}
+    for x in ext:
+        ident = x.get("asin") or x.get("msku")
+        key = str(ident) if isinstance(ident, str) and ident.strip() else None
+        if key is None:
+            out.append(x)                      # 无标识：不去重
+        elif key not in seen:
+            seen[key] = len(out)
+            out.append(x)
+        elif abs(num(x.get("grossProfit")) or 0) > abs(num(out[seen[key]].get("grossProfit")) or 0):
+            out[seen[key]] = x                 # 同标识保留 |grossProfit| 更大者（并列保留首条）
+    return out, {"before": len(ext), "after": len(out)}
+
+
 def build_analysis(raw_dir: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
     agg_cur = _collect_envelopes(raw_dir, "agg_current*.json")
     agg_base = _collect_envelopes(raw_dir, "agg_base*.json")
@@ -364,7 +400,9 @@ def build_analysis(raw_dir: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
         for env in envs:
             demo_fp = demo_fp or detect_demo_environment(env.obj)
 
-    sum_cur, sum_base = summarize_rows(rows_cur), summarize_rows(rows_base)
+    bridge_signs = _dominant_signs(rows_cur + rows_base, fields=BRIDGE)
+    sum_cur = summarize_rows(rows_cur, bridge_signs)
+    sum_base = summarize_rows(rows_base, bridge_signs)
     sum_cur["dedup"], sum_base["dedup"] = dedup_cur, dedup_base
     result: Dict[str, Any] = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -378,10 +416,35 @@ def build_analysis(raw_dir: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
         "demo_fingerprint": demo_fp,
         "coverage": notes,
         "currencies": _currency_desc(rows_cur + rows_base, agg_cur + agg_base),
+        "bridge_signs": bridge_signs,
+        "bridge_sign_note": (
+            "正号存储：Δ 表费用项已按主符号归一为对毛利贡献方向（利好为正）"
+            if any(s > 0 for s in bridge_signs.values()) else None),
         "no_data": {"current": not rows_cur and bool(agg_cur),
                     "base": not rows_base and bool(agg_base)},
         "periods": {"current": sum_cur, "base": sum_base},
     }
+
+    # 按店铺分组（granularity=shop 或行带店铺键时给结构段；F2）
+    def _shop_key(r: Dict[str, Any]) -> Optional[str]:
+        infos = r.get("shopInfos")
+        if isinstance(infos, list) and infos and isinstance(infos[0], dict):
+            sid = infos[0].get("shopId") or infos[0].get("shopName")
+            if sid:
+                return str(sid)
+        return str(r["shopId"]) if r.get("shopId") else None
+
+    shop_groups: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+    for label, rows_p in (("current", rows_cur), ("base", rows_base)):
+        for r in rows_p:
+            k = _shop_key(r)
+            if k:
+                shop_groups.setdefault(k, {}).setdefault(label, []).append(r)
+    if shop_groups and (plan.get("granularity") == "shop" or len(shop_groups) > 1):
+        result["by_shop"] = {
+            k: {p: summarize_rows(g.get(p, []), bridge_signs) for p in ("current", "base")}
+            for k, g in shop_groups.items()
+        }
 
     # 桥接 Δ 表（只用组合字段 = 自检一：同层不双计；缺侧 → None=无数据，不写 0）
     delta: Dict[str, Optional[float]] = {}
@@ -420,34 +483,40 @@ def build_analysis(raw_dir: Path, plan: Dict[str, Any]) -> Dict[str, Any]:
         result["daily_checks"] = dc
 
     # 榜（产品分析，只用于排序方向；哨兵行剔除；嵌套/扁平两形态兼容）
+    # 全部 rank_* 信封按文件名是否含 base 分桶——降级重试的 rank_profit_* 等回落源也进榜（F3）
+    _seen_paths = set()
+    rank_all: List[RawEnvelope] = []
+    for env in (_collect_envelopes(raw_dir, "rank_*.json")
+                + _collect_envelopes(raw_dir, "rank_*/*.json")):
+        if env.path not in _seen_paths:
+            _seen_paths.add(env.path)
+            rank_all.append(env)
     rank: Dict[str, Any] = {}
-    rank_envs: List[RawEnvelope] = []
     for period in ("current", "base"):
-        envs = _collect_envelopes(raw_dir, f"rank_{period}*.json")
-        rank_envs.extend(envs)
+        envs = [e for e in rank_all if ("base" in e.path.name) == (period == "base")]
         if envs:  # rank 信封（含 failed）始终进 coverage（N5）
             notes.extend(_env_notes(envs, f"rank_{period}"))
         rows = _usable_rows(envs, list_key="rows")  # 兼容 rows 与 reportList 两种 list_key
         ext = [_rank_extract(r) for r in rows]
+        ext, rank_dedup = _rank_dedup(ext)          # 跨信封按商品标识去重（G1）
         live = [x for x in ext
                 if (num(x.get("productSales")) or 0) != 0 or (num(x.get("salesNum")) or 0) != 0]
         by_profit = sorted(live, key=lambda x: num(x.get("grossProfit")) or 0)
         pos = [x for x in by_profit if (num(x.get("grossProfit")) or 0) > 0]
         neg = [x for x in by_profit if (num(x.get("grossProfit")) or 0) < 0]
+        note = "与站点层不同基，仅排序；赚钱榜只收正值、亏损榜只收负值"
+        if rank_dedup["before"] > rank_dedup["after"]:
+            note += (f"；已按商品标识跨源去重 {rank_dedup['before']}→{rank_dedup['after']}"
+                     "（desc/asc 双信封与回落源叠加时同标识只计一次，保留 |grossProfit| 更大者）")
         rank[period] = {
             "top": pos[-10:][::-1],
             "bottom": neg[:10],
             "skipped_zero_sales": len(rows) - len(live),
-            "note": "与站点层不同基，仅排序；赚钱榜只收正值、亏损榜只收负值",
+            "dedup": rank_dedup,
+            "note": note,
         }
-    if rank_envs:
+    if rank_all:
         result["rankings"] = rank
-    # rank_current*/rank_base* 之外的 rank 信封（如 rank_profit_* 降级源）也要进 coverage（N5）
-    noted = {e.path for e in rank_envs}
-    for env in _collect_envelopes(raw_dir, "rank_*.json") + _collect_envelopes(raw_dir, "rank_*/*.json"):
-        if env.path not in noted:
-            notes.extend(_env_notes([env], "rank"))
-            rank_envs.append(env)
 
     result["selfchecks"] = _selfchecks(result)
     return result
@@ -576,6 +645,12 @@ def _selfcheck_b() -> None:
         assert ex["delta_gp_ex_credit"] == 150.0 - 300.0, "剔后 Δ 计算错误"
         assert dc["credit_days_union"] == ["20261008"], "int 日期混排应归一为 str 后排序"
         assert result["currencies"] == "USD", "币种应从行 currency 集合生成"
+        bs = result["bridge_signs"]
+        assert bs["orderExpend"] == 1 and bs["cpcCost"] == 1, "正号存储桥接主符号应为 +（中位数判定）"
+        assert abs(result["periods"]["base"]["residual"]) < 1e-6, \
+            f"正号存储桥接未按主符号归一，残差 {result['periods']['base']['residual']}"
+        assert abs(result["periods"]["current"]["residual"]) < 1e-6, "正号存储本期桥接未归一（F1）"
+        assert result["bridge_sign_note"], "正号归一未披露"
 
 
 def _selfcheck_c() -> None:

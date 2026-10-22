@@ -364,14 +364,21 @@ def run(args: argparse.Namespace) -> int:
     current: List[Dict[str, Any]] = []
     previous: List[Dict[str, Any]] = []
 
-    def _scan_demo(envs: List[RawEnvelope]) -> None:
+    def _scan_demo(envs: List[Optional[RawEnvelope]]) -> None:
         nonlocal demo_fp
         for env in envs:
             if demo_fp:
                 return
+            if env is None:
+                continue
             fp = detect_demo_environment(env.obj)
             if fp:
                 demo_fp = fp
+
+    # 报表发现信封（index_discovery.json，get_custom_report_index_page_list）也纳入演示扫描
+    # （eval3-2026-10-22 N2'）：上游可能只在报表名/指标名留「演示」标识（reportName 含
+    # 「演示」即命中指纹）；发现信封缺失/损坏不阻断（发现不是必经步骤，只影响指纹覆盖面）。
+    discovery_env, _discovery_problem = _load_raw(raw_dir, "index_discovery")
 
     if report_id:
         # 主路径：宽表两窗口环比（取数计划步骤 1/2）
@@ -396,7 +403,7 @@ def run(args: argparse.Namespace) -> int:
             )
         for name, env in (("custom_current", cur_env), ("custom_previous", prev_env)):
             _check_envelope(env, name, errors, disclosures, notes_warnings, error_details)
-        _scan_demo([cur_env, prev_env])
+        _scan_demo([cur_env, prev_env, discovery_env])
         current = _trim(cur_env.rows("rows"))
         previous = _trim(prev_env.rows("rows"))
     else:
@@ -415,7 +422,7 @@ def run(args: argparse.Namespace) -> int:
                 "   修复或由 agent 重新完整落盘后重跑。"
             )
         _check_envelope(online_env, "online_products", errors, disclosures, notes_warnings, error_details)
-        _scan_demo([online_env])
+        _scan_demo([online_env, discovery_env])
         current = _trim(online_env.rows("rows"), keep=_KEEP_ONLINE)
         previous = []
         degraded = "no_custom_report"

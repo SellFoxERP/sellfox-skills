@@ -6,7 +6,7 @@
 
 商品键必须是当前返回里已验证的稳定标量，示例 id 的含义需先核对。不能为了运行脚本取 mskuList.0 或将聚合行强行拆分。标识无法核实时只输出原始样本和缺口。所有输出标记全量覆盖未认证。
 
-脚本生成 result.json、report.md、plan.json；拒绝覆盖已有目录。退出 0 只表示处理完成（可能 empty/partial），2 表示所有数据集不可用，1 表示计划或文件错误。不将计算报告当作已验证的经营结论。新技能依赖完整包中的 sellfox-business/scripts/topic_review.py 和 process_data.py；不依赖第三方库。
+脚本生成 result.json、report.html（主报告，附同名 .md 留档）、plan.json；拒绝覆盖已有目录。退出 0 只表示处理完成（可能 empty/partial），2 表示所有数据集不可用，1 表示计划或文件错误。不将计算报告当作已验证的经营结论。新技能依赖完整包中的 sellfox-business/scripts/topic_review.py 和 process_data.py；不依赖第三方库。
 
 ## 用户要求展示返回样本时
 

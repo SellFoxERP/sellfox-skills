@@ -17,6 +17,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 import listing_common as lc
+from report_html import write_html_report  # noqa: E402  （HTML 主报告出口：写 .md 同时写同名 .html；_shared/scripts 已由 listing_common 挂载）
 
 _CHECK_SHORT = {
     "不可售/被删除": "不可售/被删除",
@@ -55,7 +56,8 @@ def render(result: Dict[str, Any]) -> str:
     lines.append("## 0. 数据说明")
     lines.append("")
     shops = meta.get("shop_ids") or []
-    lines.append(f"- 覆盖范围：{len(shops) if shops else '全部'} 个店铺；扫描状态："
+    shops_text = f"{len(shops)} 个店铺" if shops else "全部店铺（未按店铺过滤）"
+    lines.append(f"- 覆盖范围：{shops_text}；扫描状态："
                  f"{', '.join(meta.get('statuses_scanned') or []) or '未记录'}")
     lines.append(f"- 时间窗口：{_window_text(meta.get('window'))}")
     lines.append("- 数据源：`get_online_product_page_list`（主）；`get_product_analyze_list`（可选）")
@@ -208,8 +210,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     markdown = render(result)
     lc.write_json  # noqa: B018  (保持 import 一致性)
     from pathlib import Path
-    Path(args.out).write_text(markdown, encoding="utf-8")
-    print(f"✓ 报告已渲染 → {args.out}")
+    out_path = Path(args.out)
+    out_path.write_text(markdown, encoding="utf-8")
+    html_path = write_html_report(markdown, out_path)
+    print(f"✓ 报告已渲染 → {out_path} / {html_path}")
 
     if args.push_feishu:
         title = args.title or f"Listing 健康体检报告 {_dt.date.today().isoformat()}"

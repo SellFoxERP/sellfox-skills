@@ -9,9 +9,10 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from _common import Notes
+from _common import Notes, ensure_shared_path
 
 
 def _bullets_md(bullets: Optional[List[str]]) -> str:
@@ -193,8 +194,14 @@ def _main() -> int:  # pragma: no cover
         baseline=payload.get("baseline"),
     )
     if args.out:
-        open(args.out, "w", encoding="utf-8").write(md)
-        print(f"已写入 {args.out}")
+        out_path = Path(args.out)
+        out_path.write_text(md, encoding="utf-8")
+        html_path = None
+        if ensure_shared_path():  # HTML 主报告出口（同名 .html；md 留档不变）
+            from report_html import write_html_report  # type: ignore  # 由 _shared 提供
+
+            html_path = write_html_report(md, out_path)
+        print(f"已写入 {out_path}" + (f"（HTML 主报告：{html_path}）" if html_path else ""))
     else:
         print(md)
     return 0

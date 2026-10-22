@@ -78,6 +78,10 @@ def precheck() -> List[str]:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="每日经营日报 - 编排（v3：取数已前置到 agent）")
     ap.add_argument("--date", help="报告日期 yyyy-MM-dd（默认昨日）")
+    ap.add_argument("--caliber", choices=["settlement", "shipment"],
+                    help="利润口径覆盖（透传 fetch_data.py；用户点名发货/结算口径时使用，缺省读配置）")
+    ap.add_argument("--marketplace", default=None,
+                    help="请求的站点过滤（如 US；透传 fetch_data.py，用于核验过滤生效性并回显范围）")
     ap.add_argument("--feishu", action="store_true", help="写入飞书")
     ap.add_argument("--override-demo", action="store_true", help="演示环境也强制写飞书")
     ap.add_argument("--check-only", action="store_true", help="只做前置校验")
@@ -106,7 +110,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     steps = [
         [sys.executable, str(_THIS.parent / "fetch_data.py"),
-         "--out", str(bundle)] + (["--date", args.date] if args.date else []),
+         "--out", str(bundle)] + (["--date", args.date] if args.date else [])
+        + (["--caliber", args.caliber] if args.caliber else [])
+        + (["--marketplace", args.marketplace] if args.marketplace else []),
         [sys.executable, str(_THIS.parent / "analyze.py"),
          "--in", str(bundle), "--out", str(analysis)],
         [sys.executable, str(_THIS.parent / "render_report.py"),

@@ -16,10 +16,16 @@
 `cpcCost` 是结算报告口径（差额挂 `cpcCostAdExpensesDiff`/`cpcCostSettlementDiff`）。
 **规则：金额与桥接只用利润报表；产品分析只用于排序方向，两层的数不相加、不同表。**
 
-辅助工具（按需）：`get_profit_report_by_order`（延期结算/拒付核对，≤31 天）、
-`get_order_detail`（单订单明细，输出前 PII 脱敏）、`get_amazon_reimbursement_report`（赔偿细看）、
-`get_fba_shipping_head_fee_page_list`（头程分摊）。`get_custom_report_page_list` 不用（report_id
-只能从 Web 界面取，本技能自足）。
+辅助工具（按需；**入参以当轮契约为准**，首次使用前 `search(tool_ids=[...], detail=true)` 读一次，组合公式已列全在 field-map「契约自带组合」）：
+
+| 工具 | 什么时候用 | 关键注意 |
+|---|---|---|
+| `get_profit_report_by_order` | 订单级核对、**延期结算/拒付**专项 | 口径词 `caliber_type`（发货=`delivery`）；分页 **string**；`begin`/`end` ≤31 天；独有 `deferredDays` 等；另有十余项弃用字段（field-map §二） |
+| `get_order_detail` | 单笔订单核对 | 自带官方加总定义（`totalRevenue`/`totalCost` 公式见 field-map「契约自带组合」）；行含买家信息，PII 脱敏 |
+| `get_fba_shipping_head_fee_page_list` | 头程涨价要落到批次时（成本子链专项） | 首次用前读契约 |
+| `get_amazon_reimbursement_report` | 赔偿、漏领追回（费用子链专项） | 首次用前读契约 |
+| `get_custom_report_page_list` | 需要固定费用等**自定义口径**时 | `report_id` **只能从 Web 界面取**，不可猜；取不到就按内置字段口径并披露 |
+| `get_multiplatform_sale_stats` | **别用于利润**——自述 `not_for 利润、毛利、广告归因` | 跨工具不可混算（field-map §四） |
 
 ## 二、取数计划表
 
@@ -40,7 +46,7 @@
 date_type=2 + show_on_day=false + start_date/end_date（yyyyMMdd）→ 整个区间返回 1 行，含全部费用字段
 → 一次拿到窗口级支出结构，免去逐日翻页；page_size 给 5 足够
 反例：date_type=2 + show_on_day=true + page_size=14|100 → RESULT_BUDGET_EXCEEDED（行数×369 字段超返回预算）
-日分段：show_on_day=true 时每次 ≤7 天（实测 7 行可过、14 行被拒）；更长窗口按 7 天切片多次取，
+日分段：show_on_day=true 时每段 ≤7 天为安全默认；返回预算上限随数据行宽波动（曾实测 14 行被拒、亦有 14 天一次请求通过），超限按 RESULT_BUDGET_EXCEEDED 处置（§四三步）；更长窗口按 7 天切片多次取，
         用聚合行做交叉校验（日分段各项加总应 == 聚合行同字段，容差 ≤0.01，不等先修取数再谈结论）
 ```
 
@@ -58,7 +64,7 @@ null/省略 ≠ 0。时间键按粒度二选一：月粒度 `bizDate`（`bizDay=
 | 排序 | `order_by` **snake_case**（`gross_profit`/`product_sales`/`gross_profit_rate`/`roi`/`sales_num`；一级费用字段皆可排）+ `desc` | `order_field` + `order_value` | `order_by` + `desc` |
 | 分页 | `page_no`/`page_size` **integer**，≤200 | **string** | integer；`rows`/`totalSize` |
 | 店铺 | `shop_ids` **integer 数组** | `shop_ids` | `shop_id_list` **string 数组** |
-| 其他 | `search_type`×`search_mode`×`search_contents`、`label_ids`、`marketplace_ids`（要用再查契约） | `fulfillment_channel`、`settlement_status`、`transaction_type` | `fields`/`field_modules`（anyOf 至少一项非空）、`merge_asin`（显式 false） |
+| 其他 | `search_type`×`search_mode`×`search_contents`、`label_ids`、`marketplace_ids`（要用再查契约） | `fulfillment_channel`、`settlement_status`、`transaction_type` | `fields`/`field_modules`（anyOf 至少一项非空；**fields 只收字段常量码，不认中文名**）、`merge_asin`（显式 false）、`is_new_or_moving_or_in_stock` |
 
 长尾费用项名**先 `search(detail=true)` 拿字典再取，别猜**。
 

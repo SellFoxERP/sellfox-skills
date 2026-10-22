@@ -10,6 +10,15 @@ from pathlib import Path
 import re
 import sys
 
+try:
+    from report_html import write_html_report
+except ImportError:  # 以任意模块名 spec 加载本文件时，按文件位置定位同目录厂商化副本
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location('report_html', Path(__file__).resolve().with_name('report_html.py'))
+    _rh = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_rh)
+    write_html_report = _rh.write_html_report
+
 
 class PlanError(ValueError):
     pass
@@ -113,6 +122,15 @@ def unwrap(raw):
     return request, value
 
 
+def sample_reason_of(plan):
+    """sample 模式授权依据：顶层 sample_reason，或 topic 链的 topic.sample_reason（同语义）。"""
+    reason = plan.get('sample_reason')
+    if not (isinstance(reason, str) and reason.strip()):
+        topic = plan.get('topic')
+        reason = topic.get('sample_reason') if isinstance(topic, dict) else None
+    return reason if isinstance(reason, str) and reason.strip() else None
+
+
 def validate(plan):
     if not isinstance(plan, dict) or plan.get('version') != 1:
         raise PlanError('处理计划必须为 version=1 的对象')
@@ -144,6 +162,10 @@ def validate(plan):
             raise PlanError('金额/货币比率必须声明 currency_field，禁止隐式币种')
     if plan.get('mode', 'production') not in ('production', 'sample'):
         raise PlanError('mode 只支持 production/sample')
+    if plan.get('mode', 'production') == 'sample' and not sample_reason_of(plan):
+        raise PlanError('sample 模式必须提供 sample_reason（计划顶层字段，或 CLI --sample-reason；'
+                        'topic 链用 topic.sample_reason），说明用户授权与样本限制；'
+                        '未经用户明确演示授权请用 mode=production')
     datasets = plan.get('datasets')
     if not isinstance(datasets, dict) or not datasets:
         raise PlanError('datasets 必须为非空对象')
@@ -375,6 +397,7 @@ def process(plan, base):
                         if any(f in ds['demo_fingerprint'] for ds in datasets.values())]
     return {'version': 1, 'mode': plan.get('mode', 'production'), 'tool_id': plan['tool_id'],
             'context': plan.get('context', {}), 'metrics': plan['metrics'], 'datasets': datasets,
+            'sample_reason': sample_reason_of(plan) if plan.get('mode', 'production') == 'sample' else None,
             'demo_fingerprint': demo_fingerprint,
             'comparison': compare_groups(plan, datasets)}
 
@@ -391,6 +414,8 @@ def render(result):
     lines = ['# 赛狐业务数据处理结果', '', '范围：仅已读取并通过校验的记录；脚本不认证全量覆盖或业务口径。', '',
              '模式：' + ('返回样本演示，不能作为真实经营结论。' if result['mode'] == 'sample' else '业务数据处理。'), '',
              '工具：' + cell(result['tool_id']), '', '业务上下文：' + cell(result['context'])]
+    if result['mode'] == 'sample' and result.get('sample_reason'):
+        lines += ['样本授权与限制：' + cell(result['sample_reason'])]
     if result.get('demo_fingerprint'):
         lines += ['', '演示/样本数据指纹（' + '、'.join(result['demo_fingerprint']) + '）：结果不作为经营结论。']
     for name, ds in result['datasets'].items():
@@ -418,15 +443,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan', type=Path, required=True, help='助手根据当前契约生成的本地 JSON 处理计划')
     parser.add_argument('--out-dir', type=Path, required=True, help='本次任务的新输出目录，拒绝覆盖已有结果')
+    parser.add_argument('--sample-reason', help='sample 模式授权依据（说明用户授权与样本限制）；也可写进计划的 sample_reason 字段')
     args = parser.parse_args()
     try:
         plan = read_json(args.plan)
+        if args.sample_reason and not plan.get('sample_reason'):
+            plan['sample_reason'] = args.sample_reason
         result = process(plan, args.plan.resolve().parent)
         dest = args.out_dir.resolve()
         # Compute before writing, and never mix a failed run with old outputs.
         dest.mkdir(parents=True, exist_ok=False)
         (dest/'result.json').write_text(dump(result) + '\n', encoding='utf-8')
-        (dest/'report.md').write_text(render(result), encoding='utf-8')
+        report_md = render(result)
+        md_path = dest/'report.md'
+        md_path.write_text(report_md, encoding='utf-8')
+        # HTML 主报告：与 .md 同名写出；.md 留档，JSON 输出不变。
+        write_html_report(report_md, md_path)
         (dest/'plan.json').write_text(dump(plan) + '\n', encoding='utf-8')
         print(dump({'output': str(dest), 'datasets': {k: {'status':v['status'],'accepted_rows':v['accepted_rows']} for k,v in result['datasets'].items()}}))
         if all(v['status'] == 'unavailable' for v in result['datasets'].values()):

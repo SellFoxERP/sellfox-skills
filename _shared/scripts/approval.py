@@ -223,13 +223,32 @@ class Proposal:
 
     # -- 渲染 -------------------------------------------------------------
 
-    def render_markdown(self, limits: Optional[Dict[str, Any]] = None) -> str:
-        """渲染为「变更前后对比表」Markdown（dry-run 预览 / 飞书文档正文）。"""
+    def render_markdown(
+        self,
+        limits: Optional[Dict[str, Any]] = None,
+        *,
+        demo_fingerprint: Optional[str] = None,
+    ) -> str:
+        """渲染为「变更前后对比表」Markdown（dry-run 预览 / 飞书文档正文）。
+
+        :param demo_fingerprint: 演示/样本数据指纹——人工审批所见的提案文档**首行**
+            必须带水印（eval3-2026-10-22 N1）：提案是审批的依据文档，正文零水印会
+            让演示环境的提案被误当真实变更。HTML 链（report_html）把首行 blockquote
+            渲染为警示条。
+        """
         lim = dict(DEFAULT_LIMITS)
         if limits:
             lim.update(limits)
         risk = RISK_LEVELS.get(self.risk_level, {})
+        head: List[str] = []
+        if demo_fingerprint:
+            head = [
+                f"> ⚠️ 演示/样本数据指纹（{demo_fingerprint}）：本提案基于演示数据，"
+                "仅供流程演练，不作为真实变更依据。",
+                "",
+            ]
         lines = [
+            *head,
             f"# {self.title}",
             "",
             f"- 技能：`{self.skill}` ｜ 风险级别：**{self.risk_level} {risk.get('name', '')}**",
@@ -243,12 +262,28 @@ class Proposal:
             "|---|---|---|---|---|---|---|",
         ]
         lines += [it.to_row() for it in self.items]
+        # 回滚文案按「新增项 / 更新项」分野（eval3-2026-10-22 既往发现）：
+        # 新增项 before=None、无旧值快照，且 MCP 无删除工具——「改回变更前的值」失真。
+        rollback_texts: List[str] = []
+        if any(it.before is None for it in self.items):
+            rollback_texts.append(
+                "新增项（「变更前」为空）无自动回滚——工具无删除能力，需人工在网页端移除。"
+            )
+            if any(it.before is not None for it in self.items):
+                rollback_texts.append(
+                    "其余更新项已写前快照旧值（见「变更前」列），"
+                    "如需回滚，按上表逐项将字段改回「变更前」的值即可。"
+                )
+        else:
+            rollback_texts.append(
+                "所有变更均已在写前快照旧值（见「变更前」列）。"
+                "如需回滚，按上表逐项将字段改回「变更前」的值即可。"
+            )
         lines += [
             "",
             "## 回滚方案",
             "",
-            "所有变更均已在写前快照旧值（见「变更前」列）。"
-            "如需回滚，按上表逐项将字段改回「变更前」的值即可。",
+            *rollback_texts,
             "",
             "## 确认方式",
             "",
@@ -391,16 +426,18 @@ def push_proposal(
     owner_open_id: Optional[str] = None,
     webhook_url: Optional[str] = None,
     limits: Optional[Dict[str, Any]] = None,
+    demo_fingerprint: Optional[str] = None,
 ) -> Dict[str, Any]:
     """把提案推送到飞书（创建审批文档 + 发送卡片消息 @ 负责人）。
 
     :param writer: :class:`feishu_writer.FeishuWriter` 实例（创建文档用）。
     :param owner_open_id: 需要 @ 的负责人 open_id。
     :param webhook_url: 群机器人 Webhook（发送卡片；缺省读 ``FEISHU_APPROVAL_WEBHOOK``）。
+    :param demo_fingerprint: 演示数据指纹——审批文档正文首行水印（与本地提案文档一致）。
     :returns: ``{"document_id": ..., "card_sent": bool}``
     """
     result: Dict[str, Any] = {"document_id": None, "card_sent": False}
-    md = proposal.render_markdown(limits)
+    md = proposal.render_markdown(limits, demo_fingerprint=demo_fingerprint)
 
     if writer is not None:
         doc_id = writer.create_doc(proposal.title)

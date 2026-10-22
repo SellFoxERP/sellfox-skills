@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 import sys
 import process_data as data
+from report_html import write_html_report
 
 
 def review(plan, base, topic):
@@ -20,7 +21,7 @@ def review(plan, base, topic):
     if topic == 'returns':
         if plan['tool_id'] != 'get_profit_report_by_msku':
             raise ValueError('本版退款计算支持 Amazon MSKU 利润；其他平台先使用通用处理器')
-        if not plan.get('date_field') or any(not x.get('period') for x in plan['datasets'].values()):
+        if not plan.get('date_field'):
             raise ValueError('售后分析必须验证业务日期和查询窗口')
         required = {'refund_units':('sum','refundNum'), 'return_units':('sum','returnNum'),
                     'refund_amount_signed':('sum','refundSales'), 'sales_units':('sum','salesNum')}
@@ -51,6 +52,14 @@ def review(plan, base, topic):
     result['sample_reason'] = spec.get('sample_reason') if sample else None
     result['findings'] = []
     for name, ds in result['datasets'].items():
+        if topic == 'returns':
+            # 有行的数据集仍强制 period；空数据集（complete 空页）可缺——渲染标「窗口未知（空数据）」，
+            # 与 empty→退出码 0 的语义一致，不冒充期间统计。
+            if ds['accepted_rows'] and not plan['datasets'][name].get('period'):
+                raise ValueError('售后分析必须验证业务日期和查询窗口：数据集 ' + name + ' 有行但未声明 period')
+            if not ds['accepted_rows'] and not plan['datasets'][name].get('period'):
+                ds['issues'].append(name + ': 窗口未知（空数据）——complete 空页无行可验期间；'
+                                    '如需期间统计请补 period 后重跑')
         ds['observed_dates'] = sorted({str(data.at(x['row'], plan.get('date_field'))) for x in ds['records']}) if plan.get('date_field') else []
         if topic == 'returns':
             for group in ds['groups']:
@@ -107,8 +116,10 @@ def main(topic):
         plan=data.read_json(args.plan)
         result=review(plan,args.plan.resolve().parent,topic)
         args.out_dir.mkdir(parents=True,exist_ok=False)
-        for filename,content in [('result.json',data.dump(result)),('report.md',render(result)),('plan.json',data.dump(plan))]:
+        report_md=render(result)
+        for filename,content in [('result.json',data.dump(result)),('report.md',report_md),('plan.json',data.dump(plan))]:
             (args.out_dir/filename).write_text(content+'\n',encoding='utf-8')
+        write_html_report(report_md,args.out_dir/'report.md')  # HTML 主报告，.md 留档
         print(data.dump({'output':str(args.out_dir),'statuses':{k:v['status'] for k,v in result['datasets'].items()}}))
         return 2 if all(v['status']=='unavailable' for v in result['datasets'].values()) else 0
     except (ValueError,OSError,TypeError,KeyError) as exc:

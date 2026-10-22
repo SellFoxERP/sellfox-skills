@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import voc_common as vc
+from report_html import write_html_report  # HTML 主报告出口（voc_common 已挂 _shared/scripts）
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 
@@ -251,11 +252,57 @@ def _item_key(text: str) -> str:
     return "".join(_MARK_PREFIX_RE.sub("", text or "").split())
 
 
+_ERROR_CODE_IN_TEXT_RE = re.compile(r"error_code[=：:]\s*([A-Za-z0-9_]+)")
+
+
+def _longest_common_run(a: str, b: str) -> int:
+    """两段归一化文本的最长公共连续片段长度（人工核查条目 vs 降级横幅的同义判据）。"""
+    if not a or not b:
+        return 0
+    best = 0
+    prev = [0] * (len(b) + 1)
+    for i in range(1, len(a) + 1):
+        cur = [0] * (len(b) + 1)
+        ai = a[i - 1]
+        for j in range(1, len(b) + 1):
+            if ai == b[j - 1]:
+                cur[j] = prev[j - 1] + 1
+                if cur[j] > best:
+                    best = cur[j]
+        prev = cur
+    return best
+
+
+def _is_banner_duplicate(text: str, banner_key: str) -> bool:
+    """条目是否与降级横幅同义（eval3-2026-10-22 N1'：横幅整段被再列为清单条目）。
+
+    判据（避免把「口径字段清单」误伤为同义）：
+    ① 归一化后完全相同；② 双方携带同一 error_code **且**存在 ≥12 字连续相同片段
+    （横幅/条目对同一失败各写一遍长文案时，必共享「error_code：X … report_id 未绑定」级长 run）。
+    """
+    if not banner_key:
+        return False
+    key = _item_key(text)
+    if key == banner_key:
+        return True
+    codes_text = set(_ERROR_CODE_IN_TEXT_RE.findall(text or ""))
+    if codes_text and codes_text & set(_ERROR_CODE_IN_TEXT_RE.findall(banner_key)):
+        return _longest_common_run(key, banner_key) >= 12
+    return False
+
+
 def _manual_section(signals: Dict[str, Any], analysis: Dict[str, Any]) -> str:
+    src = signals.get("source") or {}
+    # 降级横幅已置顶「0. 数据说明」：清单再列同义条目只造成复读——横幅优先，清单跳过同义项。
+    degraded = src.get("degraded")
+    banner_key = _item_key(src.get("degraded_banner") or "") if (degraded and degraded != "none") else ""
     items: List[str] = []
-    items += list(signals.get("manual_checks") or [])
+    items += [it for it in (signals.get("manual_checks") or [])
+              if not _is_banner_duplicate(it, banner_key)]
     for w in (signals.get("warnings") or []):
         if "演示" in w or "降级" in w:
+            if _is_banner_duplicate(w, banner_key):
+                continue  # 横幅原文复读，跳过（信息保留在「0. 数据说明」置顶处）
             # 统一由本节补「- ⚠️ 」前缀，先剥掉 warning 自带的标记，避免「⚠️ ⚠️」双前缀
             items.append(_MARK_PREFIX_RE.sub("", w))
     if analysis.get("degraded"):
@@ -315,7 +362,8 @@ def run(args: argparse.Namespace) -> int:
     out = _p(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md, encoding="utf-8")
-    print(f"已写出 {out}（{len(md.splitlines())} 行）")
+    html_path = write_html_report(md, out)  # 同名 .html 主报告（md 留档不变）
+    print(f"已写出 {out}（{len(md.splitlines())} 行）；HTML 主报告：{html_path}")
     if args.print:
         print("\n" + md)
     return 0

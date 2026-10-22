@@ -249,6 +249,7 @@ class FetchResult:
     report_id_used: Optional[str] = None
     degraded: bool = False
     degrade_reason: Optional[str] = None  # 口径降级的真实原因（未配置/发现被拒/主源失败），渲染层横幅用
+    no_valid_data: bool = False  # 主源与降级源均不可用（records 全空）：横幅 + rc=2 信号，绝不静默空报告
     shipments: List[Dict[str, Any]] = field(default_factory=list)
     awd: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -489,8 +490,11 @@ def assemble_all(
         )
         result.records = fallback
         if not fallback:
+            # 主源（宽表整步跳过/发现被拒）与降级源均不可用：显式警告 + 报告横幅 + rc=2 信号
+            result.no_valid_data = True
             result.warnings.append(
-                "降级源落盘缺失（out/raw/online_products_*.json）：无法组装任何 MSKU 记录。"
+                "⚠️ 主源与降级源均不可用，本报告无有效数据项：宽表整步未取（report_id 未取得），"
+                "且降级源落盘缺失（out/raw/online_products_*.json）——全 0 结论不可采信，请核对取数落盘。"
             )
     elif custom_records:
         # 主源有数据：在线产品仅作补充（按 MSKU 去重合并，身份键与计算层一致），
@@ -516,7 +520,24 @@ def assemble_all(
         result.sources.append("get_online_product_page_list(降级)")
         result.records = fallback
     else:
+        # 主源与降级源均不可用（稀疏 raw：主源 failed + online_products_*.json 缺失）：
+        # 绝不静默产出全 0 项空报告 —— 显式警告 + 报告横幅 + rc=2 信号。
         result.records = []
+        result.no_valid_data = True
+        result.degraded = True
+        if custom_failed_codes:
+            result.degrade_reason = (
+                "主源取数失败（get_custom_report_page_list，error_code="
+                + "/".join(custom_failed_codes) + "）"
+            )
+        elif not msku_envs:
+            result.degrade_reason = "宽表落盘缺失（out/raw/msku_*.json）"
+        else:
+            result.degrade_reason = "主源整批无数据（custom_report 未取回任何行）"
+        result.warnings.append(
+            f"⚠️ 主源与降级源均不可用，本报告无有效数据项（{result.degrade_reason}，"
+            "且降级源落盘缺失 out/raw/online_products_*.json）——全 0 结论不可采信，请核对取数落盘。"
+        )
 
     # 3) 在途货件 / 4) AWD 库存：可能为空（data:{} → 无数据），不视为失败
     env = _load(raw_dir, "fba_shipments")

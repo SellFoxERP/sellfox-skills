@@ -10,7 +10,7 @@
   {
    "id": 2,
    "prompt": "哪些品在赚钱，哪些在亏？给我个排行",
-   "expected_output": "排名走 get_product_analyze_list + options.product_analysis 投影（metrics/row_fields，anyOf 必填）而非利润报表全字段；赚钱榜 order_by=gross_profit desc=true；亏损榜必须再发一次 desc=false（负毛利在降序尾部，从 desc 结果筛 <0 约等于空集）；零销售哨兵行剔除出排名；榜标注「与站点层不同基，仅排序」；两层数据不相加、不同表。",
+   "expected_output": "排名走 get_product_analyze_list + 顶层 fields/field_modules 投影（anyOf 至少一项非空；fields 只收字段常量码不认中文名）而非利润报表全字段；赚钱榜 order_by=gross_profit desc=true；亏损榜必须再发一次 desc=false（负毛利在降序尾部，从 desc 结果筛 <0 约等于空集）；零销售哨兵行剔除出排名；榜标注「与站点层不同基，仅排序」；两层数据不相加、不同表。",
    "files": []
   },
   {

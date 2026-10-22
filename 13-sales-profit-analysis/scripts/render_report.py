@@ -14,6 +14,7 @@ from typing import Any, Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _bootstrap import SKILL_ROOT, load_analysis_config  # noqa: E402
+from report_html import write_html_report  # noqa: E402  # HTML 主报告出口（_bootstrap 已挂 _shared/scripts）
 
 try:  # 订单明细脱敏用（共享底座）；无底座时渲染利润行不受影响
     from feishu_writer import mask_pii_in_text  # noqa: E402
@@ -106,7 +107,8 @@ def render(a: Dict[str, Any]) -> str:
     # ③ 结构：两期桥接 Δ 表（只用组合字段 = 同层不双计）+ 残差；快照只报本期占比
     if snapshot:
         bt = cur.get("bridge_total")
-        lines.append("③ 结构（本期桥接，单窗口快照）：")
+        sign_note = ("（费用项已按主符号归一：利好为正）" if a.get("bridge_sign_note") else "")
+        lines.append(f"③ 结构（本期桥接{sign_note}，单窗口快照）：")
         lines.append("| 项目 | 本期 | 占比 |")
         lines.append("|---|---|---|")
         for f, v in cur["bridge"].items():
@@ -119,7 +121,9 @@ def render(a: Dict[str, Any]) -> str:
             lines.append("\n桥接字段全缺 → 残差不可算（无数据，非 0）。")
         lines.append("")
     elif cur["rows"] and base["rows"]:
-        lines.append("③ 结构（桥接七项 Δ，符号照原值；缺侧=无数据非 0）：")
+        sign_note = ("（费用项已按主符号归一为对毛利贡献方向：利好为正）"
+                     if a.get("bridge_sign_note") else "")
+        lines.append(f"③ 结构（桥接七项 Δ{sign_note}；缺侧=无数据非 0）：")
         lines.append("| 项目 | 本期 | 基期 | Δ |")
         lines.append("|---|---|---|---|")
         for f, v in a["delta"]["bridge"].items():
@@ -128,6 +132,21 @@ def render(a: Dict[str, Any]) -> str:
         resid_note = ("；契约未给官方加总公式，如实报、不凑系数。" if r_cur is not None or r_base is not None
                       else "；桥接字段全缺 → 残差不可算（无数据，非 0）。")
         lines.append(f"\n残差（毛利 − 桥接合计）：本期 {_signed(r_cur)} / 基期 {_signed(r_base)}" + resid_note)
+        lines.append("")
+
+    # 按店铺结构（granularity=shop 或多店铺行时给分店铺对照；F2）
+    if a.get("by_shop"):
+        def _gp_cell(p: Dict[str, Any]) -> str:
+            # 缺期（rows=0）毛利不渲染空求和的 0.00，与毛利率列一致标无数据（G2）
+            return "无数据（非 0）" if not p.get("rows") else _n(p.get("gp"))
+
+        lines.append("③b 按店铺（毛利与整体毛利率【自算】，缺期=无数据非 0）：")
+        lines.append("| 店铺 | 本期毛利 | 基期毛利 | 本期毛利率 | 基期毛利率 |")
+        lines.append("|---|---|---|---|---|")
+        for sid, per in sorted(a["by_shop"].items()):
+            c, b = per.get("current", {}), per.get("base", {})
+            lines.append(f"| {sid} | {_gp_cell(c)} | {_gp_cell(b)} |"
+                         f" {_n(c.get('margin'), pct=True)} | {_n(b.get('margin'), pct=True)} |")
         lines.append("")
 
     # ④ 榜
@@ -151,6 +170,10 @@ def render(a: Dict[str, Any]) -> str:
             lines.append("- 本期榜为空（无正/负毛利行），不得据此说「没有亏损品」。")
         if rk.get("skipped_zero_sales"):
             lines.append(f"\n已剔除零销售行 {rk['skipped_zero_sales']} 行（哨兵率值不作真值）。")
+        dd = rk.get("dedup") or {}
+        if dd.get("before", 0) > dd.get("after", 0):
+            lines.append(f"已按商品标识跨源去重 {dd['before']}→{dd['after']}"
+                         "（desc/asc 双信封等重复源同标识只计一次）。")
         lines.append("")
     elif rank_failed:
         lines.append("④ 榜：不可得——")
@@ -236,7 +259,8 @@ def main() -> int:
         out = SKILL_ROOT / out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
-    print(f"报告已写出 → {out}")
+    html_path = write_html_report(text, out)  # 同名 .html 主报告（md 留档不变）
+    print(f"报告已写出 → {out}\nHTML 主报告 → {html_path}")
     return 0
 
 

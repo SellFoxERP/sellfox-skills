@@ -34,7 +34,8 @@ _shared/
 │   ├── validate_raw.py          落盘校验器 CLI（校验 out/raw/*.json）
 │   ├── feishu_writer.py         飞书写入封装（token 缓存 + markdown→block + PII 脱敏）
 │   ├── approval.py              审批流封装（提案 / 飞书推送 / 确认解析 / 变更日志 / 累计闸）
-│   └── config_loader.py         配置加载 + 批量补全 + 回写 + 来源标注
+│   ├── config_loader.py         配置加载 + 批量补全 + 回写 + 来源标注
+│   └── report_html.py           v3 报告 HTML 出口（md→自包含 html，水印为警示条）
 ```
 
 > **命名唯一化**：文档目录一律 `references/`（复数）；配置目录一律 `_shared/config/`（小写）；
@@ -53,6 +54,7 @@ _shared/
 | `feishu_writer.py` | `FeishuWriter.create_doc` / `write_blocks` / `markdown_to_blocks` / `mask_pii` / `guard_demo` | 仅标准库 |
 | `approval.py` | `Proposal` / `ChangeItem` / `AccumulatorGate` / `push_proposal` / `parse_confirmation` / `record_changes` / `verify_read_back` | 仅标准库 |
 | `config_loader.py` | `ConfigLoader.load` / `resolve_lead_time` / `ensure_params` / `describe_sources` | 仅标准库（PyYAML 可选） |
+| `report_html.py` | `write_html_report(md, md_path)` / `markdown_to_html` / `render_html_document`（v3 报告 HTML 出口：md→自包含 html，水印为警示条） | 仅标准库 |
 
 ### 最小示例（v3：计算面读落盘信封）
 

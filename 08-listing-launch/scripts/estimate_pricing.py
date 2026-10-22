@@ -4,7 +4,8 @@
 
 | 值 | 字段 | 所属工具 | 币种 |
 |---|---|---|---|
-| 售价 | ``standardPrice`` / ``listingPrice`` / ``salePrices`` | get_online_product_page_list | 顶层 ``currency``（实测 USD） |
+| 售价 | ``listingPrice`` / ``standardPrice`` | get_online_product_page_list | 顶层 ``currency``（实测 USD） |
+| ~~售价~~ 聚合金额 | ``salePrices``（线上实测为销售金额聚合，值=单价×整数倍数，**不可作单价**） | get_online_product_page_list | 顶层 ``currency`` |
 | 采购成本 | ``purchaseCost`` | get_online_product_page_list / get_custom_report_page_list | 成本口径（CNY） |
 | 平台佣金 | ``referralFee`` | get_online_product_page_list | 售价口径 |
 | FBA 费用 | ``fbaFees`` | get_online_product_page_list | 售价口径 |
@@ -96,11 +97,15 @@ def estimate_pricing(
     price_ccy = product.get("price_currency")
     cost_ccy = product.get("inventory_currency")
 
-    selling_price = (
-        product.get("listing_price")
-        or product.get("standard_price")
-        or product.get("sale_prices")
-    )
+    # 售价链：listingPrice > standardPrice。第三级 salePrices 旧链把金额聚合当单价
+    # （eval3-2026-10-22 数据源问题 N2：289.35 为销售金额聚合形态）——该字段已标注聚合
+    # （见模块文档表），识别到此形态即拒绝用作单价并披露；缺单价走人工提示（fail-closed）。
+    selling_price = product.get("listing_price") or product.get("standard_price")
+    if selling_price is None and product.get("sale_prices") is not None:
+        notes.need_manual(
+            "售价：listingPrice/standardPrice 均缺；salePrices 为聚合金额"
+            "（值=单价×整数倍数），不可作单价——单件售价需人工核查"
+        )
     purchase_cost_raw = product.get("purchase_cost")
     referral = product.get("referral_fee")
     fba = product.get("fba_fees")

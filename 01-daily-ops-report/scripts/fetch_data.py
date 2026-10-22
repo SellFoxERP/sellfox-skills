@@ -155,7 +155,12 @@ def _merge_pattern(raw_dir: Path, prefix: str) -> List[RawEnvelope]:
 
 
 # --- 主流程：校验 + 组装 bundle（形状与旧版一致） ---------------------------
-def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Dict[str, Any]:
+def run(
+    date_arg: Optional[str] = None,
+    raw_dir_arg: Optional[str] = None,
+    caliber: Optional[str] = None,
+    marketplace: Optional[str] = None,
+) -> Dict[str, Any]:
     rd = resolve_report_date(date_arg)
     raw_dir = Path(raw_dir_arg or (_SKILL_ROOT / "out" / "raw"))
     raw_dir = raw_dir if raw_dir.is_absolute() else _SKILL_ROOT / raw_dir
@@ -164,13 +169,22 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
     human_check: List[str] = list(_cfg("human_check", default=[]))
     degradations: List[str] = []
     demo_fingerprint: Optional[str] = None
+    # 利润口径覆盖入口：用户点名 settlement/shipment 时用 --caliber 透传，
+    # 与取数（get_profit_report_by_shop.profit_caliber_type）保持一致，缺省走配置。
+    caliber = (caliber or "").strip() or None
+    if caliber and caliber not in ("settlement", "shipment"):
+        raise SystemExit(f"❌ 无效 --caliber：{caliber}（仅支持 settlement / shipment）。")
+    marketplace_filter: List[str] = [
+        m.strip().upper() for m in (marketplace or "").split(",") if m.strip()
+    ]
 
     bundle: Dict[str, Any] = {
         "report_date": rd,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "config": {
             "currency": _cfg("report", "currency", default="USD"),
-            "profit_caliber_type": _cfg("report", "profit_caliber_type", default="settlement"),
+            "profit_caliber_type": caliber or _cfg("report", "profit_caliber_type", default="settlement"),
+            "profit_caliber_source": "cli" if caliber else "config",
             "date_mode": _cfg("report", "date_mode", default="bizday"),
             "timezone": _cfg("report", "timezone", default=""),
             "baseline": _cfg("report", "baseline", default="window_field"),
@@ -259,6 +273,26 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
             "利润步骤缺失（out/raw/profit_shop.json 未落盘或无数据）："
             "L1 利润类指标（GMV/毛利/毛利率）不可用，标「⚠️ 需人工核查」；订单/广告等其余步骤照常。"
         )
+
+    # 站点过滤核验：请求了 marketplace 过滤时，与上游实际返回的站点对比，
+    # 上游忽略过滤（实测存在）必须显式披露，不能让「仅美国站」诉求被静默放行。
+    profit_rows: List[Dict[str, Any]] = (bundle["data"].get("store_profit") or {}).get("reportList") or []
+    sites_returned: List[str] = []
+    for r in profit_rows:
+        for si in r.get("shopInfos") or []:
+            name = str((si or {}).get("marketplaceName") or "").strip()
+            code = name.rsplit(" ", 1)[-1] if name.startswith("Amazon ") else ""
+            if code and code not in sites_returned:
+                sites_returned.append(code)
+    sites_returned.sort()
+    if marketplace_filter:
+        extra_sites = [s for s in sites_returned if s not in marketplace_filter]
+        if extra_sites or not sites_returned:
+            got = "、".join(sites_returned) if sites_returned else "未知（利润行未带站点信息）"
+            degradations.append(
+                f"站点过滤未生效：请求仅 {'、'.join(marketplace_filter)} 站，"
+                f"上游返回仍含 {got}（按返回样本口径展示，不代表请求范围）。"
+            )
 
     # 3)（可选）30 天基线切片
     env = _load(raw_dir, "profit_shop_range")
@@ -350,6 +384,8 @@ def run(date_arg: Optional[str] = None, raw_dir_arg: Optional[str] = None) -> Di
         "shops_total": len(shop_ids),
         "shops_covered": len(shop_ids),
         "shop_regions": shop_regions,
+        "marketplace_filter": marketplace_filter or None,
+        "sites_returned": sites_returned,
         "profit_step_missing": bundle["data"].get("store_profit") is None,
         "msku_rows": len((bundle["data"].get("msku_report") or {}).get("rows") or []),
         "campaign_rows": len(items),
@@ -364,9 +400,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--date", help="报告日期 yyyy-MM-dd；缺省按配置口径取昨日")
     ap.add_argument("--raw-dir", default=None, help="落盘目录（默认 <skill>/out/raw）")
     ap.add_argument("--out", default="out/bundle.json", help="输出 bundle JSON 路径")
+    ap.add_argument("--caliber", choices=["settlement", "shipment"],
+                    help="利润口径覆盖（缺省读 config/daily_report.yaml；"
+                         "用户点名口径时须与取数 profit_caliber_type 一致并透传本参数）")
+    ap.add_argument("--marketplace", default=None,
+                    help="请求的站点过滤（如 US 或 US,UK；用于核验上游过滤是否生效并回显请求范围）")
     args = ap.parse_args(argv)
 
-    bundle = run(args.date, args.raw_dir)
+    bundle = run(args.date, args.raw_dir, caliber=args.caliber, marketplace=args.marketplace)
 
     out = Path(args.out)
     if not out.is_absolute():
@@ -375,6 +416,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     out.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"✅ 数据包已写出：{out}（来源：{bundle['meta']['raw_dir']}）")
+    if args.caliber:
+        print(f"ℹ️ 利润口径覆盖：{args.caliber}（CLI --caliber，报告口径行按此标注）")
     if bundle.get("demo_fingerprint"):
         print(f"⚠️ 演示环境指纹：{bundle['demo_fingerprint']}（数据非真实经营数据）")
     for t in bundle.get("truncations", []):

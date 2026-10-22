@@ -532,6 +532,31 @@ def compute(data: Dict[str, Any], shared_root: Optional[str] = None) -> Dict[str
     if trend.get("status") == "mixed_currency" and d.get("char_data"):
         disclosures.append(
             "trend: charData 已获取（单币种序列），但本期利润行多币种、不可加总，未采用。")
+    # 同比基期为按月 yyyyMM（整月口径，超 6 个月窗口按契约改按月）→ 必须标注口径差异
+    if ((data.get("sources") or {}).get("profit_yoy") or {}).get("yoy_month_granularity"):
+        if plan.get("period") == "month":
+            disclosures.append(
+                "yoy: 同比基期为整月口径（按月 yyyyMM 取整月），与本期按日窗口聚合口径不同，"
+                "仅作方向参考。")
+        else:
+            disclosures.append(
+                "yoy: 同比基期为整月口径（按月 yyyyMM 取整月），与本期周窗口非等长，"
+                "仅作方向参考。")
+    # 榜单覆盖量化：「仅覆盖 N 行」必须带服务端全量总数（无 total 则「总数未知」），
+    # 全量不足 Top K 需求时用户才能判断头部集中度结论的覆盖上限。
+    rank_src = (data.get("sources") or {}).get("rank_top") or {}
+    rank_total = rank_src.get("rank_rows_total")
+    rank_fetched = len(top_rows)
+    if rank_fetched:
+        total_desc = f"{rank_total} 行" if isinstance(rank_total, int) else "总数未知"
+        top_need = int(rank_cfg["top"]["n"])
+        if isinstance(rank_total, int) and rank_total < top_need:
+            tail = (f"服务端全量 {total_desc} < Top {top_need} 需求，Top {top_need} 不可达，"
+                    "头部集中度结论按现有全量理解（非截断）。")
+        else:
+            tail = f"覆盖以取回行数为上限（Top {top_need} / Bottom {int(rank_cfg['bottom']['n'])} 本地排序）。"
+        disclosures.append(
+            f"rankings: 榜单覆盖量化：本次取回 {rank_fetched} 行（服务端全量 {total_desc}）；{tail}")
 
     # 本期利润取数状态（结构化透传给渲染层：failed ≠ 无数据 ≠ 无异常，
     # 渲染层据此把本期列标「⚠️ 需人工核查」并在核心结论写明取数失败）

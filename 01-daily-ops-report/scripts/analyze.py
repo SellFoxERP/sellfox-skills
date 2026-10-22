@@ -120,8 +120,11 @@ def _multiplatform_summary(data: Dict[str, Any]) -> Dict[str, Any]:
     groups: Dict[tuple, Dict[str, Any]] = {}
     platforms: Dict[str, None] = {}
     rows_total = 0
+    envelope_rows_total = 0  # 信封行数（coverage 口径），与展开后的日条目数区分
     for metric in sorted(metrics):
-        for r in metrics[metric] or []:
+        metric_rows = metrics[metric] or []
+        envelope_rows_total += len(metric_rows)
+        for r in metric_rows:
             if not isinstance(r, dict):
                 continue
             platform = r.get("platformName")
@@ -149,6 +152,7 @@ def _multiplatform_summary(data: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "available": bool(groups),
         "rows": rows_total,
+        "envelope_rows": envelope_rows_total,
         "metrics": sorted(metrics),
         "platforms": list(platforms),
         "groups": sorted(groups.values(), key=lambda x: (x["metric"], x["platform"], x["currency"])),
