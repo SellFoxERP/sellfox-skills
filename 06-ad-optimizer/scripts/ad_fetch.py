@@ -134,7 +134,7 @@ def parse_xlsx(path: Path) -> List[Dict[str, Any]]:
 
 def _merge_envelopes(
     paths: List[Path],
-    list_key: str,
+    list_key: Optional[str],
     source: str,
     max_rows: int,
     *,
@@ -184,7 +184,7 @@ def _merge_envelopes(
     return rows
 
 
-def _structure(raw: Path, base: str, shop_id: str, list_key: str, max_rows: int,
+def _structure(raw: Path, base: str, shop_id: str, list_key: Optional[str], max_rows: int,
                sink: "AdData", *, required: bool) -> List[Dict[str, Any]]:
     """读取 `<base>_<shopId>*.json`（含游标多页 `.2.json` 等），返回行列表。"""
     paths = sorted(raw.glob(f"{base}_{shop_id}*.json"))
@@ -299,13 +299,13 @@ def load_from_raw(
         data.warnings.append("未提供 shop_id：结构落盘（campaigns_<shopId>.json 等）将匹配不到。")
 
     if with_structure:
-        data.campaigns = _structure(raw, "campaigns", shop_id, "itemList", max_campaigns,
+        data.campaigns = _structure(raw, "campaigns", shop_id, None, max_campaigns,
                                     data, required=True)
-        data.keywords = _structure(raw, "keywords", shop_id, "itemList", max_keywords,
+        data.keywords = _structure(raw, "keywords", shop_id, None, max_keywords,
                                    data, required=False)
-        data.ad_products = _structure(raw, "ad_products", shop_id, "itemList", max_keywords,
+        data.ad_products = _structure(raw, "ad_products", shop_id, None, max_keywords,
                                       data, required=False)
-        data.product_targetings = _structure(raw, "targetings", shop_id, "itemList", max_keywords,
+        data.product_targetings = _structure(raw, "targetings", shop_id, None, max_keywords,
                                              data, required=False)
 
     if with_perf:

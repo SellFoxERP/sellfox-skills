@@ -1,7 +1,7 @@
 {
   "version": 1,
   "tool_id": "get_profit_report_by_msku",
-  "rows_path": "data.reportList",
+  "rows_path": "data.rows",
   "group_by": [
     "shopId",
     "id"
