@@ -25,7 +25,7 @@ def _fmt(value: Optional[float], *, money: bool = True) -> str:
         return "无数据"
     if money:
         return f"{value:,.2f}"
-    return f"{value:,.4f}"
+    return f"{value:,.2%}"          # 率值用百分比（0.3265 → 32.65%），不裸显小数
 
 
 CALIBER_LABEL = {

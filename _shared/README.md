@@ -20,6 +20,7 @@
 _shared/
 ├── README.md                    本文件
 ├── SELLFOX_CLIENT.md            ⭐ v2 agent 调用契约（12 条纪律 + 取数计划模板）
+├── REPORT_STYLE.md              ⭐ 报告文案规范（商家视角：分层/业务语言/数字呈现）
 ├── APPROVAL.md                  人机审核统一规范（L1~L4 / 三段式 / 飞书审批）
 ├── METRIC_FORMULAS.md           指标口径白皮书（含 profit_caliber_type 选择）
 ├── FIELD_DICTIONARY.md          字段字典（字段 → 含义 → 所属工具）

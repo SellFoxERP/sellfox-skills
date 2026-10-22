@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -51,6 +52,116 @@ def _fmt(v: Any, digits: int = 2, unit: str = "") -> str:
         return str(v)
 
 
+# --- 商家视角文案（正文区工程词翻译；数据说明附录保持原样不翻译）--------------
+#: 成对替换：老串在前、新串在后（先长后短，避免前缀吞掉括号内短语）
+_BODY_TEXT_TRANSLATIONS = [
+    ("（baseline=window_field）", "（按窗口字段法）"),
+    ("baseline=window_field", "按窗口字段法"),
+    ("servingStatus 字段存在，但 BUDGET_CAPPED 取值未经实测验证，不作为判定条件。",
+     "预算受限状态未验证，不作为判定条件。"),
+]
+_BASELINE_METHOD_LABELS = {"window_field": "窗口字段法"}
+
+
+def _plain(s: Any) -> str:
+    """正文区工程话术 → 商家话术（仅作用于 STEP 明细行，附录披露不动）。"""
+    s = str(s or "")
+    for old, new in _BODY_TEXT_TRANSLATIONS:
+        s = s.replace(old, new)
+    return s
+
+
+def _report_gaps(analysis: Dict[str, Any], bundle: Dict[str, Any]) -> Dict[str, Any]:
+    """识别影响判读的数据缺口：行动建议 / 数据可用度 / 一句话结论共用。"""
+    deg = analysis.get("degradations") or []
+    nd = analysis.get("no_data_sources") or []
+    rid = ((bundle.get("data") or {}).get("msku_report") or {}).get("report_id")
+    failed: List[str] = []
+    for d in deg:
+        if "步骤信封状态" not in d or "error_code=" not in d:
+            continue
+        head = str(d).split("：", 1)[0]                      # 如「步骤 3 宽表 S1、工具 get_…」
+        label = head.split("、工具", 1)[0]
+        label = re.sub(r"^步骤\s*\S+\s*", "", label).strip() or head
+        failed.append(label)
+    return {
+        "failed_steps": failed[:2],
+        "profit_missing": any("利润步骤缺失" in d for d in deg),
+        "wide_table_missing": (not rid) and (
+            any("缺少自定义报表 report_id" in d for d in deg)
+            or any("get_custom_report_page_list" in s for s in nd)),
+        "currency_count": len((analysis.get("l1") or {}).get("by_currency") or {}),
+    }
+
+
+def _main_gap_phrase(gaps: Dict[str, Any]) -> str:
+    """「主要缺口」一句话（取最重的一项；无缺口返回空串）。"""
+    if gaps["failed_steps"]:
+        return f"{gaps['failed_steps'][0]} 取数失败（错误码见数据说明）"
+    if gaps["profit_missing"]:
+        return "店铺级利润缺失（GMV/毛利不可用）"
+    if gaps["wide_table_missing"]:
+        return "自定义报表未配置（流量/转化、广告点击、库龄分桶、补货建议不可用）"
+    if gaps["currency_count"] > 1:
+        return f"{gaps['currency_count']} 个币种未折算（GMV/毛利总额不可用）"
+    return ""
+
+
+def _action_items(gaps: Dict[str, Any]) -> List[str]:
+    """「今日行动建议」条目（2~4 条，缺什么给什么）。"""
+    acts: List[str] = []
+    for label in gaps["failed_steps"]:
+        acts.append(f"{label} 数据今日取数失败，稍后重试或联系赛狐支持（错误码见数据说明）")
+    if gaps["wide_table_missing"]:
+        acts.append("在赛狐配置自定义报表后重跑，可解锁流量/转化、广告点击、库龄分桶、补货建议")
+    if gaps["currency_count"] > 1:
+        acts.append(f"{gaps['currency_count']} 个币种未折算，看单一币种行做判断")
+    if gaps["profit_missing"]:
+        acts.append("店铺级利润数据今日未取到（GMV/毛利不可用），稍后重跑或联系赛狐支持")
+    return acts[:4]
+
+
+#: 核心指标表参与「数据可用度」统计的指标键（按币种分列行是补充口径，不计入）
+_CORE_METRIC_KEYS = ("gmv", "units", "gross_profit", "gross_profit_rate", "acos", "cvr")
+
+
+def _availability_line(l1: Dict[str, Any], gaps: Dict[str, Any]) -> str:
+    total = len(_CORE_METRIC_KEYS)
+    avail = sum(1 for k in _CORE_METRIC_KEYS
+                if (l1.get(k) is not None and l1.get(k) != "无数据"))
+    gap = _main_gap_phrase(gaps)
+    return f"数据可用度：核心 {total} 项中 {avail} 项可用；主要缺口={gap or '无'}"
+
+
+def _one_line_conclusion(l1: Dict[str, Any], reds: List[Dict[str, Any]],
+                         gaps: Dict[str, Any], cur: str) -> str:
+    """真实生成的一句话结论：红线 / 销量 / 金额口径 / 主要缺口（有啥说啥，不留空话）。"""
+    parts: List[str] = []
+    if reds:
+        parts.append(f"红线 {len(reds)} 条（最重：{reds[0].get('name') or '见红线清单'}）")
+    else:
+        parts.append("红线 0 条")
+    units = l1.get("units")
+    if isinstance(units, (int, float)):
+        parts.append(f"销量 {units:,.0f} 件")
+    by_cur = l1.get("by_currency") or {}
+    if by_cur:
+        first_cur, first_val = next(iter(by_cur.items()))
+        first_gp = (first_val or {}).get("gross_profit")
+        gp_s = f"{first_gp:,.2f}" if isinstance(first_gp, (int, float)) else "无数据"
+        parts.append(f"毛利按币种分列（{first_cur} {gp_s} 等，{len(by_cur)} 个币种未折算）")
+    elif isinstance(l1.get("gmv"), (int, float)):
+        gross = l1.get("gross_profit")
+        gross_s = f"{gross:,.2f}" if isinstance(gross, (int, float)) else "无数据"
+        parts.append(f"GMV {l1['gmv']:,.2f}、毛利 {gross_s}（{cur}）")
+    elif gaps["profit_missing"]:
+        parts.append("GMV/毛利无数据（利润步骤缺失）")
+    gap = _main_gap_phrase(gaps)
+    if gap:
+        parts.append(f"主要缺口：{gap.split('（')[0]}（详见行动建议）")
+    return "；".join(parts) + "。"
+
+
 def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] = None) -> str:
     bundle = bundle or {}
     rd = analysis.get("report_date") or {}
@@ -75,6 +186,19 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     # ---------- L1 结论层 ----------
     L.append("## 【L1 结论层】管理层看这里")
     L.append("")
+
+    # 今日行动建议：把数据缺口翻译成动作（商家视角：缺什么给什么，2~4 条）
+    gaps = _report_gaps(analysis, bundle)
+    L.append("### ✅ 今日行动建议")
+    L.append("")
+    actions = _action_items(gaps)
+    if actions:
+        for a in actions:
+            L.append(f"- {a}")
+    else:
+        L.append("- 无待办，数据完整。")
+    L.append("")
+
     L.append("### 🔴 今日红线（≤%d 条，含归因线索）" % analysis.get("redline_max_items", 5))
     L.append("")
     reds = analysis.get("redlines") or []
@@ -92,6 +216,8 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append("")
     L.append("### 核心指标")
     L.append("")
+    L.append(f"> {_availability_line(l1, gaps)}")
+    L.append("")
     L.append("| 指标 | 昨日 | 币种/口径 |")
     L.append("|---|---|---|")
     L.append(f"| GMV（销售额） | {_fmt(l1.get('gmv'))} | {cur} |")
@@ -104,7 +230,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append(f"| ACOS | {_fmt(l1.get('acos'), 2, '%')} | 报表口径（adCost/adSalePrice） |")
     L.append(f"| CVR | {_fmt(l1.get('cvr'), 2, '%')} | orderNum/sessions |")
     L.append("")
-    L.append(f"> ⚠️ 一句话结论：（自动生成占位，需运营复核）核心指标见上；红线 {len(reds)} 条，详见下方七步明细。")
+    L.append(f"> 一句话结论：{_one_line_conclusion(l1, reds, gaps, cur)}")
     L.append("")
 
     # ---------- L2 明细层 ----------
@@ -127,9 +253,11 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
 
     _step_header("02", "销售 / 流量（P0）", p0=True)
     s2 = steps.get("02_sales") or {}
-    L.append(f"- GMV：{_fmt(s2.get('gmv'))} ｜ 销量：{_fmt(s2.get('units'), 0)} ｜ 基线方法：{s2.get('baseline_method')}")
+    bm = s2.get("baseline_method")
+    L.append(f"- GMV：{_fmt(s2.get('gmv'))} ｜ 销量：{_fmt(s2.get('units'), 0)} ｜ "
+             f"基线方法：{_BASELINE_METHOD_LABELS.get(bm, bm) or '无数据'}")
     if not s2.get("store_baseline_available"):
-        L.append(f"- ⚠️ {s2.get('note')}")
+        L.append(f"- ⚠️ {_plain(s2.get('note'))}")
     msku_an = s2.get("msku_anomalies") or []
     if msku_an:
         L.append("- 异常 MSKU（销量环比）：")
@@ -149,7 +277,7 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
         L.append(f"- 活动状态：{cs}")
     for z in s3.get("high_cost_zero_order") or []:
         L.append(f"- ⚠️ 高花费零转化：{z.get('msku')}（花费 {_fmt(z.get('adCost'))}）")
-    L.append(f"- 说明：{s3.get('note')}")
+    L.append(f"- 说明：{_plain(s3.get('note'))}")
     L.append("")
 
     _step_header("04", "库存")

@@ -60,6 +60,65 @@ _WRITE_PROTOCOL_NOTE = (
 # 报告渲染（模板见 references/output-templates.md）
 # ---------------------------------------------------------------------------
 
+#: 诊断明细表规则名 → 商家话术（仅渲染层翻译；Finding.rule 原值不变，供日志/测试引用）
+_RULE_LABELS = {
+    "insufficient_data": "数据不足",
+}
+
+#: 绩效来源/范围的商家话术（渲染层翻译）
+_PERF_SOURCE_LABELS = {"download_task": "下载任务报表", "custom_report": "自定义报表"}
+_PERF_SCOPE_LABELS = {"campaign": "活动级", "msku": "MSKU 级"}
+
+
+def _perf_line(ad_data: Any) -> str:
+    """店铺行末尾的绩效数据状态：缺失直说「缺失」，不用 `none`（scope=none）工程词。"""
+    if ad_data.perf_source == "none" or not ad_data.perf_source:
+        return "绩效数据：缺失"
+    src = _PERF_SOURCE_LABELS.get(ad_data.perf_source, ad_data.perf_source)
+    scope = _PERF_SCOPE_LABELS.get(ad_data.perf_scope, ad_data.perf_scope)
+    return f"绩效数据：{src}（{scope}）"
+
+
+def _render_empty_proposal(ad_data: Any, proposal: Optional[Proposal]) -> str:
+    """变更条数为 0 时的提案渲染：开头直说原因与下一步，省略空对比表与回滚模板。
+
+    商家视角（2026-10-22 审查）：0 条变更时，空的「变更前后对比」表与回滚模板
+    只会稀释注意力；保留技能/风险/模式与「确认方式」等审批说明，其余换成
+    醒目段——绩效缺失时明确「本次不产生变更提案」及下一步动作。
+    """
+    from approval import DEFAULT_LIMITS, RISK_LEVELS
+
+    if ad_data.perf_source == "none":
+        headline = ("**本次不产生变更提案——绩效数据缺失，无法判断投放好坏。**\n"
+                    "下一步：先解决绩效文件获取（见诊断明细 P2 项），再重跑。")
+    else:
+        headline = "**本次不产生变更提案——已取到的绩效未触发自动优化规则，结论见诊断明细。**"
+
+    lines: List[str] = []
+    if proposal is not None:
+        lim = dict(DEFAULT_LIMITS)
+        appr = (load_thresholds() or {}).get("approval") or {}
+        lim.update(appr)
+        risk = RISK_LEVELS.get(proposal.risk_level, {})
+        lines += [
+            f"# {proposal.title}",
+            "",
+            f"- 技能：`{proposal.skill}` ｜ 风险级别：**{proposal.risk_level} {risk.get('name', '')}**",
+            f"- 生成时间：{proposal.created_at} ｜ 变更条数：{len(proposal.items)}"
+            f"（上限 {lim['max_items_per_batch']}，幅度上限 ±{lim['max_budget_change_pct']:.0f}%）",
+            "- 模式：**dry-run（未执行）**" if proposal.dry_run else "- 模式：执行",
+            "",
+        ]
+    lines += [
+        f"> ⚠️ {headline}",
+        "",
+        "## 确认方式",
+        "",
+        "回复「批准 1,3,5」执行指定项；回复「批准全部」执行全部；回复「驳回」则不执行"
+        "（本次 0 条，无可批准项）。",
+    ]
+    return "\n".join(lines)
+
 
 def render_report(
     ad_data: Any,
@@ -77,7 +136,7 @@ def render_report(
     lines += [
         f"# 广告诊断与优化提案 | {start_date} ~ {end_date}",
         "",
-        f"- 店铺：`{ad_data.shop_id}` ｜ 绩效来源：`{ad_data.perf_source}`（scope={ad_data.perf_scope}）",
+        f"- 店铺：`{ad_data.shop_id}` ｜ {_perf_line(ad_data)}",
         "",
         "## 一、核心结论",
         "",
@@ -105,7 +164,8 @@ def render_report(
             if mv.get(k) is not None
         ) or "无数据"
         action = f"自动执行：{f.proposed_field}={f.after}" if f.auto_executable else f"人工核查：{f.manual_note or f.reason}"
-        lines.append(f"| {f.level} | {f.rule} | {f.target_name}({f.target_id}) | {metric_txt} | {action} |")
+        rule_label = _RULE_LABELS.get(f.rule, f.rule)
+        lines.append(f"| {f.level} | {rule_label} | {f.target_name}({f.target_id}) | {metric_txt} | {action} |")
     lines.append("")
 
     # 维度覆盖披露（评测 #6）：商品投放数据已按取数计划落盘，但本版无该维度诊断规则
@@ -121,7 +181,9 @@ def render_report(
         ]
 
     lines += ["## 三、dry-run 变更提案（未执行）", ""]
-    lines.append(proposal.render_markdown() if proposal else "无可自动执行的提案（详见上表人工核查项）。")
+    # 0 条变更：不用 approval 的空对比表/回滚模板，改为直说原因 + 下一步（商家视角）
+    lines.append(proposal.render_markdown() if proposal and proposal.items
+                 else _render_empty_proposal(ad_data, proposal))
     lines.append("")
 
     lines += [

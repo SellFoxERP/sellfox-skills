@@ -33,6 +33,26 @@ class TopicTest(unittest.TestCase):
         p=self.plan('11-returns-loss');self.page(p,[self.row(),self.row(id='item-b',currency='EUR',refundSales=None)])
         r=topic_review.review(p,self.base,'returns');self.assertEqual(len(r['findings']),2)
         self.assertIsNone(r['findings'][1]['refund_amount_magnitude'])
+    def test_merchant_summary_layer_and_note_once(self):
+        p=self.plan('11-returns-loss');self.page(p,[self.row(),self.row(id='item-b',refundSales=-25)])
+        (self.base/'shops.json').write_text(json.dumps({'tool_id':'get_shop_page_list','status':'complete',
+                                                        'data':{'rows':[{'id':'fixture','name':'示例店铺'}]}}))
+        report=topic_review.render(topic_review.review(p,self.base,'returns'))
+        self.assertIn('| MSKU | 店铺 | 退款金额 | 退款量 | 退货量 |',report)
+        self.assertIn('| item-a | 示例店铺 | 40 USD | 2 | 1 |',report)  # 原币种标注 + 店铺名映射 + 金额降序
+        self.assertNotIn('{"currency"',report.split('## 复核明细')[0])   # 摘要层无裸 JSON dict
+        self.assertEqual(report.count('不是净损失，不代表质量原因。'),2)  # 摘要表下一句话 + 复核明细开头各一次
+        self.assertNotIn('"note"',report.split('## 复核明细（机器证据）')[1].split('# 赛狐业务数据处理结果')[0])
+    def test_launch_summary_stage_words(self):
+        p=self.plan('12-new-product-review');p['topic']['max_age_days']=30
+        self.page(p,[{'shopId':'fixture','id':'in','openDate':'2026-10-10','day7SaleNum':1,'day30SaleNum':1},
+                     {'shopId':'fixture','id':'old','openDate':'2026-01-20','day7SaleNum':1,'day30SaleNum':1},
+                     {'shopId':'fixture','id':'ts','openDate':'2026-10-01T00:00:00Z','day7SaleNum':1,'day30SaleNum':1}])
+        report=topic_review.render(topic_review.review(p,self.base,'launch'))
+        self.assertIn('| MSKU | 店铺 | 上架日期 | 上市天数 | 阶段 |',report)
+        self.assertIn('观察中（第 6 天/窗口 30 天）',report)
+        self.assertIn('超龄（第 ',report);self.assertIn('日期不明',report)
+        self.assertIn('店铺名未知时显示编号',report)  # 无 shops.json → 编号 + 注
     def test_failed_response_does_not_become_zero(self):
         p=self.plan('11-returns-loss');self.page(p,[self.row()],status='failed')
         r=topic_review.review(p,self.base,'returns');self.assertEqual(r['findings'],[])

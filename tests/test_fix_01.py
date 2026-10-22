@@ -283,5 +283,82 @@ class RedlineAndCoverageRenderTest(unittest.TestCase):
         self.assertIn("店铺/站点覆盖范围：1 家店铺；站点：US", md)
 
 
+class MerchantViewRenderTest(unittest.TestCase):
+    """[2026-10-22 商家视角] 一句话结论去占位真实生成 + 今日行动建议 + 数据可用度 + 工程词翻译。"""
+
+    FULL_L1 = {"gmv": 11746.9, "gross_profit": 2573.0, "gross_profit_rate": 21.9,
+               "units": 192.0, "acos": 33.0, "cvr": 2.05, "by_currency": {}, "currency": "USD"}
+
+    def test_conclusion_is_real_not_placeholder(self):
+        a = minimal_analysis(l1=dict(self.FULL_L1),
+                             redlines=[{"name": "销量 MSKU-A（店铺 1）", "deviation_pct": -35.7}])
+        md = render.render_markdown(a, {"data": {"msku_report": {"report_id": "RPT-1"}}})
+        self.assertNotIn("自动生成占位", md)
+        self.assertNotIn("需运营复核", md)
+        self.assertIn("一句话结论：红线 1 条（最重：销量 MSKU-A（店铺 1））", md)
+        self.assertIn("销量 192 件", md)
+        self.assertIn("GMV 11,746.90、毛利 2,573.00（USD）", md)
+
+    def test_zero_redline_with_gaps_still_conclusive(self):
+        l1 = {"gmv": None, "gross_profit": None, "gross_profit_rate": None, "units": 1042.0,
+              "acos": None, "cvr": None,
+              "by_currency": {"USD": {"gmv": 5120.8, "gross_profit": 1210.4},
+                              "CAD": {"gmv": 3890.4, "gross_profit": 895.7}},
+              "currency": "多币种（分组展示）"}
+        a = minimal_analysis(l1=l1, redlines=[],
+                             degradations=["缺少自定义报表 report_id：L2 明细层口径降级。"],
+                             no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
+        md = render.render_markdown(a, {"data": {"msku_report": None}})
+        self.assertIn("一句话结论：红线 0 条；销量 1,042 件；毛利按币种分列（USD 1,210.40 等，2 个币种未折算）", md)
+        self.assertIn("主要缺口：自定义报表未配置（详见行动建议）", md)
+
+    def test_action_items_translate_gaps_into_actions(self):
+        l1 = {"units": 1042.0, "by_currency": {c: {"gmv": 1.0, "gross_profit": 1.0}
+                                               for c in ["USD", "CAD", "GBP", "EUR", "JPY", "AUD", "MXN"]}}
+        a = minimal_analysis(l1=l1,
+                             degradations=["缺少自定义报表 report_id：L2 明细层口径降级。"],
+                             no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
+        md = render.render_markdown(a, {"data": {"msku_report": None}})
+        self.assertIn("### ✅ 今日行动建议", md)
+        self.assertIn("在赛狐配置自定义报表后重跑，可解锁流量/转化、广告点击、库龄分桶、补货建议", md)
+        self.assertIn("7 个币种未折算，看单一币种行做判断", md)
+        self.assertNotIn("无待办，数据完整", md)
+
+    def test_failed_step_becomes_retry_action(self):
+        a = minimal_analysis(l1=dict(self.FULL_L1),
+                             degradations=["步骤 3 宽表 S1、工具 get_custom_report_page_list：步骤信封状态 failed"
+                                           "（error_code=CONTRACT_VERSION_MISMATCH），不代表完整成功。"])
+        md = render.render_markdown(a, {"data": {"msku_report": {"report_id": "RPT-1"}}})
+        self.assertIn("宽表 S1 数据今日取数失败，稍后重试或联系赛狐支持（错误码见数据说明）", md)
+        self.assertIn("主要缺口=宽表 S1 取数失败", md)
+
+    def test_no_gap_means_all_clear_and_full_availability(self):
+        a = minimal_analysis(l1=dict(self.FULL_L1))
+        md = render.render_markdown(a, {"data": {"msku_report": {"report_id": "RPT-1"}}})
+        self.assertIn("无待办，数据完整", md)
+        self.assertIn("数据可用度：核心 6 项中 6 项可用；主要缺口=无", md)
+
+    def test_availability_counts_non_empty_core_rows(self):
+        l1 = dict(self.FULL_L1, gmv=None, gross_profit=None, gross_profit_rate=None, acos=None, cvr=None)
+        a = minimal_analysis(l1=l1, no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
+        md = render.render_markdown(a, {"data": {}})
+        self.assertIn("数据可用度：核心 6 项中 1 项可用；主要缺口=", md)
+
+    def test_engineering_words_translated_in_body(self):
+        steps = {
+            "02_sales": {"gmv": 1.0, "units": 2, "baseline_method": "window_field",
+                         "store_baseline_available": False,
+                         "note": "未取 30 天基线数据（baseline=window_field），店铺级偏离度不可用"},
+            "03_ads": {"note": "servingStatus 字段存在，但 BUDGET_CAPPED 取值未经实测验证，不作为判定条件。"},
+        }
+        md = render.render_markdown(minimal_analysis(l1=dict(self.FULL_L1), steps=steps),
+                                    {"data": {"msku_report": {"report_id": "RPT-1"}}})
+        self.assertIn("基线方法：窗口字段法", md)
+        self.assertIn("（按窗口字段法）", md)
+        self.assertNotIn("baseline=window_field", md)
+        self.assertIn("预算受限状态未验证，不作为判定条件。", md)
+        self.assertNotIn("BUDGET_CAPPED", md)
+
+
 if __name__ == "__main__":
     unittest.main()

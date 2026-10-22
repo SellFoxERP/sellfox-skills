@@ -6,6 +6,33 @@ import process_data as data
 from report_html import write_html_report
 
 
+def shop_names(plan, base):
+    """Best-effort 店铺名映射：数据集输入同目录或其父目录的 shops.json（信封 data.rows 的 id/name）。
+    找不到或解析失败仅影响展示（店铺列退回编号），不影响计算。"""
+    mapping = {}
+    folders = []
+    for dataset in plan.get('datasets', {}).values():
+        for file in dataset.get('inputs', []):
+            folder = (base / file).parent
+            for candidate in (folder, folder.parent):
+                if candidate not in folders:
+                    folders.append(candidate)
+    for folder in folders:
+        path = folder / 'shops.json'
+        try:
+            if not path.is_file():
+                continue
+            rows = data.at(data.unwrap(data.read_json(path))[1], 'data.rows')
+        except (ValueError, OSError, TypeError, KeyError):
+            continue
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict) and row.get('id') is not None \
+                        and isinstance(row.get('name'), str) and row['name'].strip():
+                    mapping.setdefault(str(row['id']), row['name'].strip())
+    return mapping
+
+
 def review(plan, base, topic):
     data.validate(plan)
     spec = plan.get('topic', {})
@@ -51,6 +78,10 @@ def review(plan, base, topic):
     result['scope_note'] = spec['scope_note']
     result['sample_reason'] = spec.get('sample_reason') if sample else None
     result['findings'] = []
+    # 通用说明：逐行 note 与此完全一致；渲染层据此收拢，避免同一句重复 N 遍。
+    result['common_note'] = ('退款金额绝对值仅用于观察规模；退款与退货数量不相加；不是净损失，不代表质量原因。' if topic == 'returns'
+                             else '已达到的日历观察窗口，不表示数据完整或目标达成；未知/未来上架日期不评阶段。')
+    result['shop_names'] = shop_names(plan, base)
     for name, ds in result['datasets'].items():
         if topic == 'returns':
             # 有行的数据集仍强制 period；空数据集（complete 空页）可缺——渲染标「窗口未知（空数据）」，
@@ -69,14 +100,14 @@ def review(plan, base, topic):
                     'refund_amount_signed':amount,
                     'refund_amount_magnitude':abs(amount) if amount is not None else None,
                     'refund_units':metrics['refund_units']['value'],'return_units':metrics['return_units']['value'],
-                    'note':'退款金额绝对值仅用于观察规模；退款与退货数量不相加；不是净损失，不代表质量原因。'})
+                    'note':result['common_note']})
         else:
             as_of = data.day(spec['as_of'])
             for record in ds['records']:
                 row = record['row']; launch = data.day(data.at(row,spec['launch_date_field']))
                 future = bool(launch and launch > as_of)
                 age = (as_of-launch).days+1 if launch and launch <= as_of else None
-                note = '已达到的日历观察窗口，不表示数据完整或目标达成；未知/未来上架日期不评阶段。'
+                note = result['common_note']
                 if future:
                     note += '上架日期为未来值，未确认。'
                 result['findings'].append({'dataset':name,
@@ -90,6 +121,68 @@ def review(plan, base, topic):
     return result
 
 
+def merchant_summary(result):
+    """商家摘要表：正文最前的可读层；金额保留原币种标注，note 收成表下一句话，不逐行重复。"""
+    names = result.get('shop_names') or {}
+    findings = result['findings']
+    lines = ['## 摘要', '']
+    if not findings:
+        return lines + ['（无可用摘要行：没有通过校验的记录；各数据集状态见文末“赛狐业务数据处理结果”。）']
+    unmapped = False
+
+    def parts(item):
+        product = item['product']
+        shop_keys = [k for k in product if 'shop' in str(k).lower()]
+        currency_keys = [k for k in product if 'currency' in str(k).lower()]
+        label_keys = [k for k in product if k not in shop_keys and k not in currency_keys]
+        label = ' / '.join(data.cell(product[k]) for k in label_keys) if label_keys else '未知商品'
+        shop_id = product[shop_keys[0]] if shop_keys else None
+        name = names.get(str(shop_id)) if shop_id is not None else None
+        return label, data.cell(name if name is not None else shop_id), \
+            name is None and shop_id is not None, product[currency_keys[0]] if currency_keys else None
+
+    if result['topic'] == 'returns':
+        rows = []
+        for item in findings:
+            label, shop, missing, currency = parts(item)
+            unmapped = unmapped or missing
+            amount = item.get('refund_amount_magnitude')
+            amount_cell = data.cell(amount)+' '+data.cell(currency) if amount is not None and currency is not None else data.cell(amount)
+            rows.append((amount, [label, shop, amount_cell,
+                                  data.cell(item.get('refund_units')), data.cell(item.get('return_units'))]))
+        rows.sort(key=lambda row: (row[0] is None, -row[0] if row[0] is not None else 0))
+        lines += ['| MSKU | 店铺 | 退款金额 | 退款量 | 退货量 |', '|---|---|---|---|---|']
+        lines += ['| '+' | '.join(cells)+' |' for _, cells in rows]
+        lines += ['', '说明：'+result.get('common_note', '')+'金额保留原币种标注，未折算汇率。']
+    else:
+        rank = {'within': 0, 'not_defined': 1, 'outside': 2, 'unknown': 3}
+        rows = []
+        for item in findings:
+            label, shop, missing, _ = parts(item)
+            unmapped = unmapped or missing
+            age, scope, window = item.get('age_days'), item.get('new_product_scope'), item.get('max_age_days')
+            if scope == 'within':
+                stage = '观察中（第 '+str(age)+' 天/窗口 '+str(window)+' 天）'
+            elif scope == 'outside':
+                stage = '超龄（第 '+str(age)+' 天/窗口 '+str(window)+' 天）'
+            elif scope == 'not_defined':
+                stage = '上市 '+str(age)+' 天（未定义窗口）'
+            else:
+                stage = '日期不明'
+            rows.append(((rank.get(scope, 4), -(age or 0)),
+                         [label, shop, data.cell(item.get('launch_date') or '未知'),
+                          data.cell(age if age is not None else '未知'), stage]))
+        rows.sort(key=lambda row: row[0])
+        lines += ['| MSKU | 店铺 | 上架日期 | 上市天数 | 阶段 |', '|---|---|---|---|---|']
+        lines += ['| '+' | '.join(cells)+' |' for _, cells in rows]
+        lines += ['', '说明：'+result.get('common_note', '')]
+        if any(item.get('note') != result.get('common_note') for item in findings):
+            lines.append('个别行的上架日期为未来值，未确认（见复核明细）。')
+    if unmapped:
+        lines.append('店铺名未知时显示编号：未在数据目录找到 shops.json 店铺名录，或该店铺不在名录内。')
+    return lines
+
+
 def render(result):
     title = '退款退货损失分析' if result['topic']=='returns' else '新品上市复盘'
     banner = '返回样本演示：不能作为当前经营结论。原因：'+data.cell(result.get('sample_reason')) if result['mode']=='sample' else '生产模式：仍需核验业务范围和覆盖。'
@@ -99,10 +192,16 @@ def render(result):
         # Demo-fingerprint watermark applies in both sample and production modes.
         lines += ['','演示/样本数据指纹（'+'、'.join(fingerprints)+'）：结果不作为经营结论']
     lines += ['',data.cell(result['scope_note']),'',
-              '仅基于已取得记录，不认证全量覆盖。目标达成、原因判断和行动建议须结合证据另行分析。','',
+              '仅基于已取得记录，不认证全量覆盖。目标达成、原因判断和行动建议须结合证据另行分析。']
+    # 两层结构：商家摘要表在前；原明细降级为机器证据，供 AI 复核与追溯。
+    lines += [''] + merchant_summary(result)
+    lines += ['','## 复核明细（机器证据）','',
+              '通用说明：'+result.get('common_note', '')+'（原逐行 note 收拢至此一次性说明；下表保留行级原始字段与来源，与通用说明不同的行仍保留各自 note。）','',
               '| 数据集 | 商品 | 观察结果 |','|---|---|---|']
     for item in result['findings']:
-        detail={k:v for k,v in item.items() if k not in ('dataset','product')}
+        detail={k:v for k,v in item.items() if k not in ('dataset','product','note')}
+        if item.get('note') != result.get('common_note'):
+            detail['note']=item['note']
         lines.append('| '+data.cell(item['dataset'])+' | '+data.cell(item['product'])+' | '+data.cell(detail)+' |')
     return '\n'.join(lines)+'\n\n'+data.render(result)
 

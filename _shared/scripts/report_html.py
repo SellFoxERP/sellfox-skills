@@ -51,6 +51,43 @@ footer { max-width: 980px; margin: 10px auto 0; color: #8a919c; font-size: 12px;
 """.strip()
 
 
+def _mermaid_chart_title(buf: List[str]) -> str:
+    for line in buf:
+        m = re.match(r'^\s*title\s+"?(.+?)"?\s*$', line)
+        if m:
+            return m.group(1)
+    return "趋势"
+
+
+def _mermaid_table(buf: List[str]) -> str:
+    """xychart-beta → 紧凑数据表（日期 | 值）；解析不出序列则返回空串退回代码块。"""
+    xs: List[str] = []
+    series: List[tuple] = []
+    for line in buf:
+        m = re.match(r"^\s*x-axis\s*\[(.+)\]\s*$", line)
+        if m:
+            xs = [x.strip().strip('"') for x in m.group(1).split(",") if x.strip()]
+            continue
+        m = re.match(r'^\s*"?(.+?)"?\s*:\s*\[(.+)\]\s*$', line)
+        if m and not line.strip().startswith("y-axis"):
+            vals = [v.strip() for v in m.group(2).split(",") if v.strip()]
+            series.append((m.group(1).strip(), vals))
+    if not xs or not series:
+        return ""
+    title = _mermaid_chart_title(buf)
+    head = "<table><thead><tr><th>" + html.escape(title, quote=False) + "</th>" \
+           + "".join(f"<th>{html.escape(name, quote=False)}</th>" for name, _ in series) \
+           + "</tr></thead><tbody>"
+    rows = []
+    for idx, x in enumerate(xs):
+        cells = "".join(
+            f"<td>{html.escape(v, quote=False) if v else '—'}</td>"
+            for _, vals in series for v in [vals[idx] if idx < len(vals) else ""]
+        )
+        rows.append(f"<tr><td>{html.escape(x, quote=False)}</td>{cells}</tr>")
+    return head + "".join(rows) + "</tbody></table>"
+
+
 def _inline(text: str) -> str:
     """行内元素：先整体转义，再套行内码/加粗/链接。"""
     t = html.escape(text, quote=False)
@@ -83,12 +120,18 @@ def markdown_to_html(md: str) -> str:
         if not s:
             i += 1
             continue
-        if s.startswith("```"):                       # 围栏代码
+        if s.startswith("```"):                       # 围栏代码（mermaid 转简表，其余保持代码块）
+            lang = s.strip("`").strip().lower()
             buf: List[str] = []
             i += 1
             while i < n and not lines[i].strip().startswith("```"):
                 buf.append(lines[i]); i += 1
             i += 1
+            if lang == "mermaid":
+                table = _mermaid_table(buf)
+                if table:
+                    out.append(table)
+                    continue
             out.append("<pre><code>" + html.escape("\n".join(buf), quote=False) + "</code></pre>")
             continue
         m = re.match(r"^(#{1,6})\s+(.*)$", s)          # 标题

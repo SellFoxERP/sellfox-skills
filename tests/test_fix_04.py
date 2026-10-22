@@ -261,7 +261,9 @@ class MultiCurrencyRenderTest(RawDirMixin, unittest.TestCase):
         self.assertIn("| USD | 5,120.80 |", self.md)
 
     def test_ranking_has_currency_column_and_disclosure(self):
-        self.assertIn("| MSKU | ASIN | 标题 | 币种 |", self.md)
+        # 标题列全缺时整列隐藏（商家视角清理空「不适用」列）
+        self.assertIn("| MSKU | ASIN | 币种 |", self.md)
+        self.assertNotIn("| 标题 |", self.md)
         self.assertIn("⚠️ 榜单跨币种未折算", self.md)
         self.assertIn("各行金额为原币种", self.md)
         eur = [ln for ln in self.md.splitlines() if ln.startswith("| MSKU-T4-9002 ")][0]

@@ -457,6 +457,73 @@ class AccumulatorGateLookbackTest(unittest.TestCase):
             self.assertEqual(self._gate(log).check([item]), [])
 
 
+class MerchantCopyTest(unittest.TestCase):
+    """[2026-10-22 商家视角] 空提案直说 + 绩效措辞/规则名中文（工程词不出现在成品报告）。"""
+
+    @staticmethod
+    def _no_perf_report():
+        from approval import Proposal
+        data = ad_fetch.AdData(shop_id="AD-10001",
+                               campaigns=[{"campaignId": "C1", "name": "演示活动", "state": "paused", "budget": 10}])
+        findings = diagnose.diagnose(data, THRESHOLDS, OPT_CFG)
+        proposal = Proposal(skill="ad-optimizer", title="广告优化提案 2026-10-05~2026-10-11",
+                            items=[], risk_level="L2")
+        return optimize.render_report(data, findings, proposal, optimize._sources_markdown(),
+                                      start_date="2026-10-05", end_date="2026-10-11")
+
+    def test_empty_proposal_says_no_changes_upfront(self):
+        md = self._no_perf_report()
+        self.assertIn("本次不产生变更提案——绩效数据缺失，无法判断投放好坏", md)
+        self.assertIn("下一步：先解决绩效文件获取（见诊断明细 P2 项），再重跑", md)
+
+    def test_empty_proposal_omits_empty_table_and_rollback_keeps_confirmation(self):
+        md = self._no_perf_report()
+        self.assertNotIn("## 变更前后对比", md)
+        self.assertNotIn("## 回滚方案", md)
+        self.assertIn("## 确认方式", md)
+        self.assertIn("批准 1,3,5", md)
+        self.assertIn("变更条数：0", md)
+
+    def test_perf_none_wording_translated(self):
+        md = self._no_perf_report()
+        self.assertIn("绩效数据：缺失", md)
+        self.assertNotIn("绩效来源", md)
+        self.assertNotIn("scope=none", md)
+
+    def test_insufficient_data_rule_shown_in_chinese(self):
+        md = self._no_perf_report()
+        self.assertIn("| P2 | 数据不足 |", md)
+        self.assertNotIn("insufficient_data", md)
+
+    def test_perf_present_wording_translated(self):
+        from approval import Proposal
+        data = ad_fetch.AdData(shop_id="SHOP-T2", campaigns=[{"campaignId": "C1"}],
+                               perf_campaign=[{"campaignId": "C1", "cost": "1", "orders": "1"}],
+                               perf_source="download_task", perf_scope="campaign")
+        findings = diagnose.diagnose(data, THRESHOLDS, OPT_CFG)
+        md = optimize.render_report(data, findings, Proposal(skill="ad-optimizer", title="t", items=[]),
+                                    optimize._sources_markdown(),
+                                    start_date="2026-10-05", end_date="2026-10-11")
+        self.assertIn("绩效数据：下载任务报表（活动级）", md)
+        self.assertNotIn("绩效来源", md)
+        # 有绩效但 0 条提案：直说未触发规则，不渲染空表
+        self.assertIn("本次不产生变更提案——已取到的绩效未触发自动优化规则", md)
+        self.assertNotIn("## 变更前后对比", md)
+
+    def test_nonempty_proposal_keeps_full_table(self):
+        from approval import Proposal, ChangeItem
+        data = ad_fetch.AdData(shop_id="SHOP-T3", campaigns=[{"campaignId": "C1"}],
+                               perf_source="download_task", perf_scope="campaign")
+        proposal = Proposal(skill="ad-optimizer", title="t", items=[
+            ChangeItem(tool="edit_sp_campaign", target_type="campaign", target_id="C1",
+                       field="budget", before=10, after=13, reason="r")])
+        md = optimize.render_report(data, [], proposal, optimize._sources_markdown(),
+                                    start_date="2026-10-05", end_date="2026-10-11")
+        self.assertIn("## 变更前后对比", md)
+        self.assertIn("## 回滚方案", md)
+        self.assertNotIn("本次不产生变更提案", md)
+
+
 class SelftestRunTest(unittest.TestCase):
 
     def test_selftest_green_with_upgraded_assertions(self):

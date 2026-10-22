@@ -149,9 +149,12 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
     L.append(row("毛利", "gross_profit"))
     def _rate(v):
         return NA if v is None else f"{v*100:.1f}%"
+    def _pp(c, p):
+        # 率的环比用百分点（23.0% vs 21.5% → +1.5pp），不用相对百分比（+7.0% 必被误读）
+        return NA if (c is None or p is None) else f"{(c - p) * 100:+.1f}pp"
     L.append(f"| 毛利率 | {cur_cell(_rate(cur.get('gross_profit_rate')))} | "
              f"{_rate(agg['prev'].get('gross_profit_rate'))} | "
-             f"{_pct(d['prev'].get('gross_profit_rate_pct'))} | "
+             f"{_pp(cur.get('gross_profit_rate'), agg['prev'].get('gross_profit_rate'))} | "
              f"{_rate(agg['prev_month_same_period'].get('gross_profit_rate'))} | "
              f"{_rate(agg['yoy'].get('gross_profit_rate'))} |")
     L.append(row("广告花费", "ad_cost", delta_key="ad_cost_rate"))
@@ -159,7 +162,7 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
         return NA if v is None else f"{v:.1f}%"
     L.append(f"| 广告成本占比 | {cur_cell(_pctcell(cur.get('ad_cost_rate')))} | "
              f"{_pctcell(agg['prev'].get('ad_cost_rate'))} | "
-             f"{_pct(d['prev'].get('ad_cost_rate_pct'))} | "
+             f"{_pp(cur.get('ad_cost_rate'), agg['prev'].get('ad_cost_rate'))} | "
              f"{_pctcell(agg['prev_month_same_period'].get('ad_cost_rate'))} | "
              f"{_pctcell(agg['yoy'].get('ad_cost_rate'))} |")
     # 退款率是字段小数原值（0.031），须换算成百分比并带单位（3.1%），不能裸显 0.03
@@ -222,13 +225,18 @@ def render(computed: Dict[str, Any], include_mermaid: bool = True) -> str:
                 L.append("> ⚠️ 标识列（MSKU/ASIN/标题）字段名待核实："
                          "get_profit_report_by_msku 的标识字段名未在 01/06 中确认，"
                          "取不到的行标「需人工核查」。")
-            L.append("| MSKU | ASIN | 标题 | 币种 | GMV | 毛利 | 毛利率 | 广告花费 |")
-            L.append("|---|---|---|---|---:|---:|---:|---:|")
+            # 标题列全缺时整列隐藏（全「不适用」是噪音）；币种缺失显示 — 而非「未知」
+            has_title = any(r.get("title") for r in rows)
+            head = "| MSKU | ASIN |" + (" 标题 |" if has_title else "") + " 币种 | GMV | 毛利 | 毛利率 | 广告花费 |"
+            sep = "|---|---|" + ("---|" if has_title else "") + "---|---:|---:|---:|---:|"
+            L.append(head)
+            L.append(sep)
             for r in rows:
                 gpr = r.get("gross_profit_rate")
                 gpr_s = NA if gpr is None else f"{gpr*100:.1f}%"
-                L.append(f"| {r.get('msku') or ident_na} | {r.get('asin') or ident_na} | "
-                         f"{(r.get('title') or ident_na)} | {r.get('currency') or '未知'} | "
+                title_cell = (f" {(r.get('title') or ident_na)} |" if has_title else "")
+                L.append(f"| {r.get('msku') or ident_na} | {r.get('asin') or ident_na} |"
+                         f"{title_cell} {r.get('currency') or '—'} | "
                          f"{_n(r.get('gmv'))} | {_n(r.get('gross_profit'))} | "
                          f"{gpr_s} | {_n(r.get('ad_cost'))} |")
         L.append("")

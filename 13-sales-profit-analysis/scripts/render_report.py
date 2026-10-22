@@ -31,7 +31,7 @@ def _n(v: Any, pct: bool = False) -> str:
     except (TypeError, ValueError):
         return str(v)
     if pct:
-        return f"{v * 100:.1f}%" if abs(v) <= 1 else f"{v:.1f}%"
+        return f"{v:.1%}"          # 比率一律 ×100（0.153 → 15.3%），杜绝 >1 时漏乘的百倍错误
     return f"{v:,.2f}"
 
 
@@ -106,13 +106,14 @@ def render(a: Dict[str, Any]) -> str:
 
     # ③ 结构：两期桥接 Δ 表（只用组合字段 = 同层不双计）+ 残差；快照只报本期占比
     if snapshot:
-        bt = cur.get("bridge_total")
         sign_note = ("（费用项已按主符号归一：利好为正）" if a.get("bridge_sign_note") else "")
         lines.append(f"③ 结构（本期桥接{sign_note}，单窗口快照）：")
-        lines.append("| 项目 | 本期 | 占比 |")
+        sale = cur.get("sale") or 0.0
+        lines.append("| 项目 | 本期 | 占销售额 |")
         lines.append("|---|---|---|")
         for f, v in cur["bridge"].items():
-            share = (v / bt) if (v is not None and bt) else None
+            # 占比口径=占销售额（费用行取绝对值占比；收入恒 100%）——桥接净额做基数无业务含义
+            share = (abs(v) / sale) if (v is not None and sale) else None
             lines.append(f"| {f} | {_n(v)} | {_n(share, pct=True)} |")
         if cur.get("residual") is not None:
             lines.append(f"\n残差（毛利 − 桥接合计）：本期 {cur['residual']:+,.2f}"
@@ -140,13 +141,22 @@ def render(a: Dict[str, Any]) -> str:
             # 缺期（rows=0）毛利不渲染空求和的 0.00，与毛利率列一致标无数据（G2）
             return "无数据（非 0）" if not p.get("rows") else _n(p.get("gp"))
 
-        lines.append("③b 按店铺（毛利与整体毛利率【自算】，缺期=无数据非 0）：")
-        lines.append("| 店铺 | 本期毛利 | 基期毛利 | 本期毛利率 | 基期毛利率 |")
-        lines.append("|---|---|---|---|---|")
-        for sid, per in sorted(a["by_shop"].items()):
-            c, b = per.get("current", {}), per.get("base", {})
-            lines.append(f"| {sid} | {_gp_cell(c)} | {_gp_cell(b)} |"
-                         f" {_n(c.get('margin'), pct=True)} | {_n(b.get('margin'), pct=True)} |")
+        # 快照（无基期）不渲染基期列——整列「无数据」没有信息量
+        if snapshot:
+            lines.append("③b 按店铺（毛利与整体毛利率【自算】）：")
+            lines.append("| 店铺 | 本期毛利 | 本期毛利率 |")
+            lines.append("|---|---|---|")
+            for sid, per in sorted(a["by_shop"].items()):
+                c = per.get("current", {})
+                lines.append(f"| {sid} | {_gp_cell(c)} | {_n(c.get('margin'), pct=True)} |")
+        else:
+            lines.append("③b 按店铺（毛利与整体毛利率【自算】，缺期=无数据非 0）：")
+            lines.append("| 店铺 | 本期毛利 | 基期毛利 | 本期毛利率 | 基期毛利率 |")
+            lines.append("|---|---|---|---|---|")
+            for sid, per in sorted(a["by_shop"].items()):
+                c, b = per.get("current", {}), per.get("base", {})
+                lines.append(f"| {sid} | {_gp_cell(c)} | {_gp_cell(b)} |"
+                             f" {_n(c.get('margin'), pct=True)} | {_n(b.get('margin'), pct=True)} |")
         lines.append("")
 
     # ④ 榜
