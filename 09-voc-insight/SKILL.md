@@ -19,8 +19,8 @@ description: 评论 VOC 归因（赛狐/SellFox online 评分快照 + 可插拔�
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”仅指赛狐取数后的离线计算；审批通知模块会联网。
 默认输出本地报告（HTML）。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -84,7 +84,7 @@ description: 评论 VOC 归因（赛狐/SellFox online 评分快照 + 可插拔�
 
 ### 阶段 0：前置校验
 
-- **客户端 MCP 就绪**：会话内可调 `mcp__Sellfox-MCP__{help,search,action}`
+- **客户端 MCP 就绪**：会话内可调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
   （Key 只在客户端 MCP 配置里，**脚本零 HTTP、不需要 `SELLFOX_MCP_KEY`**）。
 - **演示环境**：命中指纹（`MOCK-` / `demo.example.com` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」）
   → 报告顶部加水印。
@@ -95,7 +95,7 @@ description: 评论 VOC 归因（赛狐/SellFox online 评分快照 + 可插拔�
 ### 阶段 1：定位低分 ASIN（agent 落盘 + 脚本校验组装）
 
 **v3：取数面是 agent**——按 `references/workflow.md` 的**取数计划**调
-`mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/`：
+`mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封落盘 `out/raw/`：
 
 - `online_products.json` ← `get_online_product_page_list`（**唯一必选步骤**，
   评分快照 `rating`/`ratingCount`）。
@@ -106,7 +106,7 @@ coverage 截断）并组装 `signals.json`：筛出「快照评分 ≤ `snapshot
 `render_report` / `build_optimization_brief` 不感知此次改造。
 
 - 阈值单一真源：`config/voc.yaml → discovery`（`snapshot_rating_low`、`min_rating_count`）。**绝不硬编码**。
-- **调用纪律**（`_shared/SELLFOX_CLIENT.md`）：`action` 必带当次 `search` 返回的
+- **调用纪律**（`_shared/SELLFOX_CLIENT.md`）：`sf_execute` 必带当次 `sf_describe` 返回的
   `contract_version`；参数类型按当次 inputSchema；每步落盘并核对 status，
   **不在对话中复述行级数据**。
 - **无环比基线是固定口径**：快照只能筛「当前评分低」，不能说「评分掉了」；需要环比转宽表技能。
@@ -205,7 +205,7 @@ python3 scripts/render_report.py --out out/voc-report.md --print
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 脚本里自己发 HTTP 调赛狐 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具 `mcp__Sellfox-MCP__*`，脚本零网络 |
-| action 不带/带旧 `contract_version` | 被网关拒绝 | 每次执行前 `search` 拿当次契约 |
+| sf_execute 不带/带旧 `contract_version` | 被网关拒绝 | 每次执行前 `sf_describe` 拿当次契约 |
 | 参数类型沿用旧接口全字符串 | `INVALID_PARAMS` 拒绝 | 类型按当次 inputSchema（分页 string/integer 因工具而异） |
 | 把单条差评报成「模式」 | 误改产品/文案 | pattern/mention 两级门槛 |
 | 无原文仍输出主题分布 | **编造** | 降级为快照模式，显式声明 |

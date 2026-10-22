@@ -5,7 +5,7 @@
 ## 1. 发现候选报表
 
 1. 有当前账号已验证的报表选择则复用并核对本次读取范围；没有选择时自动发现，不让商家手填 report_id、不猜 ID、不先新建报表。
-2. 获取 `get_custom_report_index_page_list` 当前契约（已知 ID 缺契约先 search，detail=true）并查询。按契约分页读取自定义指标列表（线上形态约 20 指标页量级，按当次契约翻完），从各行 `data.rows[].reportList[]` 提取真实 `reportId` 与 `reportName`，按 ID 去重。
+2. 获取 `get_custom_report_index_page_list` 当前契约（已知 ID 缺契约先 sf_describe，detail=true）并查询。按契约分页读取自定义指标列表（线上形态约 20 指标页量级，按当次契约翻完），从各行 `data.rows[].reportList[]` 提取真实 `reportId` 与 `reportName`，按 ID 去重。
 3. `indexId` 是指标标识，`reportId` 才是报表标识，不可互换；关联清单不是完整目录——未关联自定义指标的报表可能不出现，不宣称「全部报表」或「没有报表」。部分页失败保留成功页候选及警告。
 4. 按用户指定名称、用途、范围筛选；同名多 ID 或多个合理候选时只让商家选报表名称，不取第一条。仅凭排名第一、仅一条关联或名字带"利润"不足以选定。
 
@@ -44,12 +44,12 @@ run_report.py 复用完整包中 sellfox-business/scripts/process_data.py（impo
 ## 错误处置
 
 - **RESULT_BUDGET_EXCEEDED（上游业务码 40019，体积超限）三步**：① retryable=true 时按建议缩小 page_size 重试一次（同一页重新请求）；② 仍超则减少请求字段（只选已发布/必要字段）再试一次；③ 再失败即停止，保留诊断（HTTP 状态、业务码、retryable、建议动作、trace_id），披露缺口，不做无界重试。retryable=false 不自动重试。failed 页不当「无数据/未配置」，全部 dataset 不可用输出诊断且退出码 2。
-- **CONTRACT_VERSION_MISMATCH**：重新 search 取当前契约（detail=true），按新契约重建参数后重试一次；仍失配则停止并披露，不套用旧契约。
+- **CONTRACT_VERSION_MISMATCH**：重新 sf_describe 取当前契约（detail=true），按新契约重建参数后重试一次；仍失配则停止并披露，不套用旧契约。
 - **failed/unknown 响应**：不进入计算、保留拒绝原因与 trace_id；不据此断言权限、限流或数据有误（上游根因未确认）。
 - **字段映射核对不通过**：拒绝该映射并在计划中披露，改由助手重取或人工核对，不猜字段名跑通。
 
 ## MCP 与数据约束
 
-使用客户端实际连接的 Sellfox-MCP help/search/action。未知工具先用完整业务问句 help；已知工具缺当前契约再 search（每次最多 5 个，detail=true），已有完整契约直接 action。help 的 limit 为 1–10，版本来自本次连接。店铺 ID 来自实际店铺列表；分页按当前契约继续。保留请求、response、trace_id、coverage 和 output_validation。金额按币种分组，不将省略值补零。本技能只读，不创建/修改报表与指标。
+使用客户端实际连接的 Sellfox-MCP sf_discover/sf_describe/sf_execute。未知工具先用完整业务问句 sf_discover；已知工具缺当前契约再 sf_describe（每次最多 5 个，detail=true），已有完整契约直接 sf_execute。sf_discover 的 limit 为 1–200（默认 5），版本来自本次连接。店铺 ID 来自实际店铺列表；分页按当前契约继续。保留请求、response、trace_id、coverage 和 output_validation。金额按币种分组，不将省略值补零。本技能只读，不创建/修改报表与指标。
 
 **子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。

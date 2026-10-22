@@ -3,7 +3,7 @@
 """周报 / 月报 —— 落盘校验与组装层（fetch_weekly_data.py，v3：零网络）。
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
-  * **取数面 = agent**：在会话里调客户端元工具 `mcp__Sellfox-MCP__{help,search,action}`，
+  * **取数面 = agent**：在会话里调客户端元工具 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
     按 `references/workflow.md` 的**取数计划**把每步**完整信封**
     （status/data/coverage/pagination/warnings）落盘到 `out/raw/<step>.json`
     （多窗口，文件名带窗口标签）。旧直连客户端 `sellfox_client.py` 已废弃，本模块不再 import。
@@ -131,7 +131,7 @@ def _load(raw_dir: Path, name: str) -> Tuple[Optional[RawEnvelope], str]:
 
 
 def _consume_envelope(
-    env: Optional[RawEnvelope], err: str, tool: str, label: str, list_key: str
+    env: Optional[RawEnvelope], err: str, tool: str, label: str, list_key: Optional[str] = None
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """按 v3 状态语义消费一个信封：missing/corrupt → degraded/error；failed → error；
     空数据 → no_data；否则取 list_key 行，状态 ok。返回 (source, rows)。"""
@@ -147,9 +147,13 @@ def _consume_envelope(
         return _make_source("no_data", tool, "无数据", notes), []
     rows = env.rows(list_key)
     if not rows:
+        field_note = (
+            f"{tool} 的列表字段是 {list_key}" if list_key
+            else f"{tool} 的列表字段未命中（rows/reportList/itemList 自动识别）"
+        )
         return _make_source(
             "no_data", tool,
-            f"无数据（data 非空但 {list_key} 为空——核对列表字段名：{tool} 的列表字段是 {list_key}）",
+            f"无数据（data 非空但列表为空——核对列表字段名：{field_note}）",
             notes,
         ), []
     return _make_source("ok", tool, truncation=notes), rows
@@ -162,9 +166,9 @@ def _consume_envelope(
 def assemble_profit_window(
     raw_dir: Path, step: str, label: str
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Optional[RawEnvelope]]:
-    """校验并组装一个店铺级利润窗口（reportList）。"""
+    """校验并组装一个店铺级利润窗口（标准化分页，列表键自动识别）。"""
     env, err = _load(raw_dir, step)
-    source, rows = _consume_envelope(env, err, TOOL_PROFIT_SHOP, label, "reportList")
+    source, rows = _consume_envelope(env, err, TOOL_PROFIT_SHOP, label)
     return source, rows, env
 
 
@@ -177,7 +181,7 @@ def assemble_rankings(
     Bottom（毛利升序）可能未覆盖真实最差项 —— 截断披露会随 source 带出。
     """
     env, err = _load(raw_dir, "profit_msku")
-    source, rows = _consume_envelope(env, err, TOOL_PROFIT_MSU, "Top/Bottom 榜单", "reportList")
+    source, rows = _consume_envelope(env, err, TOOL_PROFIT_MSU, "Top/Bottom 榜单")
     # 覆盖量化：榜单「仅覆盖 N 行」必须带上服务端全量总数（无则标「总数未知」），
     # 否则 Top K 不可达（全量 < K）时用户无从判断头部集中度结论的覆盖上限。
     if env is not None:
@@ -264,7 +268,7 @@ def fetch_all(
         raise SystemExit(
             f"❌ 落盘目录为空或不存在：{raw_dir}。\n"
             "   v3 取数面由 agent 完成：请按 references/workflow.md 的「取数计划」\n"
-            "   调用 mcp__Sellfox-MCP__{search,action} 并把每步信封落盘到 out/raw/，再重跑本脚本。"
+            "   调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并把每步信封落盘到 out/raw/，再重跑本脚本。"
         )
 
     sources: Dict[str, Any] = {}

@@ -15,8 +15,8 @@
 | `get_fba_shipment_page_list` | 在途货件 | `data.rows` | `shop_ids`(数组)、`create_time_start/end` 或 `update_time_start/end`（至少一组完整区间，≤360 天）、`status`(数组) |
 | `get_awd_inventory_page_list` | AWD 库存 | `data.rows` | `page_no`(必填)、`page_size`(必填)、`shop_id` |
 
-> 分页类列表字段统一是 `data.rows`。利润报表才是 `data.reportList`，广告类是 `data.itemList + nextToken` ——
-> 本技能不涉及后两者，但若扩展时务必按工具区分，不要统一按 `rows` 解析。
+> 网关分页默认标准化，列表根字段统一是 `data.rows`（raw 模式才出现 `reportList`/`itemList` 等原始名）——
+> 读取建议用共享库 `rows()` 自动识别，不硬编码历史键名。
 >
 > ⚠️ `get_fba_shipment_page_list` 的 `shop_ids` 契约为 **integer 数组**（`items: integer`），与店铺清单
 > （`get_shop_page_list`）返回的字符串 ID（如 `"AD-10001"`）**不兼容**：按文档把店铺清单 ID 直接传入会被

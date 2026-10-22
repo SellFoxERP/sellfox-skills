@@ -1,7 +1,7 @@
 # 库存取数与计算工作流（workflow.md，v3：agent 取数 + 脚本计算）
 
 > SKILL.md 执行本技能时读本文件。
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `fetch_inventory.py`
 > （校验+组装）→ `replenishment.py` → `render.py`，全部零网络，报告仅本地 HTML（不外发）。
 > 调用纪律（契约版本 / 参数类型 / 错误语义 / 并发 / 落盘约定）见 `_shared/SELLFOX_CLIENT.md`；
@@ -40,7 +40,7 @@
 
 ## 二、取数计划（agent 执行）
 
-按顺序取数；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。
+按顺序取数；已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`。
 参数类型以当次契约为准（⚠️ 标注处为实测差异）。店铺批次**可并行发起**（v3 新网关同
 session 并发安全，实测 10 并发 10/10 成功），但每步都要落盘并核对 status。
 
@@ -55,11 +55,11 @@ session 并发安全，实测 10 并发 10/10 成功），但每步都要落盘�
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据** —— 数据只落盘，字段裁剪与归一化交给 `fetch_inventory.py`；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；翻页前先看
   `totalSize` 是否值得继续，触达 max_rows 必须保留 coverage 让脚本披露；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，组装层标「无数据」。
 

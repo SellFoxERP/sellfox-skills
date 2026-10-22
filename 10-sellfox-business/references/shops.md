@@ -5,7 +5,7 @@
 ## 发现与执行
 
 - 问句示例：“查询我有权限的店铺列表，保留店铺 ID、名称、region 和 marketplaceId。”
-- 已知入口：`get_shop_page_list`。缺当前契约时 search，再按契约分页。
+- 已知入口：`get_shop_page_list`。缺当前契约时 sf_describe，再按契约分页。
 - 查询行政区划可发现 `get_province_list`；它不是店铺或仓库清单，不能用于推断业务权限。
 - 用返回字段匹配用户指定的店铺。相似名称、多站点或多个平台时给出候选，让用户确定范围；“全部店铺”仅指当前账号权限内已覆盖的店铺。
 - 保留店铺 ID 与返回的 region/marketplaceId，复用于本次任务，避免每个域重复发现。

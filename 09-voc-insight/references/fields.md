@@ -36,8 +36,8 @@
 | 类型 | 列表字段 | 本技能涉及 |
 |---|---|---|
 | 分页类 | `data.rows` | `get_online_product_page_list`（本技能主源） |
-| 利润报表 | `data.reportList` | （本技能不用） |
-| 广告类（游标） | `data.itemList` + `data.nextToken` | （本技能不用） |
+| 利润报表 | `data.rows`（标准化分页） | （本技能不用） |
+| 广告类（游标） | `data.rows`（标准化分页）+ 游标 | （本技能不用） |
 
 本技能工具用 `rows`；仍要求显式声明 `list_key="rows"`，避免未来换工具时踩坑。
 

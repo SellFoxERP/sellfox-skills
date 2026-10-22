@@ -117,7 +117,7 @@ MCP 的 `isError` 不可靠 —— 参数错误时返回 `false`，意味着**�
 API：`approval.verify_read_back(client, read_tool, read_args, id_field=..., id_value=..., field_name=..., expected=...)`
 → 返回 `(ok, actual)`，并用宽松比较容忍 `"100"`/`100` 差异。
 
-> ⚠️ 广告活动列表用游标分页（`itemList`），回读时注意 `list_key` 与分页。
+> ⚠️ 广告活动列表用游标分页（标准化分页根字段 `rows`），回读时注意 `list_key` 与分页。
 
 ### ② 累计闸（防连续调用绕过单次限额）
 

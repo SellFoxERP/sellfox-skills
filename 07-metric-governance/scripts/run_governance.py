@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """指标治理 CLI 入口（run_governance.py）—— 技能 07-metric-governance（v3：零网络）。
 
-v3 分工：取数面 = agent 调 `mcp__Sellfox-MCP__{help,search,action}` 按取数计划落盘
+v3 分工：取数面 = agent 调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}` 按取数计划落盘
 `out/raw/`；本脚本 = 计算面（落盘检查 → 比对 → dry-run 提案），**零网络**。
 **脚本永不直接调写工具**：add/update_custom_report_index 由 agent 按批准逐项执行。
 
@@ -326,7 +326,7 @@ def main(argv=None) -> int:
     prop_json = gov.save_json(out_dir / f"proposal_{ts}.json", gov.proposal_to_dict(proposal))
     print("\n" + proposal_md)
     print(f"\n提案已写出：{prop_html} / {prop_json}")
-    print("注：提案项 contract_version 为 null 占位——执行前由 agent 重取写契约（search detail=true）。")
+    print("注：提案项 contract_version 为 null 占位——执行前由 agent 重取写契约（sf_describe detail=true）。")
 
     if not args.execute:
         print('\n（dry-run 模式，未写入任何指标。确认后运行 --execute --approve "批准 1,3" 生成执行清单，'

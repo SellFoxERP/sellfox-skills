@@ -11,8 +11,8 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”仅指赛狐取数后的离线计算；本技能不接入飞书等外部推送（v1.7.0 起移除），
 审批为会话内人工确认。默认输出本地报告。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -28,7 +28,7 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 
 - **默认 dry-run**：任何写操作先出「变更前后对比表」，只输出、不碰系统。
 - **脚本永不直接写**：取数与写操作执行都是 agent 的职责（按取数计划落盘 / 按执行清单
-  逐项调 `mcp__Sellfox-MCP__action`），脚本只提供提案构造与记录/校验 helper——
+  逐项调 `mcp__Sellfox-MCP__sf_execute`），脚本只提供提案构造与记录/校验 helper——
   双路径漂移是误操作的温床。
 - **单次 ≤20 条、幅度 ≤±30%**：接口允许 100 条，但一次改 100 个人工根本审不过来。
   限额的本质是**让「人工确认」这件事真的有效**，而不是形式。
@@ -44,7 +44,7 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 本技能自身的参考资料（按需读，不必一次全读）：
 
 - `references/workflow.md` — **跑完整流程前读**：取数计划（agent 落盘）、计算面流水线、
-  **写操作 agent 执行协议**（审批 → 重取契约 → 逐项 action → record → verify）、
+  **写操作 agent 执行协议**（审批 → 重取契约 → 逐项 sf_execute → record → verify）、
   累计闸、回滚、失败降级。
 - `references/diagnosis-rules.md` — **要调整/核对诊断规则时读**：规则表、字段来源、阈值键、诚实边界。
 - `references/field-dictionary.md` — **构造写工具参数或核对字段是否存在时读**：读写接口字段与分页形态。
@@ -52,7 +52,7 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 
 共享底座（**必读**，本技能能力的一半在它们身上）：
 
-- `_shared/SELLFOX_CLIENT.md` — **当前 MCP 调用约定**（agent 调 `mcp__Sellfox-MCP__{help,search,action}`
+- `_shared/SELLFOX_CLIENT.md` — **当前 MCP 调用约定**（agent 调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
   的纪律：contract_version、参数类型、错误语义、并发、落盘约定）。
 - `_shared/APPROVAL.md` — 人机审核统一规范（风险分级、六条强制约束、四个安全机制）。
 - `_shared/config/thresholds.yaml` — 阈值与审批闸门（**技能不硬编码任何阈值**）。
@@ -83,7 +83,7 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 | 数据源 | `config/optimizer.yaml → data_source.perf_primary` | `download_task`（唯一主源） |
 | 输出 | 本地 HTML 报告 + proposal.json | 是否执行、操作人标识 |
 
-**前置校验「客户端 MCP 就绪」**：会话内能调 `mcp__Sellfox-MCP__{help,search,action}`
+**前置校验「客户端 MCP 就绪」**：会话内能调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
 （Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）。
 演示环境指纹（`MOCK-` / `demo.example.com` / `SHOP-DEMO-` / `B0DEMO` / 店铺名含「演示」）
 **默认阻断写操作与对外写出**，并在报告顶部加水印。
@@ -91,14 +91,14 @@ description: 诊断并优化亚马逊 SP/SB 广告（赛狐/SellFox ERP 数据�
 ### Step 2：取数（agent 按取数计划落盘）
 
 **v3：取数面是 agent**——按 `references/workflow.md` 的**取数计划**调
-`mcp__Sellfox-MCP__{search,action}`，把每步**完整信封**落盘 `out/raw/`：
+`mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步**完整信封**落盘 `out/raw/`：
 
 | 落盘文件 | 工具 | 列表字段 |
 |---|---|---|
-| `campaigns_<shopId>.json`（必需；游标多页续 `.2.json`…） | `get_sp_campaign_list` | `itemList` + `nextToken`（60s 过期） |
-| `keywords_<shopId>.json` | `get_sp_keyword_list` | `itemList` |
-| `ad_products_<shopId>.json` | `get_sp_ad_product_list` | `itemList` |
-| `targetings_<shopId>.json` | `get_sp_product_targeting_list` | `itemList` |
+| `campaigns_<shopId>.json`（必需；游标多页续 `.2.json`…） | `get_sp_campaign_list` | `rows`（标准化分页）+ 游标（60s 过期） |
+| `keywords_<shopId>.json` | `get_sp_keyword_list` | `rows`（标准化分页） |
+| `ad_products_<shopId>.json` | `get_sp_ad_product_list` | `rows`（标准化分页） |
+| `targetings_<shopId>.json` | `get_sp_product_targeting_list` | `rows`（标准化分页） |
 | `download_tasks.json` | `get_ad_download_task_page_list`（**分页类**） | `rows` |
 | `perf_campaign_<end>.xlsx` / `perf_target_<end>.xlsx` | agent 下载 `downloadUrl` 后放入（解析归脚本） | — |
 
@@ -122,7 +122,7 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 阈值全部读 `_shared/config/thresholds.yaml` 的 `ad` 段；判断逻辑在 `scripts/diagnose.py`（纯函数）。
 规则与字段来源见 `references/diagnosis-rules.md`。**输出 dry-run 提案 + 报告**，
 写到 `out/ad_proposal_<start>_<end>.{html,json}`（`.html` 主报告；`--keep-md` 才附同名 `.md`）；提案 JSON 每项含 `tool_id` 与
-`contract_version: null` 占位（执行前须重 search 取当次版本）。
+`contract_version: null` 占位（执行前须重 sf_describe 取当次版本）。
 
 ### Step 4：审批（会话内人工确认）
 
@@ -130,14 +130,14 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 「批准 1,3,5」/「批准全部」/「驳回」。**`unclear` 必须回到人工再问，不得默认执行。**
 演示环境默认阻断写操作。
 
-### Step 5：执行（写，agent 按协议逐项调 action）
+### Step 5：执行（写，agent 按协议逐项调 sf_execute）
 
 ```
 # ① 脚本只生成「执行清单」（不调用任何写工具）：
 python scripts/optimize.py execute --proposal out/ad_proposal_2026-10-08_2026-10-14.json \
     --approve "批准 1,3,5" --operator 张三（操作人标识）
 #    → 审批解析 → 累计闸 → out/ad_execute_<start>_<end>.{html,json}（.html 主报告）
-# ② agent 逐项：重取写契约（search 取当次 contract_version）→ action → 按 read-back 计划回读
+# ② agent 逐项：重取写契约（sf_describe 取当次 contract_version）→ sf_execute → 按 read-back 计划回读
 # ③ 每项执行完落日志：
 python scripts/optimize.py record --change change.json     # → logs/ad_changes.jsonl
 # ④ 全部执行完校验：
@@ -162,12 +162,12 @@ python scripts/optimize.py verify --proposal out/ad_proposal_….json --actual <
 8. 执行前过**累计闸**（读变更日志去重、限次数、限净变化、限单日预算增量）；
 9. 对外输出前过 **PII 脱敏**（`buyerEmail`/`buyerName`，`sellfox_offline.mask_pii*`）；
 10. 演示环境默认**阻断写入**；
-11. **脚本零 HTTP、零 MCP**：取数与写操作只走 agent 调 `mcp__Sellfox-MCP__{help,search,action}`，
+11. **脚本零 HTTP、零 MCP**：取数与写操作只走 agent 调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
     禁止 import 旧 `sellfox_client.py`；
-12. **写操作由 agent 按 APPROVAL.md 逐项调 action**：脚本只出执行清单（tool_id × 参数模板 ×
+12. **写操作由 agent 按 APPROVAL.md 逐项调 sf_execute**：脚本只出执行清单（tool_id × 参数模板 ×
     before 快照），不发请求；partial/failed 不重放；
 13. **写契约执行前重取**：提案里的 `contract_version: null` 是占位，每项执行前必须重新
-    `search` 取当次版本；失配 → 重取一次重建参数重试一次，仍失败记 failed。
+    `sf_describe` 取当次版本；失配 → 重取一次重建参数重试一次，仍失败记 failed。
 
 > 排序也是原则：先跑 **2~4 周纯 dry-run**，团队认可后再开启执行，且从最安全的动作
 > （改预算、加否定词）开始。配置里的 `safety.*` 开关就是为此设的。

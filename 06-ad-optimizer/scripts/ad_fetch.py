@@ -3,12 +3,12 @@
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md` 与 `references/workflow.md`）：
 
-* **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{help,search,action}`，
+* **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
   按「取数计划」把每步**完整信封**落盘到 `out/raw/`：
 
   | 落盘文件 | 工具 | 列表字段 |
   |---|---|---|
-  | `campaigns_<shopId>.json`（游标多页时 `.2.json`、`.3.json`…） | `get_sp_campaign_list` | `itemList` + `nextToken` |
+  | `campaigns_<shopId>.json`（游标多页时 `.2.json`、`.3.json`…） | `get_sp_campaign_list` | `rows`（标准化分页）+ 游标 |
   | `keywords_<shopId>.json`（同上） | `get_sp_keyword_list` | `itemList` |
   | `ad_products_<shopId>.json` | `get_sp_ad_product_list` | `itemList` |
   | `targetings_<shopId>.json` | `get_sp_product_targeting_list` | `itemList` |
@@ -401,7 +401,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     except AdFetchError as exc:
         print(f"❌ {exc}", file=sys.stderr)
         print("   v3 取数面由 agent 完成：请按 references/workflow.md 的「取数计划」"
-              "调用 mcp__Sellfox-MCP__{search,action} 并落盘到 out/raw/，再重跑。", file=sys.stderr)
+              "调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并落盘到 out/raw/，再重跑。", file=sys.stderr)
         return 2
     print(_readiness_summary(data))
     return 0

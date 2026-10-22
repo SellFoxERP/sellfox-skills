@@ -19,10 +19,10 @@
 
 | 字段 | 所属工具 | 列表字段 | 用途 |
 |---|---|---|---|
-| `campaignId` / `name` / `state` / `budget` / `targetingType` / `servingStatus` | `get_sp_campaign_list` | `itemList` | 活动结构、状态、预算 |
-| `keywordId` / `keywordText` / `bid` / `matchType` / `state` | `get_sp_keyword_list` | `itemList` | 关键词结构、竞价 |
-| `adId` / `asin` / `sku` / `state` | `get_sp_ad_product_list` | `itemList` | 广告产品结构 |
-| `targetId` / `bid` / `expression` / `resolvedExpression` | `get_sp_product_targeting_list` | `itemList` | 商品投放结构 |
+| `campaignId` / `name` / `state` / `budget` / `targetingType` / `servingStatus` | `get_sp_campaign_list` | `rows` | 活动结构、状态、预算 |
+| `keywordId` / `keywordText` / `bid` / `matchType` / `state` | `get_sp_keyword_list` | `rows` | 关键词结构、竞价 |
+| `adId` / `asin` / `sku` / `state` | `get_sp_ad_product_list` | `rows` | 广告产品结构 |
+| `targetId` / `bid` / `expression` / `resolvedExpression` | `get_sp_product_targeting_list` | `rows` | 商品投放结构 |
 | `cost` / `sales` / `orders` / `clicks` / `impressions` / `acos` / `roas` / `click_rate` | `create_ad_download_task`（`adCampaignReport` / `adTargetReport`）→ xlsx | — | 绩效；列名映射见 `config/optimizer.yaml` |
 
 > 绩效唯一主源是下载任务链（MSKU 级宽表**不再作为兜底**，v1.7.0 起移除自定义报表查询）。

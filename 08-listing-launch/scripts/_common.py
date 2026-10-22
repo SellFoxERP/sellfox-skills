@@ -5,7 +5,7 @@
    ``SELLFOX_SHARED_ROOT``），把它加入 ``sys.path`` —— **不写死相对路径**。
 2. 构造 ``ConfigLoader``（含本技能配置）。v3 起**脚本零网络**：不再构造任何
    MCP 客户端（旧 ``sellfox_client`` 已废弃）；取数面 = agent 调
-   ``mcp__Sellfox-MCP__{help,search,action}`` 并落盘，纪律见
+   ``mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`` 并落盘，纪律见
    ``_shared/SELLFOX_CLIENT.md`` v2；计算面共享组件见 ``_shared/scripts/sellfox_offline.py``。
 3. 提供统一的输出/警告收集结构，供各步骤拼装上架包。
 

@@ -15,7 +15,7 @@
 
 ## 一、读接口字段
 
-### `get_sp_campaign_list`（游标分页，`itemList` + `nextToken`）
+### `get_sp_campaign_list`（游标分页，标准化分页根字段 `rows`）
 
 请求：`shop_id`(必填) / `state` / `campaign_id` / `portfolio_id` / `page_size` / `next_token`
 
@@ -23,7 +23,7 @@
 `targetingType`（manual/auto）、`budget`、`servingStatus`、`offAmazonBudgetControlStrategy`、
 `campaignSite`、`strategy`、`adjustments`、`startDate`、`endDate`、`creationDate`、`lastUpdatedDate`。
 
-### `get_sp_keyword_list`（游标分页，`itemList` + `nextToken`）
+### `get_sp_keyword_list`（游标分页，标准化分页根字段 `rows`）
 
 请求：`shop_id`(必填) / `state` / `campaign_id` / `group_id` / `page_size` / `next_token`
 
@@ -106,9 +106,9 @@
 
 | 类型 | 列表字段 | 翻页 | 涉及工具 |
 |---|---|---|---|
-| 广告类（游标） | `data.itemList` + `data.nextToken` | `next_token` ← `nextToken` | `get_sp_*` / `get_sb_*` |
+| 广告类（游标） | `data.rows`（标准化分页）+ 游标 | `next_token` ← 游标 | `get_sp_*` / `get_sb_*` |
 | 分页类 | `data.rows` | `page_no` 递增 | `get_ad_download_task_page_list` |
-| 利润报表 | `data.reportList` | `page_no` | `get_profit_report_by_*`（本技能不涉及） |
+| 利润报表 | `data.rows`（标准化分页） | `page_no` | `get_profit_report_by_*`（本技能不涉及） |
 
 > 用 `data.rows` 解析广告列表会拿到空结果且不报错；历史测试常见 20 条/页（当前分页以契约为准），
 > 不能靠 `page_size` 控量，必须客户端 `max_rows` 截断并披露。游标超时时间 1 分钟。

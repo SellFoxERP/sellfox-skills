@@ -97,9 +97,9 @@ client.call("get_profit_report_by_shop", {
 | 数据源 | 字段数 | 定位 | 列表字段 |
 |---|---|---|---|
 | `get_custom_report_page_list` | **489** | 全指标宽表（库存/流量/广告/评论/成本/赔偿） | `data.rows` |
-| `get_profit_report_by_msku` | **171** | 财务深度（亚马逊费用逐项拆解） | `data.reportList` |
-| `get_profit_report_by_shop` | 店铺聚合 | 店铺级利润 | `data.reportList` |
-| `get_profit_report_by_order` | 74 | 订单级结算 | `data.reportList` |
+| `get_profit_report_by_msku` | **171** | 财务深度（亚马逊费用逐项拆解） | `data.rows`（标准化分页） |
+| `get_profit_report_by_shop` | 店铺聚合 | 店铺级利润 | `data.rows`（标准化分页） |
+| `get_profit_report_by_order` | 74 | 订单级结算 | `data.rows`（标准化分页） |
 | `get_online_product_page_list` | 79 + `inventoryManage`(41) | Listing 属性 + FBA 库存 | `data.rows` |
 
 > ⚠️ **两个报表字段不通用**（实测确认）：

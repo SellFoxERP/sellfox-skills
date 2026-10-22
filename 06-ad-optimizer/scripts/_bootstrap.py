@@ -7,9 +7,9 @@
                             ad_changes_path, output_path, raw_dir)
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
-  * **取数面 = agent**：在会话里调客户端配置的 ``mcp__Sellfox-MCP__{help,search,action}``，
+  * **取数面 = agent**：在会话里调客户端配置的 ``mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}``，
     按 `references/workflow.md` 的**取数计划**把每步信封落盘到 `out/raw/`；
-    **写操作也由 agent 按会话内人工确认流程逐项调 action**，脚本只提供提案构造与记录/校验 helper。
+    **写操作也由 agent 按会话内人工确认流程逐项调 sf_execute**，脚本只提供提案构造与记录/校验 helper。
   * **计算面 = 脚本**：只读写本地文件，零网络。旧 `_shared/scripts/sellfox_client.py`
     已废弃，**本技能任何脚本不得 import 它**；离线工具改用 `_shared/scripts/sellfox_offline.py`。
 

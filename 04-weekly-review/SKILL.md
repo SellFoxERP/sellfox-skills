@@ -18,8 +18,8 @@ description: 生成跨境电商经营周报与月报（赛狐/SellFox ERP 数据
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”仅指赛狐取数后的离线计算；审批通知模块会联网。
 默认输出本地报告（HTML）。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -69,7 +69,7 @@ description: 生成跨境电商经营周报与月报（赛狐/SellFox ERP 数据
 ### Step 0：前置校验（不可跳过）
 
 1. `python scripts/skill_paths.py` 能打印 `shared_root`（否则修 `config/paths.yaml`）。
-2. 客户端 MCP 就绪：会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（Key 只在客户端
+2. 客户端 MCP 就绪：会话内能调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`（Key 只在客户端
    MCP 配置里，脚本零 HTTP、不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，
    命中指纹时报告加水印。
 3. `out/raw/` 已有本周期窗口的取数落盘（v3 取数面由 agent 完成，见 Step 2）。
@@ -82,7 +82,7 @@ description: 生成跨境电商经营周报与月报（赛狐/SellFox ERP 数据
 ### Step 2：取数（agent 按取数计划落盘，脚本校验组装）
 
 **v3：取数面是 agent**——先 `python scripts/period.py --period week --anchor <日期>` 固定窗口，
-再按 `references/workflow.md` 的**取数计划**调 `mcp__Sellfox-MCP__{search,action}`，把每步
+再按 `references/workflow.md` 的**取数计划**调 `mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步
 完整信封落盘 `out/raw/`（多窗口文件名带窗口标签）：店铺利润×5 窗口
 （`profit_shop_current/prev/prev_month/prev_year/mtd.json`）、MSKU 榜单（`profit_msku.json`）、
 可选趋势（`trend.json`）。落盘后跑校验组装：
@@ -94,7 +94,7 @@ python scripts/fetch_weekly_data.py --period week --anchor 2026-10-12 \
 
 - 纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（contract_version）、参数类型按当次
   inputSchema、失配重取一次、不信 has_more 信 coverage、每步落盘不复述数据、多窗口可并行。
-- 列表字段名因工具而异：利润报表 `reportList`（解析错会拿到空结果且不报错）。
+- 列表字段名以当次契约为准：网关分页默认标准化为 `rows`（解析错会拿到空结果且不报错），共享库自动识别。
 - **截断必披露**（coverage.truncated），禁止静默截断；空数据标「无数据」，不写 0。
 
 ### Step 3：计算
@@ -116,17 +116,17 @@ python scripts/render_report.py --in computed.json --out weekly_report.md
 
 ## 不可跳过的硬约束
 
-1. **MCP 访问只走客户端元工具**：`mcp__Sellfox-MCP__{help,search,action}`；技能脚本
+1. **MCP 访问只走客户端元工具**：`mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`；技能脚本
    **零 HTTP、零网络**（旧直连客户端 `sellfox_client.py` 已废弃，不得 import），
    Key 只在客户端 MCP 配置里。
-2. **action 必带当次 search 返回的 `contract_version`**；失配（`CONTRACT_VERSION_MISMATCH`）
-   → 重 search 一次、按新 schema 重建参数、重试一次，不重放原请求。
+2. **sf_execute 必带当次 sf_describe 返回的 `contract_version`**；失配（`CONTRACT_VERSION_MISMATCH`）
+   → 重 sf_describe 一次、按新 schema 重建参数、重试一次，不重放原请求。
 3. **参数类型按当次 inputSchema**：利润报表（店铺/MSKU）分页 `page_no/page_size` 是
    **integer**，店铺分页是 string；日期利润报表 `yyyyMMdd`（超 6 个月窗口按契约改
    `yyyyMM`）；`profit_caliber_type` 显式传；未声明字段不传。
 4. **不信 `pagination.has_more`，信 `coverage` 与 `totalSize`**：截断（coverage.truncated）
    必披露覆盖范围，禁止静默截断。
-5. **列表字段名因工具而异**：利润报表 `reportList`。从契约 `pagination`
+5. **列表字段名以当次契约为准**：网关分页默认标准化为 `rows`。从契约 `pagination`
    元数据读取，用 `rows` 解析利润报表会拿到空结果**且不报错**。
 6. **每步取数立即落盘 `out/raw/`，不在对话中复述行级数据**（上下文是稀缺资源）；
    多窗口文件名带窗口标签，不得混写。
@@ -169,11 +169,11 @@ python scripts/render_report.py --in computed.json --out weekly_report.md
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 脚本里自己发 HTTP 调 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具，脚本零网络 |
-| action 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 search 拿当次契约 |
+| sf_execute 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 sf_describe 拿当次契约 |
 | 参数类型沿用旧接口全字符串 | 利润报表被 INVALID_PARAMS 拒绝 | 类型按当次 inputSchema（利润分页是 integer） |
 | 传未声明字段 | `additionalProperties` 拒绝 | 只传契约 properties 里的字段 |
 | 用 `page_size` 控制返回量 | 静默降级为 20 | 单次 ≤1 页 + max_rows + 截断披露 |
-| 用 `rows` 解析利润报表 | 空结果且不报错 | 用 `reportList`（契约 pagination.rows） |
+| 按历史字段名硬解列表 | 空结果且不报错 | 列表键用共享库自动识别；网关默认标准化分页根字段为 `rows` |
 | 信 `pagination.has_more` 翻页 | 与 coverage 矛盾导致误判 | 只信 coverage 与 totalSize |
 | 多窗口混写一个落盘文件 | 基线对不上、无法校验 | 文件名带窗口标签，一窗口一盘 |
 | 把空数据写成 0 | 误导决策 | 标「无数据」 |

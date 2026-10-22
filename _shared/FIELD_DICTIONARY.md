@@ -40,7 +40,7 @@
 | 工具 | 单行字段数 | 定位 | 适用场景 | 列表字段 |
 |---|---|---|---|---|
 | `get_custom_report_page_list` | **489** | 全指标宽表（本地/海外仓、库龄、流量、广告、评论） | 日报、库存、利润、Listing 体检 **主力** | `data.rows` |
-| `get_profit_report_by_msku` | **171** | 财务深度（亚马逊费用逐项拆解） | 利润诊断、成本归因 | `data.reportList` |
+| `get_profit_report_by_msku` | **171** | 财务深度（亚马逊费用逐项拆解） | 利润诊断、成本归因 | `data.rows`（标准化分页） |
 | `get_online_product_page_list` | **79** + `inventoryManage`(41) | 在线产品 + FBA 库存 | Listing 体检、FBA 库存 | `data.rows` |
 
 > 💡 **选型口诀**：要**广**用自定义报表；要**深**用 MSKU 利润报表；要 **Listing 属性**用在线产品。
@@ -55,13 +55,13 @@
 | `get_order_page_list` | `data.rows` | 页码 | 40 字段，含 PII |
 | `get_online_product_page_list` | `data.rows` | 页码 | 79 字段 |
 | `get_custom_report_page_list` | `data.rows` | 页码 | 489 字段宽表 |
-| `get_profit_report_by_shop` | **`data.reportList`** | 页码 | 店铺级 |
-| `get_profit_report_by_msku` | **`data.reportList`** | 页码 | 171 字段 |
-| `get_profit_report_by_sku` | **`data.reportList`** | 页码 | — |
-| `get_profit_report_by_order` | **`data.reportList`** | 页码 | 74 字段 |
-| `get_sp_campaign_list` | **`data.itemList`** + `data.nextToken` | **游标** | 广告活动 |
-| `get_sp_keyword_list` / `get_sp_*_targeting_list` | `data.itemList` + `data.nextToken` | 游标 | 投放 |
-| `get_sb_*_list` | `data.itemList` + `data.nextToken` | 游标 | SB 全套 |
+| `get_profit_report_by_shop` | **`data.rows`**（标准化分页） | 页码 | 店铺级 |
+| `get_profit_report_by_msku` | **`data.rows`**（标准化分页） | 页码 | 171 字段 |
+| `get_profit_report_by_sku` | **`data.rows`**（标准化分页） | 页码 | — |
+| `get_profit_report_by_order` | **`data.rows`**（标准化分页） | 页码 | 74 字段 |
+| `get_sp_campaign_list` | **`data.rows`**（标准化分页）+ 游标 | **游标** | 广告活动 |
+| `get_sp_keyword_list` / `get_sp_*_targeting_list` | `data.rows`（标准化分页）+ 游标 | 游标 | 投放 |
+| `get_sb_*_list` | `data.rows`（标准化分页）+ 游标 | 游标 | SB 全套 |
 | `get_ad_download_task_page_list` | `data.rows` | 页码 | `downloadUrl` 所在 |
 | `get_custom_report_index_page_list` | `data.rows` | 页码 | 自定义指标 |
 
@@ -479,14 +479,14 @@
 | 想拿什么 | 用哪个工具 | 关键字段 |
 |---|---|---|
 | 全指标（一行一 MSKU） | `get_custom_report_page_list` | 489 字段 |
-| 财务深度拆解 | `get_profit_report_by_msku` | 171 字段，`reportList` |
-| 店铺级汇总 | `get_profit_report_by_shop` | `reportList` |
-| 订单级结算 | `get_profit_report_by_order` | `reportList`，74 字段 |
+| 财务深度拆解 | `get_profit_report_by_msku` | 171 字段，标准化分页 `rows` |
+| 店铺级汇总 | `get_profit_report_by_shop` | 标准化分页 `rows` |
+| 订单级结算 | `get_profit_report_by_order` | 标准化分页 `rows`，74 字段 |
 | Listing 属性 + FBA 库存 | `get_online_product_page_list` | 79 + `inventoryManage` 41 |
 | 商品多维分析 | `get_product_analyze_list` / `_detail` | 36 字段 + `fieldsMap` / `charData` |
 | 跨平台销量 | `get_multiplatform_sale_stats` | `productSaleDayOpenVo` |
 | 订单明细 | `get_order_page_list` / `_detail` | 40 字段 / 60+ 字段 |
-| SP 广告活动 | `get_sp_campaign_list` | `itemList` + `nextToken` |
+| SP 广告活动 | `get_sp_campaign_list` | 标准化分页 `rows` + 游标 |
 | 广告报表明细 | `create_ad_download_task` → `downloadUrl` | xlsx |
 | 自定义指标目录 | `get_custom_report_stat_index_list` | 30 节点指标树 |
 | 已有自定义指标 | `get_custom_report_index_page_list` | `rows` |

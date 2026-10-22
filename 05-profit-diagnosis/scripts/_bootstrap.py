@@ -7,7 +7,7 @@
                             load_thresholds, load_shops)
 
 v3 分工（见 _shared/SELLFOX_CLIENT.md）：取数面 = agent 调客户端元工具
-``mcp__Sellfox-MCP__{help,search,action}`` 并落盘 ``out/raw/``；计算面脚本**零网络**，
+``mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`` 并落盘 ``out/raw/``；计算面脚本**零网络**，
 只读落盘文件。旧直连客户端 ``sellfox_client.py`` 已废弃，本模块**不再 import**，
 离线工具（信封解析/空数据/演示指纹）改从 ``sellfox_offline`` 取。
 

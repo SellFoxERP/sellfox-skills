@@ -5,7 +5,7 @@
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 - **取数面 = agent**：先按 `references/workflow.md` 的**取数计划**调
-  `mcp__Sellfox-MCP__{search,action}`，把信封落盘 `out/raw/`。本编排启动时先做
+  `mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把信封落盘 `out/raw/`。本编排启动时先做
   **落盘检查**，缺步骤则打印取数计划指引并退出（不瞎跑）。
 - **计算面 = 脚本**：`fetch_signals.py`（校验+组装，零网络）→ `fetch_reviews.py`
   （外部评论成本闸/规范化，不发赛狐 HTTP）→ `analyze_themes.py` → `render_report.py`。
@@ -71,8 +71,8 @@ def check_raw() -> int:
     if not present:
         print(
             "\n❌ out/raw/ 为空：取数面尚未完成。请按 references/workflow.md 的「取数计划」执行：\n"
-            "   1) search 拿契约（get_online_product_page_list）→\n"
-            "      action 必带当次 contract_version，参数类型按当次 inputSchema；\n"
+            "   1) sf_describe 拿契约（get_online_product_page_list）→\n"
+            "      sf_execute 必带当次 contract_version，参数类型按当次 inputSchema；\n"
             "   2) 把完整信封（status/data/coverage/pagination/trace_id）落盘：\n"
             "      out/raw/online_products.json（评分快照主路径）；\n"
             "   3) 每步落盘后核对 status，空 data=无数据；然后重跑本编排。\n"

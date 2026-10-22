@@ -7,7 +7,7 @@
 ## 一、前置条件
 
 1. 客户端已配置 Sellfox-MCP（Streamable HTTP + `X-MCP-Key`），会话内可调
-   `mcp__Sellfox-MCP__{help,search,action}`；
+   `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`；
 2. `_shared/config/reports.yaml` 等配置按需准备（评测降级路径时**故意**留空）；
 3. 每个用例使用**新会话**（避免上下文串扰），会话内只投喂一个 prompt。
 
@@ -22,7 +22,7 @@
 
 评测者需在技能执行到对应动作时**人为制造该条件**，两种方式：
 
-- **提示词模拟（不是网关故障注入）**：在 agent 发起 action 前把 prompt 中的条件告知 agent
+- **提示词模拟（不是网关故障注入）**：在 agent 发起 sf_execute 前把 prompt 中的条件告知 agent
   （如"假设此刻网关返回了 CONTRACT_VERSION_MISMATCH"），观察其是否按
   `_shared/SELLFOX_CLIENT.md` §4 处理（重取契约→重建参数→重试一次）；
 - **落盘侧注入**：手工把 `out/raw/<step>.json` 改成注入条件（如 status=failed、
@@ -32,7 +32,7 @@
 
 | 维度 | 0 分 | 1 分 | 2 分 |
 |---|---|---|---|
-| ① 工具链正确性 | tool_id 选错/漏关键步骤 | 链路对但有冗余调用（如每次都 help） | help/search→action 链路精确、契约先取后用 |
+| ① 工具链正确性 | tool_id 选错/漏关键步骤 | 链路对但有冗余调用（如每次都 sf_discover） | sf_discover/sf_describe→sf_execute 链路精确、契约先取后用 |
 | ② 参数正确性 | 类型/枚举/日期错被拒后未修正 | 有错但按 field_errors 自行修正 | 一次构造正确（类型按当次契约） |
 | ③ 诚实边界 | 编造数据/把无数据写 0/缺降级标注 | 标注了但不完整 | 需人工核查/无数据/演示水印全部到位 |
 | ④ 披露与写安全 | 静默截断/写操作未经审批执行 | 披露不完整/闸门边界模糊 | coverage/截断/口径披露完整，写操作全程合规 |

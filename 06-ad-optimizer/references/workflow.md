@@ -4,8 +4,8 @@
 > 数据来源、安全机制、失败处理时。SKILL.md 只给骨架，细节都在这里。
 >
 > **v3 分工**：**取数面与写操作执行面 = agent**（调客户端配置的
-> `mcp__Sellfox-MCP__{help,search,action}`，按「取数计划」把每步**完整信封**落盘
-> `out/raw/`，写操作按「写操作 agent 执行协议」逐项调 action）；**计算面 = 脚本**
+> `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，按「取数计划」把每步**完整信封**落盘
+> `out/raw/`，写操作按「写操作 agent 执行协议」逐项调 sf_execute）；**计算面 = 脚本**
 > （`ad_fetch.py` 校验+组装 → `diagnose.py` 诊断 → `optimize.py` 编排），**全部零网络**。
 > 调用纪律（契约版本/参数类型/错误语义/并发）见 `_shared/SELLFOX_CLIENT.md`。
 
@@ -32,7 +32,7 @@
 ① 诊断（只读，agent 取数落盘 + 脚本计算）
 ② 提案（dry-run，只输出「变更前后对比表」，不碰系统）
 ③ 人工确认（会话内，回复「批准 1,3,5」等）
-④ 执行（写）—— v3：agent 按执行清单逐项调 action，脚本不发请求
+④ 执行（写）—— v3：agent 按执行清单逐项调 sf_execute，脚本不发请求
 ⑤ read-back 校验 + 写 logs/ad_changes.jsonl（可回滚）
 ```
 
@@ -55,16 +55,16 @@
 
 ## 二、取数计划（agent 执行）
 
-按顺序取数；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。
+按顺序取数；已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`。
 参数类型以当次 inputSchema 为准。多步可并行发起（新网关同 session 并发安全，
 实测 10 并发 10/10 成功），但**每步都要落盘并核对 status**。
 
 | # | 落盘文件 | 工具 | 关键参数 | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/campaigns_<shopId>.json` | `get_sp_campaign_list` | `shop_id`（string）；翻页请求参数是 **`next_token`**（真实 inputSchema 参数名，传 `nextToken` 会 `INVALID_PARAMS additionalProperties`；`nextToken` 只是**响应**里的游标字段，**60s 过期**），多页续落 `campaigns_<shopId>.2.json`、`.3.json`… | `itemList` | 100 | **必需**（缺失则 diagnose 直接报错）；活动结构 |
-| 2 | `out/raw/keywords_<shopId>.json` | `get_sp_keyword_list` | 同上游标；可带 `campaign_id` 过滤 | `itemList` | 200 | 关键词结构与竞价 |
-| 3 | `out/raw/ad_products_<shopId>.json` | `get_sp_ad_product_list` | 同上游标 | `itemList` | 200 | 广告产品结构（可选维度） |
-| 4 | `out/raw/targetings_<shopId>.json` | `get_sp_product_targeting_list` | 同上游标 | `itemList` | 200 | 商品投放结构（可选维度） |
+| 1 | `out/raw/campaigns_<shopId>.json` | `get_sp_campaign_list` | `shop_id`（string）；翻页请求参数是 **`next_token`**（真实 inputSchema 参数名，传 `nextToken` 会 `INVALID_PARAMS additionalProperties`；`nextToken` 只是**响应**里的游标字段，**60s 过期**），多页续落 `campaigns_<shopId>.2.json`、`.3.json`… | `rows`（标准化分页） | 100 | **必需**（缺失则 diagnose 直接报错）；活动结构 |
+| 2 | `out/raw/keywords_<shopId>.json` | `get_sp_keyword_list` | 同上游标；可带 `campaign_id` 过滤 | `rows`（标准化分页） | 200 | 关键词结构与竞价 |
+| 3 | `out/raw/ad_products_<shopId>.json` | `get_sp_ad_product_list` | 同上游标 | `rows`（标准化分页） | 200 | 广告产品结构（可选维度） |
+| 4 | `out/raw/targetings_<shopId>.json` | `get_sp_product_targeting_list` | 同上游标 | `rows`（标准化分页） | 200 | 商品投放结构（可选维度） |
 | 5 | `out/raw/download_tasks.json` | `get_ad_download_task_page_list` | `task_ids`；**分页类** | `rows` | 20 | 绩效下载任务进度（`reportState`/`downloadUrl` 在行里） |
 | 6 | `out/raw/perf_campaign_<end>.xlsx` | agent 下载 `downloadUrl` 后放入 | —（本地文件） | — | 500 | 活动级绩效（`adCampaignReport` 导出） |
 | 6b | `out/raw/perf_target_<end>.xlsx` | 同上 | — | — | 500 | 关键词/投放级绩效（`adTargetReport` 导出） |
@@ -83,7 +83,7 @@
 
 **落盘纪律**（详见 `_shared/SELLFOX_CLIENT.md` §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
 - 单次调用 ≤1 页；`page_size` **以当轮契约为准，不照搬历史值**（eval3-2026-10-22 实测：
   SP 列表要求**数字字符串**，且网关按**未写入契约 inputSchema** 的 100~1000 范围校验——
@@ -94,7 +94,7 @@
   传错名会 `INVALID_PARAMS additionalProperties`）；游标值取上一页**响应**的 `nextToken`
   （60 秒过期）——当页取完立即决定是否翻页，
   过期就重取第一页，不要拿旧游标硬翻；未尽页会由组装器披露「仅覆盖已落盘页」；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」，不写 0 不重试。
 
@@ -126,7 +126,7 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 
   ```bash
   python _shared/scripts/validate_raw.py --dir 06-ad-optimizer/out/raw \
-      --step campaigns_10001:itemList --step download_tasks:rows
+      --step campaigns_10001:rows --step download_tasks:rows
   ```
 
 ---
@@ -146,8 +146,8 @@ python scripts/optimize.py diagnose --shop-id 10001 --start 2026-10-08 --end 202
 
 写出两个文件：`out/ad_proposal_<start>_<end>.html`（主报告）与 `.json`（机读提案）。
 提案 JSON 每项含 **`tool_id`**（`edit_sp_campaign` / `edit_sp_targeting` 等，即寻址
-action 的工具名）与 **`contract_version: null` 占位**——占位值**不得**直接用于执行，
-每项执行前必须重新 `search` 取当次版本（写契约变更频率高于读契约）。
+sf_execute 的工具名）与 **`contract_version: null` 占位**——占位值**不得**直接用于执行，
+每项执行前必须重新 `sf_describe` 取当次版本（写契约变更频率高于读契约）。
 
 ---
 
@@ -180,12 +180,12 @@ v1.7.0 起飞书审批链已移除：不再推送审批文档/卡片，审批即
      生成执行清单 out/ad_execute_<start>_<end>.{md,json}
      （被批准项 × tool_id × 参数模板 × before 快照 × read-back 计划 × record 模板）
 
-② 重取契约：逐项执行前重新 mcp__Sellfox-MCP__search([tool_id], detail=true)
+② 重取契约：逐项执行前重新 mcp__Sellfox-MCP__sf_describe([tool_id], detail=true)
    取**当次** contract_version（不得沿用占位 null、不得沿用其他项的版本）；
-   遇 CONTRACT_VERSION_MISMATCH → 重 search 一次 → 按新 schema 重建参数 → 重试一次，
+   遇 CONTRACT_VERSION_MISMATCH → 重 sf_describe 一次 → 按新 schema 重建参数 → 重试一次，
    仍失败则该项记 failed，**不重放**。
 
-③ 逐项 action：mcp__Sellfox-MCP__action(tool_id, params, contract_version)
+③ 逐项 sf_execute：mcp__Sellfox-MCP__sf_execute(tool_id, params, contract_version)
    · params 用执行清单里的参数模板（`edit_sp_campaign`：
      `{"shop_id","items":[{"campaignId","state"|"budget"}]}`；
      `edit_sp_targeting`：`{"shop_id","items":[{"targetId","targetingType","bid"|"state"}]}`；
@@ -224,7 +224,7 @@ v1.7.0 起飞书审批链已移除：不再推送审批文档/卡片，审批即
 ```
 
 必填：`tool/target_id/field/before/after/status`（status ∈ success/failed/skipped）；
-其余透传进日志。`trace_id`（action 返回里的）建议一并记录便于追查。
+其余透传进日志。`trace_id`（sf_execute 返回里的）建议一并记录便于追查。
 
 ---
 
@@ -238,7 +238,7 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 ```
 
 - 回读工具与匹配方式已在执行清单的 `read_back_plan` 里：
-  活动级 `get_sp_campaign_list`（带 `campaign_id`，`itemList` 按 `campaignId` 匹配）；
+  活动级 `get_sp_campaign_list`（带 `campaign_id`，`rows` 按 `campaignId` 匹配）；
   关键词级 `get_sp_keyword_list`（`keywordId` 匹配）；否定词按 `keywordText` 集合包含校验；
 - 比较用宽松比较（容忍 `"100"` vs `100`）；
 - 回读结果交给 `record`（单条）与 `verify`（整批差异表）——`verify` 支持两种 actual 形态：
@@ -275,7 +275,7 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 
 每次执行由 agent 逐项 `record` 写 `logs/ad_changes.jsonl`（一行一条 JSON）：时间 / 对象 /
 字段 / 变更前 / 变更后 / 操作人 / status / contract_version / read_back。**变更前 = 回滚值**：
-把字段改回 `before` 即回滚（同样要走提案 → 审批 → agent action 的完整协议，不得直改）。
+把字段改回 `before` 即回滚（同样要走提案 → 审批 → agent sf_execute 的完整协议，不得直改）。
 
 > ⚠️ 演示环境默认阻断写操作（`execute` 需显式 `--allow-demo` 才生成清单），
 > 因为演示数据上的写入不具业务意义。
@@ -295,7 +295,7 @@ ELSE                → record FAILED（告警 + 不更新本地状态）
 | 仅拿到 MSKU 级绩效 | 活动级/关键词级诊断降级为「人工核查」并标注 |
 | 提案违反强制约束 | 清空自动提案，仅保留人工核查清单（不静默） |
 | 提案混入不支持的写工具（如 Listing 类） | `execute` 拒绝执行整批（fail-closed），指明提案项 #N 与工具名（退出码 5），不生成执行清单 |
-| 写 action 失败 / partial | 该项记 `failed`，**不重放**；人工核实后重新走提案 |
+| 写 sf_execute 失败 / partial | 该项记 `failed`，**不重放**；人工核实后重新走提案 |
 | 回读不一致 | `record` 防线改记 `failed`；`verify` 输出差异表；不更新本地状态 |
 | 命中累计闸 | `execute` 拒绝生成执行清单，列出违规（记 skipped 的责任在 agent，见 APPROVAL.md） |
 | 演示环境 | 报告顶部加水印；默认阻断写操作与对外写出 |

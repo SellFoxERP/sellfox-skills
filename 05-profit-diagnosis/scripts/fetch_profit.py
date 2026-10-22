@@ -2,7 +2,7 @@
 """利润异常诊断 —— 落盘校验与组装层（fetch_profit.py，v3：零网络）。
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
-  * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{help,search,action}`，
+  * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
     按 `references/workflow.md` 的**取数计划**把每步完整信封落盘到 `out/raw/<step>.json`。
   * **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/coverage 截断），
     并组装出与旧版完全相同形状的 `FetchResult` —— diagnose.py / render.py 零改动。
@@ -22,8 +22,8 @@ missingFromInboundAmount / deferredAmount 等**只存在于自定义报表**的�
 
 落盘步骤名（双窗口，与取数计划一致；同一步骤按店铺分批时可落盘
 ``<step>.1.json`` / ``<step>.2.json``，本模块自动合并）：
-    profit_msku_current.json / profit_msku_base.json   ← get_profit_report_by_msku（reportList）
-    profit_shop_current.json / profit_shop_base.json   ← get_profit_report_by_shop（reportList；背景源）
+    profit_msku_current.json / profit_msku_base.json   ← get_profit_report_by_msku（标准化分页 rows）
+    profit_shop_current.json / profit_shop_base.json   ← get_profit_report_by_shop（标准化分页 rows；背景源）
     reimbursement.json                                 ← get_amazon_reimbursement_report（可能 data:{} → 无数据）
 
 用法::
@@ -202,7 +202,7 @@ def _normalize(row: Dict[str, Any], fields: Sequence[Tuple[str, Tuple[str, ...]]
 
 
 def normalize_msku_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """get_profit_report_by_msku 行 → 规范化记录（列表字段 reportList）。"""
+    """get_profit_report_by_msku 行 → 规范化记录（标准化分页，列表键自动识别）。"""
     return _normalize(row, MSKU_FIELDS, source="msku_report")
 
 
@@ -380,7 +380,7 @@ def _consume_step(
     normalize,
     result: FetchResult,
     *,
-    list_key: str,
+    list_key: Optional[str] = None,
     max_rows: int,
     source_tool: str,
     win_start: Optional[date] = None,
@@ -485,7 +485,7 @@ def assemble_all(
         raise SystemExit(
             f"❌ 落盘目录为空或不存在：{rd}。\n"
             "   v3 取数面由 agent 完成：请按 references/workflow.md 的「取数计划」\n"
-            "   调用 mcp__Sellfox-MCP__{search,action} 并把信封落盘到 out/raw/，再重跑本脚本。"
+            "   调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并把信封落盘到 out/raw/，再重跑本脚本。"
         )
 
     # 店铺维度披露：空 = 全部店铺（agent 不传 shop_ids，服务端默认全量）。
@@ -500,7 +500,7 @@ def assemble_all(
             "店铺范围：未指定店铺，按【全部店铺】查询（不传 shop_ids，服务端默认全量）。"
         )
 
-    # ---- 主源：MSKU 利润报表（171 字段，财务深度；reportList）----
+    # ---- 主源：MSKU 利润报表（171 字段，财务深度；标准化分页 rows）----
     msku_max = int(limits.get("msku_report", 200))
     for label, stem, window in (
         ("MSKU 利润报表本期", "profit_msku_current", "current"),
@@ -508,7 +508,7 @@ def assemble_all(
     ):
         got = _consume_step(
             rd, stem, label, window, normalize_msku_row, result,
-            list_key="reportList", max_rows=msku_max, source_tool="get_profit_report_by_msku",
+            list_key=None, max_rows=msku_max, source_tool="get_profit_report_by_msku",
             win_start=cur_start if window == "current" else base_start,
             win_end=cur_end if window == "current" else base_end,
         )
@@ -531,7 +531,7 @@ def assemble_all(
             "宽表因子归因（采购成本/头程/赔偿金额/延期结算）由 custom-report-analysis 技能承接。"
         )
 
-    # ---- 背景源：店铺级利润（判断是整体恶化还是个别 MSKU；reportList）----
+    # ---- 背景源：店铺级利润（判断是整体恶化还是个别 MSKU；标准化分页 rows）----
     shop_max = int(limits.get("shop_report", 60))
     shop_any = False
     for label, stem, window in (
@@ -540,7 +540,7 @@ def assemble_all(
     ):
         shop_any = _consume_step(
             rd, stem, label, window, normalize_msku_row, result,
-            list_key="reportList", max_rows=shop_max, source_tool="get_profit_report_by_shop",
+            list_key=None, max_rows=shop_max, source_tool="get_profit_report_by_shop",
             win_start=cur_start if window == "current" else base_start,
             win_end=cur_end if window == "current" else base_end,
         ) or shop_any

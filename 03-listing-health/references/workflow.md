@@ -1,7 +1,7 @@
 # 取数流程与降级路径（workflow.md，v3：agent 取数 + 脚本计算）
 
 > 何时读：**执行前必读**。定义取数计划、分页处理、字段裁剪、降级路径与披露义务。
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `fetch_listing_data.py`
 > （校验+组装）→ `diagnose.py` → `render_report.py`，全部零网络，报告仅本地 HTML（不外发）。
 >
@@ -24,7 +24,7 @@
 
 ## 0. 硬约束
 
-1. **脚本零网络**：赛狐数据只经 agent 调 `mcp__Sellfox-MCP__{help,search,action}` 落盘取得；
+1. **脚本零网络**：赛狐数据只经 agent 调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}` 落盘取得；
    `fetch_listing_data.py` 只读 `out/raw/`（旧直连 `sellfox_client.py` 已废弃，不得再 import）。
 2. **单次调用 ≤1 页 + max_rows 安全阀**：服务端分页硬上限 **20 条/页**，请求更大 `page_size`
    被静默降级为 20。触达 `max_rows` 必须保留信封 `coverage`（`truncated=true`），让脚本转成披露。
@@ -34,7 +34,7 @@
 
 ## 1. 取数计划（agent 执行）
 
-已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。参数类型/参数名以当次
+已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`。参数类型/参数名以当次
 inputSchema 为准（⚠️ 标注处为实测差异）。多状态/多店铺批次**可并行发起**
 （新网关同 session 并发安全），但落盘文件名不冲突、每步单独核对 status。
 
@@ -51,10 +51,10 @@ inputSchema 为准（⚠️ 标注处为实测差异）。多状态/多店铺批
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本（上下文是稀缺资源）；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次，不重放原请求；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次，不重放原请求；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，组装层标「无数据」，不重试、不写 0；
 - 翻页前先看 `totalSize` 是否值得继续，触达 max_rows 必须保留 coverage 让脚本披露。

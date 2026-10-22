@@ -22,8 +22,8 @@ description: 诊断跨境电商的利润异常并给出可核对的归因（赛�
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”仅指赛狐取数后的离线计算；审批通知模块会联网。
 默认输出本地报告（HTML）。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -58,7 +58,7 @@ description: 诊断跨境电商的利润异常并给出可核对的归因（赛�
 | `references/attribution-rules.md` | **计算前必读**：归因公式、符号（profit_sign）为什么必须显式声明、门槛、因子归属表 |
 | `references/output-template.md` | **渲染前必读**：报告骨架、单 MSKU 归因块、赔偿核对区块、数据说明区块 |
 | `references/field-sources.md` | 需要核对某字段属于哪个工具、哪些字段需人工核查时 |
-| `_shared/SELLFOX_CLIENT.md` | **必读（v2）**：MCP 调用纪律（三段式 help/search/action、contract_version、参数类型、错误语义、落盘约定） |
+| `_shared/SELLFOX_CLIENT.md` | **必读（v2）**：MCP 调用纪律（三段式 sf_discover/sf_describe/sf_execute、contract_version、参数类型、错误语义、落盘约定） |
 | `_shared/config/thresholds.yaml` | 读取 `profit` 预警阈值（毛利率下限、毛利环比跌幅） |
 | `_shared/config/shops.yaml` | 读取店铺范围（`default_scope`）与负责人 |
 
@@ -85,7 +85,7 @@ python scripts/selfcheck.py                                             # 离线
    可 `--caliber shipment` 覆盖。**报告首部必须标注用了哪个口径**。
 2. **阈值检查。** 读 `_shared/config/thresholds.yaml → profit`。缺失项按
    `config_loader.ensure_params` 一次性批量询问补全并标注来源，不静默用内置值。
-3. **客户端 MCP 就绪。** 会话内可调 `mcp__Sellfox-MCP__{help,search,action}`
+3. **客户端 MCP 就绪。** 会话内可调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
    （Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，
    命中指纹即加水印。
 
@@ -105,7 +105,7 @@ python scripts/selfcheck.py                                             # 离线
 ### Step 2：取数（agent 按取数计划落盘，双窗口）
 
 **v3：取数面是 agent**——按 `references/workflow.md` 的**取数计划**调
-`mcp__Sellfox-MCP__{search,action}`，把每步完整信封（status/data/coverage/pagination/trace_id）
+`mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封（status/data/coverage/pagination/trace_id）
 落盘 `out/raw/`，**双窗口文件名分开**（current / base），然后由 `fetch_profit.py` 做
 「落盘校验 + 组装」（存在性/status/空数据/演示指纹/coverage 截断），组装出与旧版相同形状的
 中间结果供归因使用。纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（contract_version）、
@@ -113,8 +113,8 @@ python scripts/selfcheck.py                                             # 离线
 
 | 顺序 | 落盘文件 | 工具 | 列表字段 | 用途 |
 |---|---|---|---|---|
-| 1~2 | `profit_msku_current.json` / `profit_msku_base.json` | `get_profit_report_by_msku` | **`data.reportList`** | **主源**：171 字段财务深度（本期/基期各一份） |
-| 3~4 | `profit_shop_current.json` / `profit_shop_base.json` | `get_profit_report_by_shop` | `data.reportList` | 背景源：整体恶化还是个别 MSKU |
+| 1~2 | `profit_msku_current.json` / `profit_msku_base.json` | `get_profit_report_by_msku` | **`data.rows`**（标准化分页） | **主源**：171 字段财务深度（本期/基期各一份） |
+| 3~4 | `profit_shop_current.json` / `profit_shop_base.json` | `get_profit_report_by_shop` | `data.rows`（标准化分页） | 背景源：整体恶化还是个别 MSKU |
 | 5 | `reimbursement.json` | `get_amazon_reimbursement_report` | `data.rows` | 交叉核对赔偿是否漏领；**可能返回 `data:{}`** →「无数据」，不是失败，不重试 |
 
 - 日期格式：利润报表（步骤 1~4）`yyyyMMdd` + `date_type=2` + `profit_caliber_type` **显式**；
@@ -186,12 +186,12 @@ python scripts/selfcheck.py                                             # 离线
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 把 `purchaseCost`/`headTripPrice`/`reimbursementAmount`/`deferredAmount` 归给 msku 报表 | 这些字段该工具不返回，归因永远落空且不报错 | 宽表因子归因交给 `custom-report-analysis`；本技能只用 msku 报表因子（见 `field-sources.md §3`） |
-| 用 `rows` 解析利润报表 | 拿到空结果且不报错 | 利润报表用 `reportList`（契约 `pagination.rows` 声明） |
+| 按历史字段名硬解列表 | 拿到空结果且不报错 | 列表键用共享库自动识别；网关默认标准化分页根字段为 `rows` |
 | 费用符号靠猜 | 归因恰好反向，且不报错 | 每个因子显式填 `profit_sign`（见 `attribution-rules.md §3`） |
 | 不标利润口径 | 与财务对不上账 | 每次显式传 `profit_caliber_type` 并写入报告首部 |
 | 把延期结算当成本砍 | 砍错方向（钱只是推迟，不是丢了） | 延期结算单列区块，与成本区分处置 |
 | 脚本里自己发 HTTP 调 MCP（或 import 旧 `sellfox_client`） | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具，脚本零网络、只读落盘 |
-| action 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 search 拿当次契约；失配重 search 一次重建参数重试一次 |
+| sf_execute 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 sf_describe 拿当次契约；失配重 sf_describe 一次重建参数重试一次 |
 | 参数类型沿用旧接口全字符串 | 利润报表被 INVALID_PARAMS 拒绝 | 类型按当次 inputSchema（利润报表分页是 **integer**） |
 | 信 `pagination.has_more` 翻页 | 与 coverage 矛盾导致误判 | 只信 coverage 与 totalSize |
 | 双窗口落盘同名互相覆盖 | 基期数据被本期覆盖，环比静默失真 | current / base 分文件落盘（`profit_msku_current.json` / `_base.json`） |

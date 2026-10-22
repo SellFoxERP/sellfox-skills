@@ -27,7 +27,7 @@
 
 - `_shared/FIELD_DICTIONARY.md` — 字段字典（字段名以此为准，不凭记忆）。
 - `_shared/METRIC_FORMULAS.md` — 口径白皮书（指标→字段→工具）。
-- 工具参数以网关当次 `search` 返回的契约为准。
+- 工具参数以网关当次 `sf_describe` 返回的契约为准。
 
 核对要点：
 
@@ -36,7 +36,7 @@
    `deferredAmount` / `purchaseCost` / `headTripPrice` **只在自定义报表宽表（489 字段）**，
    **不在 `get_profit_report_by_msku`**。（宽表查询/字段核对转 custom-report-analysis 技能；
    本技能只治理指标定义，不查询宽表数据。）
-2. **列表字段名因工具而异**：分页类 `rows` / 利润报表 `reportList` / 广告类 `itemList`+`nextToken`。
+2. **列表字段名以当次契约为准**：网关分页默认标准化为 `rows`（raw 模式才出现 `reportList`/`itemList`）；读取用共享库自动识别。
 3. **币种**：`get_online_product_page_list.currency` 是 **USD**，
    其 `inventoryManage.currency` 是 **CNY**；自定义报表顶层 `currency` 是 USD（可配置）。
    货币型指标的币种写进 `index_comment`，跨币种不得直接相减。

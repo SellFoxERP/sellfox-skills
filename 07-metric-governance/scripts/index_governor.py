@@ -2,7 +2,7 @@
 """指标治理核心库（index_governor.py）—— 技能 07-metric-governance（v3：零网络）。
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
-  * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{help,search,action}`，按
+  * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，按
     `references/workflow.md` 的**取数计划**把每步完整信封落盘 `out/raw/`：
       - `stat_index_op1.json` / `stat_index_op2.json` ← `get_custom_report_stat_index_list`
         （`op_type=1/2` 各一次，新增/编辑两个视角）；
@@ -259,7 +259,7 @@ def load_existing_indices(raw_dir: Path, cfg: Dict[str, Any]) -> RawReport:
     if not raw_dir.exists():
         state.notes.append(
             f"❌ 落盘目录不存在：{raw_dir}。v3 取数面由 agent 完成：请按 "
-            "references/workflow.md 的取数计划调 mcp__Sellfox-MCP__{search,action} "
+            "references/workflow.md 的取数计划调 mcp__Sellfox-MCP__{sf_describe,sf_execute} "
             "落盘 out/raw/ 后重跑。"
         )
         return state
@@ -513,7 +513,7 @@ def build_proposal(plan: Plan, skill: str = "metric-governance") -> "ap.Proposal
     """构造 dry-run 提案（L2）。更新项写前快照旧公式作为回滚依据。
 
     每项 ``extra.contract_version = None`` **占位**：写契约变更频率高，
-    执行前必须由 agent 重取（search detail=true）后填充（SELLFOX_CLIENT.md §2）。
+    执行前必须由 agent 重取（sf_describe detail=true）后填充（SELLFOX_CLIENT.md §2）。
     """
     p = ap.Proposal(
         skill=skill,
@@ -599,11 +599,11 @@ def gate_check(items: Sequence["ap.ChangeItem"], thresholds: Dict[str, Any], log
 #: 写操作 agent 执行协议（写进执行清单，逐项照做；详见 references/workflow.md）。
 AGENT_PROTOCOL: Tuple[str, ...] = (
     "1. 只执行被人工批准的条目（清单 items[].index 命中批准序号）；未批准项一律跳过。",
-    "2. 执行前重取写契约：search(tool_ids=[tool_id], detail=true)，取当次 contract_version "
+    "2. 执行前重取写契约：sf_describe(tool_ids=[tool_id], detail=true)，取当次 contract_version "
     "填入 params 同级（写契约变更频率高，禁止沿用旧版本/占位 null）。",
     "3. 参数类型/必填/枚举以当次 inputSchema 校正 params_template（未声明字段不传，"
     "additionalProperties 会拒）。",
-    "4. 调 action(tool_id, params, contract_version)。",
+    "4. 调 sf_execute(tool_id, params, contract_version)。",
     "5. 每条执行后无论成败都回写结果并运行 record："
     "run_governance.py --record <results.json> --manifest <本清单>。",
     "6. 全部执行完后重取现有指标落盘 out/raw/custom_indices_verify_<page>.json，"
@@ -877,7 +877,7 @@ def append_verify_amends(
     """verify 检出 ``mismatch`` 且原记录为 success 时，向变更日志**追加**补偿记录。
 
     背景（record-then-verify 顺序张力）：协议要求每条执行后即 record（可能已落
-    ``success``），若 action 被 isError=false 误报成功而回读实为 mismatch，原记录
+    ``success``），若 sf_execute 被 isError=false 误报成功而回读实为 mismatch，原记录
     无法撤回。本函数不改写历史（原 success 保持原值），而是**追加**一条
     ``type=amend`` 的独立记录指向原记录，并带 ``status_note="verify mismatch"``。
 

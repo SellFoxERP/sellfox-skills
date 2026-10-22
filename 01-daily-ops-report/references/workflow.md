@@ -1,7 +1,7 @@
 # 日报执行流程（workflow.md，v3：agent 取数 + 脚本计算）
 
 > SKILL.md 执行本技能时读本文件。
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `fetch_data.py`（校验+组装）
 > → `analyze.py` → `render_report.py`，全部零网络，报告仅本地 HTML（不外发）。
 > 调用纪律（契约版本/参数类型/错误处理/并发）见 `_shared/SELLFOX_CLIENT.md`；
@@ -36,27 +36,27 @@
 
 ## 一、取数计划（agent 执行）
 
-按顺序取数；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。
+按顺序取数；已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`。
 参数类型以当次契约为准（⚠️ 标注处为实测差异）。多店铺批次**可并行发起**
 （新网关同 session 并发安全），但每步都要落盘并核对 status。
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/shops.json` | `get_shop_page_list` | `page_no/page_size` 为 **string** | `rows` | 40 | 店铺清单；可缓存 7 天（本地 `out/shops_cache.json`） |
-| 2 | `out/raw/profit_shop.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=昨日`（`yyyyMMdd`）；`profit_caliber_type`；`page_no/page_size` 为 **integer** | `reportList` | 40 | 店铺级利润 → 结论速览；**用户点名口径（结算=settlement / 发货=shipment）时取数传该值，并把同一值透传计算面 `--caliber`**（缺省 settlement 走配置） |
-| 2b | `out/raw/profit_shop_range.json`（可选） | 同上 | `show_on_day=true`；近 30 天窗口 | `reportList` | 40×30 | 店铺级基线切片（`baseline=slice_30d`，现为默认） |
+| 2 | `out/raw/profit_shop.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=昨日`（`yyyyMMdd`）；`profit_caliber_type`；`page_no/page_size` 为 **integer** | `rows`（标准化分页） | 40 | 店铺级利润 → 结论速览；**用户点名口径（结算=settlement / 发货=shipment）时取数传该值，并把同一值透传计算面 `--caliber`**（缺省 settlement 走配置） |
+| 2b | `out/raw/profit_shop_range.json`（可选） | 同上 | `show_on_day=true`；近 30 天窗口 | `rows`（标准化分页） | 40×30 | 店铺级基线切片（`baseline=slice_30d`，现为默认） |
 | 3 | `out/raw/orders.json` | `get_order_page_list` | `date_type=purchase`；`date_start/end` 当日 00:00:00~23:59:59 | `rows` | 40 | 仅异常下钻样本；**含 PII**，渲染前脱敏 |
-| 4 | `out/raw/campaigns_<shopId>.json`（每店铺一个） | `get_sp_campaign_list` | `shop_id`（string）；游标 `nextToken`（60s 过期） | `itemList` | 200/店 | STEP 03 广告结构 |
+| 4 | `out/raw/campaigns_<shopId>.json`（每店铺一个） | `get_sp_campaign_list` | `shop_id`（string）；游标 `nextToken`（60s 过期） | `rows`（标准化分页） | 200/店 | STEP 03 广告结构 |
 | 5 | `out/raw/multiplatform_<metric>.json`（可选，默认关） | `get_multiplatform_sale_stats` | `type=<metric>`；`group_type=shop`；`stat_time_type=1`；`currency` **必填**（空串=原币种）；分页参数 **string** | `rows` | 200 | 非亚马逊平台；跨币种不得直接合计 |
 
 **子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」；
 - 翻页前先看 `totalSize` 是否值得继续，触达 max_rows 必须保留 coverage 让脚本披露。
@@ -92,7 +92,7 @@ python scripts/run_daily_report.py --date 2026-09-29     # 校验+组装 → 分
   组装 `bundle.json`；宽表专属指标固定写入降级说明（custom-report-analysis 承接）。
   落盘目录中如残留历史 `msku_*.json` 一律忽略（不消费、不采信）；
 - 也可单独跑共享校验器：
-  `python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step profit_shop:reportList --window 2026-09-29:2026-09-29`
+  `python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step profit_shop:rows --window 2026-09-29:2026-09-29`
 
 ---
 

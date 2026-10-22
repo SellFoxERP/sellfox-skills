@@ -11,8 +11,8 @@ description: 生成跨境电商每日经营日报（赛狐/SellFox ERP 数据）
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”指赛狐取数后的离线计算。报告仅本地 HTML，不外发
 （飞书写入能力 v1.7.0 已移除；演示数据仅加顶部水印，不外发）。
 没有原始数据时仅说明缺口或产出明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -45,7 +45,7 @@ description: 生成跨境电商每日经营日报（赛狐/SellFox ERP 数据）
 
 调数前确认两件事，任一异常都会影响口径：
 
-1. **客户端 MCP 就绪**：会话内可调 `mcp__Sellfox-MCP__{help,search,action}`
+1. **客户端 MCP 就绪**：会话内可调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
    （Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，
    技能会运行时识别指纹并在报告顶部加水印（演示数据不外发）。快速自检：
    `python scripts/run_daily_report.py --check-only`。
@@ -73,7 +73,7 @@ description: 生成跨境电商每日经营日报（赛狐/SellFox ERP 数据）
 ### Step 1：取数（agent 按取数计划落盘）
 
 **v3：取数面是 agent**——按 `references/workflow.md` 的**取数计划**调
-`mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/<step>.json`：
+`mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封落盘 `out/raw/<step>.json`：
 店铺 → 店铺利润 →（可选）30 天基线切片 → 订单样本 → 广告活动 →（可选）跨平台销量。
 纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（contract_version）、参数类型按当次
 inputSchema、失配重取一次、不信 has_more 信 coverage、每步落盘不复述数据。
@@ -82,10 +82,10 @@ inputSchema、失配重取一次、不信 has_more 信 coverage、每步落盘�
 | 顺序 | 工具 | 列表字段 | 用途 |
 |---|---|---|---|
 | 1 | `get_shop_page_list` | `data.rows` | 店铺清单（可缓存 7 天） |
-| 2 | `get_profit_report_by_shop` | **`data.reportList`** | 店铺级利润 → 结论速览 |
-| 2b | `get_profit_report_by_shop`（30 天窗口） | `data.reportList` | 店铺级基线切片（可选） |
+| 2 | `get_profit_report_by_shop` | **`data.rows`**（标准化分页） | 店铺级利润 → 结论速览 |
+| 2b | `get_profit_report_by_shop`（30 天窗口） | `data.rows`（标准化分页） | 店铺级基线切片（可选） |
 | 3 | `get_order_page_list` | `data.rows` | STEP 01 订单异常下钻样本 |
-| 4 | `get_sp_campaign_list` | **`data.itemList`** + `nextToken` | STEP 03 广告状态 |
+| 4 | `get_sp_campaign_list` | **`data.rows`**（标准化分页）+ 游标 | STEP 03 广告状态 |
 | 5 | `get_multiplatform_sale_stats` | `data.rows` | 跨平台销量（默认关闭） |
 
 - 日期格式：利润报表 `yyyyMMdd`（`date_type=2`）；订单 `yyyy-MM-dd HH:mm:ss`。
@@ -132,7 +132,7 @@ inputSchema、失配重取一次、不信 has_more 信 coverage、每步落盘�
 python scripts/run_daily_report.py                     # 校验落盘 → 组装 → 分析 → 渲染
 python scripts/run_daily_report.py --date 2026-09-29
 python scripts/run_daily_report.py --check-only        # 只做前置校验（含落盘检查）
-python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step profit_shop:reportList
+python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step profit_shop:rows
 ```
 
 ## 双读者分层
@@ -145,15 +145,15 @@ python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step pr
 
 ## 硬约束速查（违反即为缺陷）
 
-- **MCP 访问只走客户端元工具**：`mcp__Sellfox-MCP__{help,search,action}`，脚本零 HTTP、
+- **MCP 访问只走客户端元工具**：`mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，脚本零 HTTP、
   不需要 Key 环境变量（契约见 `_shared/SELLFOX_CLIENT.md`）。
-- **action 必带当次 search 返回的 contract_version**；失配（`CONTRACT_VERSION_MISMATCH`）
-  → 重 search 一次、按新 schema 重建参数、重试一次，不重放原请求。
+- **sf_execute 必带当次 sf_describe 返回的 contract_version**；失配（`CONTRACT_VERSION_MISMATCH`）
+  → 重 sf_describe 一次、按新 schema 重建参数、重试一次，不重放原请求。
 - **参数类型按当次 inputSchema**：店铺分页 string、利润报表分页 **integer**；
   未声明字段不传（`additionalProperties` 会拒）。
 - **同 session 并发安全**（实测 10 并发 10/10 成功）：多店铺批次可并行；
   每步落盘独立文件并核对 status。
-- **列表字段名因工具而异**：分页类 `rows` / 利润报表 `reportList` / 广告 `itemList`+`nextToken`。
+- **列表字段名以当次契约与信封为准**：网关分页默认标准化，根字段为 `rows`（raw 模式才出现 `reportList`/`itemList` 等原始名）；共享库 `rows()` 缺省自动识别 rows/reportList/itemList。
   从契约 `pagination` 元数据读取，用 `rows` 解析利润报表会拿到空结果**且不报错**。
 - **不信 `pagination.has_more`，信 `coverage` 与 `totalSize`**（实测 has_more 与 coverage 矛盾）。
 - **`data` 空 = 无数据，不是失败**；标「无数据」，不重试，不写 0。
@@ -197,11 +197,11 @@ python _shared/scripts/validate_raw.py --dir out/raw --step shops:rows --step pr
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 脚本里自己发 HTTP 调 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具，脚本零网络 |
-| action 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 search 拿当次契约 |
+| sf_execute 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 sf_describe 拿当次契约 |
 | 参数类型沿用旧接口全字符串 | 利润报表被 INVALID_PARAMS 拒绝 | 类型按当次 inputSchema（利润分页是 integer） |
 | 传未声明字段 | `additionalProperties` 拒绝 | 只传契约 properties 里的字段 |
 | 依赖 `page_size` 控量 | 服务端静默降级为 20 | 单次 ≤1 页 + max_rows + 截断披露 |
-| 用 `rows` 解析利润报表 | 空结果且不报错 | 用 `reportList`（契约 pagination.rows） |
+| 按历史字段名硬解列表 | 空结果且不报错 | 列表键用共享库自动识别（rows/reportList/itemList）；网关默认标准化分页根字段为 `rows` |
 | 信 `pagination.has_more` 翻页 | 与 coverage 矛盾导致误判 | 只信 coverage 与 totalSize |
 | 把空数据写成 0 | 误导决策 | 区分「0」与「无数据」 |
 | 硬编码阈值 | 误报率高被弃用 | 读 `thresholds.yaml` |

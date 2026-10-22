@@ -2,7 +2,7 @@
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 
-- **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{help,search,action}`，
+- **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
   按 `references/workflow.md` 的**取数计划**把每步完整信封落盘到 `out/raw/`。
 - **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/coverage 截断），
   组装出与旧 HTTP 取数器**完全相同形状**的 baseline ——
@@ -121,7 +121,7 @@ def _load_step(
     if not path.exists():
         notes.need_manual(
             f"缺落盘 {path}：v3 取数面由 agent 完成，请按 references/workflow.md 取数计划"
-            f"调 mcp__Sellfox-MCP__{{search,action}} 落盘后重跑；相关实时字段需人工核查。"
+            f"调 mcp__Sellfox-MCP__{{sf_describe,sf_execute}} 落盘后重跑；相关实时字段需人工核查。"
         )
         return None, []
 

@@ -11,8 +11,8 @@ description: 库存健康体检与补货建议（赛狐/SellFox ERP 数据，只
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”指赛狐取数后的离线计算。报告仅本地 HTML，不外发
 （飞书写入能力 v1.7.0 已移除；演示数据仅加顶部水印，不外发）。
 没有原始数据时仅说明缺口或产出明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -86,7 +86,7 @@ python scripts/run_inventory_health.py --answers '{"MOCK-SKU-001":45}' --write-b
 ### Step 2：取数（agent 按取数计划落盘）与组装
 
 **v3：取数面是 agent** —— 按 `references/workflow.md` 的**取数计划**调
-`mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/<step>.json`：
+`mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封落盘 `out/raw/<step>.json`：
 
 1. `shops.json` ← `get_shop_page_list` —— 店铺清单（分页参数 **string**），为在线产品
    分批提供 shop_id；可缓存 7 天。
@@ -166,7 +166,7 @@ ELSE                         → 健康
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 脚本里自己发 HTTP 调 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具 `mcp__Sellfox-MCP__*`，脚本零 HTTP 零网络 |
-| action 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 `search` 拿当次契约 |
+| sf_execute 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 `sf_describe` 拿当次契约 |
 | 参数类型沿用旧接口全字符串 | 店铺清单分页传 integer 会被 `INVALID_PARAMS` 拒 | 类型按当次 inputSchema（shops 分页是 **string**） |
 | 信 `pagination.has_more` 翻页 | 与 coverage 矛盾导致误判 | 只信 `coverage` 与 `totalSize` |
 | 靠 `page_size` 控量 | 服务端静默降级为 20 条/页 | agent 单次 ≤1 页 + max_rows 组装侧截断并披露 |

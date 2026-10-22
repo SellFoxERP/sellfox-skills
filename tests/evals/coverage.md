@@ -50,12 +50,12 @@
 ## 12 技能时代的补充覆盖（2026-10-16，技能 10/11/12 新增评测）
 
 技能 10（通用业务）/11（退款损失）/12（新品复盘）的用例不绑定固定取数计划——工具按
-实时 help/search 发现（SKILL.md「索引未覆盖先 help」原则），因此覆盖矩阵按「线上评测
+实时 sf_discover/sf_describe 发现（SKILL.md「索引未覆盖先 sf_discover」原则），因此覆盖矩阵按「线上评测
 实际调用过的工具」记录（来源 out/eval-live-2026-10-16/10~12-*.md）：
 
 | 技能 | 线上评测实际调用的工具 | 用例 |
 |---|---|---|
-| 10-sellfox-business | `get_shop_page_list`、`get_multiplatform_sale_stats`、`get_order_page_list`、`get_product_analyze_list`、`get_fba_shipment_page_list`、`get_awd_inventory_page_list`、`get_profit_report_by_shop`、`get_sp_campaign_list`、`get_custom_report_index_page_list`、`get_custom_report_stat_index_list`、help（no_match 场景） | 10-1~10-14（14 例） |
+| 10-sellfox-business | `get_shop_page_list`、`get_multiplatform_sale_stats`、`get_order_page_list`、`get_product_analyze_list`、`get_fba_shipment_page_list`、`get_awd_inventory_page_list`、`get_profit_report_by_shop`、`get_sp_campaign_list`、`get_custom_report_index_page_list`、`get_custom_report_stat_index_list`、sf_discover（no_match 场景） | 10-1~10-14（14 例） |
 | 11-returns-loss | `get_profit_report_by_msku`、`get_shop_page_list`（+ 复用 10 的 process/topic 组件） | 11-1~11-7（7 例） |
 | 12-new-product-review | `get_online_product_page_list`、`get_product_analyze_list`、`get_profit_report_by_msku` | 12-1~12-7（7 例） |
 | 14-custom-report-analysis | `get_custom_report_index_page_list`（发现）、`get_custom_report_page_list`（验证读+取数） | 14-1~14-8（8 例） |

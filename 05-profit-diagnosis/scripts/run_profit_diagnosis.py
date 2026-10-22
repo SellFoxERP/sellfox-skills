@@ -5,7 +5,7 @@
 校验组装(fetch_profit.assemble_all) → 归因(diagnose) → 渲染(render)。
 
 v3 前置校验（不再需要 SELLFOX_MCP_KEY —— Key 只在客户端 MCP 配置里）：
-  1. 会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（agent 取数面前提）；
+  1. 会话内能调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`（agent 取数面前提）；
   2. `out/raw/` 是否已有取数落盘（缺失 → 提示按 workflow.md「取数计划」由 agent 落盘）；
   3. 演示环境指纹运行时识别 → 顶部水印。
 
@@ -58,7 +58,7 @@ def precheck(raw_dir: Path = RAW_DIR) -> list[str]:
     if not raw_dir.exists() or not any(raw_dir.glob("*.json")):
         warnings.append(
             f"取数落盘为空（{raw_dir}）：v3 取数面由 agent 完成，"
-            "请按 references/workflow.md 的「取数计划」调用 mcp__Sellfox-MCP__{search,action} "
+            "请按 references/workflow.md 的「取数计划」调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} "
             "并把每步信封落盘到 out/raw/，再重跑本脚本。"
         )
     return warnings

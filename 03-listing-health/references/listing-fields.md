@@ -20,7 +20,7 @@
 | `get_product_analyze_list` | `data.rows` | 页码 `page_no` | 字段集合取决于 `fields` 入参 |
 | `get_product_by_label` | `data.rows` | 页码 **`page_num`** | 标签→产品 |
 
-> ⚠️ 不要统一按 `rows` 解析**所有**工具：利润报表是 `reportList`，广告类是 `itemList`+`nextToken`。本技能不涉及后两类，但共用 `_shared` 客户端时须按工具区分。
+> ⚠️ 列表字段以当次契约与信封为准：网关分页默认标准化为 `rows`（raw 模式才出现 `reportList`/`itemList`）。读取用共享库 `rows()` 自动识别，不硬编码历史键名。
 
 ## 2. 字段 → 数据源对照表
 

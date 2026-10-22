@@ -11,8 +11,8 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”仅指赛狐取数后的离线计算；本技能不接入飞书等外部推送（v1.7.0 起移除），
 交付为本地 HTML 报告。没有原始数据时仅说明缺口或产出
 明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -57,7 +57,7 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 
 ### 阶段 0：前置校验
 
-- **客户端 MCP 就绪 + 落盘检查**：取数面 = agent 调 `mcp__Sellfox-MCP__{help,search,action}`
+- **客户端 MCP 就绪 + 落盘检查**：取数面 = agent 调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
   按取数计划把信封落盘 `out/raw/`（Key 只在客户端 MCP 配置里，脚本**不需要也不接受**
   `SELLFOX_MCP_KEY`，计算面零网络）。缺落盘 → 降级为「离线骨架」，实时字段标
   「需人工核查」，不崩。
@@ -78,7 +78,7 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 ### 阶段 2：取数与基线组装（agent 落盘 + 脚本校验）
 
 **v3：取数面是 agent**——只调两个赛狐只读工具，按 `references/workflow.md` 的
-**取数计划**调 `mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘
+**取数计划**调 `mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封落盘
 `out/raw/`（两步可并行发起，新网关同 session 并发安全）：
 
 | 顺序 | 落盘文件 | 工具 | 列表字段 | 用途 |
@@ -86,7 +86,7 @@ description: 为跨境电商新品生成「上架素材包」（Listing Package�
 | 1 | `out/raw/online_product.json` | `get_online_product_page_list` | `data.rows` | Listing 属性 + 成本/费用/价格 + FBA 库存 |
 | 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `data.rows` | 类目 / BSR / 上架时间 |
 
-纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（action 必带当次 search 返回的
+纪律见 `_shared/SELLFOX_CLIENT.md`：契约先取后用（sf_execute 必带当次 sf_describe 返回的
 contract_version）、参数类型按当次 inputSchema、失配重取一次、每步落盘不复述行级数据、
 不信 `has_more` 信 `coverage`。
 
@@ -167,7 +167,7 @@ cd sellfox-skills/08-listing-launch
 
 # 0) agent 先按 references/workflow.md 取数计划落盘（零 Key 进脚本）：
 #    out/raw/online_product.json + out/raw/product_analyze.json
-#    （调 mcp__Sellfox-MCP__{search,action}，完整信封原样写盘）
+#    （调 mcp__Sellfox-MCP__{sf_describe,sf_execute}，完整信封原样写盘）
 
 # 1) 出需求单 + 成本（默认 HOLD，不生成；脚本零网络）
 python3 scripts/listing_launch.py \
@@ -208,8 +208,8 @@ python3 scripts/listing_launch.py ... --confirm-assets
 
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
-| 脚本里自己发 HTTP 调 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具 `mcp__Sellfox-MCP__{help,search,action}`，脚本零 HTTP |
-| action 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 search 拿当次契约；失配重取一次、按新 schema 重建参数、只重试一次 |
+| 脚本里自己发 HTTP 调 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，脚本零 HTTP |
+| sf_execute 不带/带旧 contract_version | 被网关拒绝 | 每次执行前 sf_describe 拿当次契约；失配重取一次、按新 schema 重建参数、只重试一次 |
 | 参数类型沿用旧接口全字符串 | INVALID_PARAMS 被拒 | 类型按当次 inputSchema（integer/string 因工具而异），未声明字段不传 |
 | 依赖 `page_size` 控量 | 服务端静默降级为 20 | 单次 ≤1 页 + 取数计划 `max_rows` 安全阀，截断必披露（信 coverage） |
 | 在对话里复述行级数据 | 上下文爆炸 | 每步取数立即落盘 `out/raw/`，组装交给脚本 |

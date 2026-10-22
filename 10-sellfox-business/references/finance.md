@@ -14,10 +14,10 @@
 | Amazon 赔偿 | `get_amazon_reimbursement_report` |
 | 收款单 | `get_receipt_order_page_list` |
 | TikTok 利润和账单 | `get_tiktok_profit_report_by_shop`、`get_tiktok_profit_report_by_msku`、`get_tiktok_statement_detail` |
-| Temu 全托/半托 | `get_temu_full_managed_profit_by_shop`、`get_temu_semi_managed_profit_by_shop`；产品、结算及具体费用项再 help 发现 |
+| Temu 全托/半托 | `get_temu_full_managed_profit_by_shop`、`get_temu_semi_managed_profit_by_shop`；产品、结算及具体费用项再 sf_discover 发现 |
 | MercadoLibre、SHEIN 结算 | `get_mercadolibre_settlement_page_list`、`get_shein_agent_settlement_summary_page_list`、`get_shein_half_settlement_page_list` |
 
-问句示例：“查询 Temu 半托管这家店上月利润，并查看售后退款和物流费用明细。”先按平台和经营模式选汇总，再从当前 help 发现对应费用工具。工具列表不是全量清单，不按前后缀拼造工具 ID。
+问句示例：“查询 Temu 半托管这家店上月利润，并查看售后退款和物流费用明细。”先按平台和经营模式选汇总，再从当前 sf_discover 发现对应费用工具。工具列表不是全量清单，不按前后缀拼造工具 ID。
 
 ## 分析与交付
 

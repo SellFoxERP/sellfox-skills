@@ -32,9 +32,9 @@
 
 保存并在当前任务启用连接器。如果看不到工具，新建任务或重新加载客户端。对 AI 助手说：
 
-> 检查 Sellfox-MCP 是否能连接，列出 help、search、action 工具。只查询店铺列表验证访问，不执行写操作，不展示 Key。
+> 检查 Sellfox-MCP 是否能连接，列出 sf_discover、sf_describe、sf_execute 工具。只查询店铺列表验证访问，不执行写操作，不展示 Key。
 
-`help` 发现业务能力，`search` 读取已知能力的当前契约，`action` 执行业务查询/操作。已有完整契约时无需重复 search。
+`sf_discover` 发现业务能力，`sf_describe` 读取已知能力的当前契约，`sf_execute` 执行业务查询/操作。已有完整契约时无需重复 sf_describe。
 
 ## 3. 一次安装全部技能
 

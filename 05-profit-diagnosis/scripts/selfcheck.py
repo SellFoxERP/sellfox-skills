@@ -34,7 +34,7 @@ from render import render_report  # noqa: E402
 # 合成信封构造（与 agent 落盘的 out/raw/*.json 形状一致）
 # ---------------------------------------------------------------------------
 def _envelope(rows, *, list_key="reportList", status="complete", coverage=None, trace="demo-trace"):
-    """构造一份 action 完整信封（status/data/coverage/pagination/trace_id）。"""
+    """构造一份 sf_execute 完整信封（status/data/coverage/pagination/trace_id）。"""
     return {
         "status": status,
         "data": {list_key: rows} if rows is not None else {},

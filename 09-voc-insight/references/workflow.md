@@ -1,7 +1,7 @@
 # 执行流程（workflow.md，v3：agent 取数 + 脚本计算）
 
 > 何时读：**执行本技能前必读**。取数计划、环比口径、外部源成本闸、归因分层、降级路径都在这里。
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `fetch_signals.py`（校验+组装）
 > → `fetch_reviews.py` → `analyze_themes.py` → `render_report.py`，全部零网络、零 Key。
 > 调用纪律（契约版本/参数类型/错误处理/并发）见 `_shared/SELLFOX_CLIENT.md`。
@@ -22,7 +22,7 @@
 ## 1. 端到端流程
 
 ```
-⓪ agent 按取数计划调 mcp__Sellfox-MCP__{search,action}，信封落盘 out/raw/（便宜，零外部依赖）
+⓪ agent 按取数计划调 mcp__Sellfox-MCP__{sf_describe,sf_execute}，信封落盘 out/raw/（便宜，零外部依赖）
 ① fetch_signals.py 校验落盘 + 组装 → online 评分快照筛「评分低且样本足够」的 ASIN
 ② 外部评论 MCP 取评论原文（贵，需授权；先过成本闸；由 agent 按 adapter 契约执行）
 ③ 主题聚类归因（质量/尺寸/色差/物流/描述不符/其他）
@@ -47,7 +47,7 @@
 
 ## 2. 取数计划（agent 执行）
 
-已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`；action 必带当次
+已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`；sf_execute 必带当次
 `contract_version`，参数类型以当次 inputSchema 为准。窗口口径（与 `fetch_signals.py`
 一致）：当前窗口 = `[end-N+1, end]`（`N=--days`，默认取
 `config/voc.yaml → stat_windows.short_days`；`end` 默认今天）；快照路径不消费上一窗口。
@@ -63,11 +63,11 @@
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；
   多店铺批次**可并行发起**，但落盘文件名不冲突、每步单独核对 status；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」；
 - 翻页前先看 `totalSize`/coverage 是否值得继续，触达 max_rows 必须保留 coverage 让脚本披露。
@@ -231,8 +231,8 @@ mention  ： 未达线 → 只作「个别反馈」列出，明确标注「不�
 | `fetch_signals.py` 报「缺少取数计划落盘」 | agent 未按第 2 节取数计划落盘 | 按取数计划补齐 `out/raw/online_products.json` 再重跑；先跑 `validate_raw.py` 核对 |
 | 所有字段恒空 | 列表键用错 | 本技能用 `get_online_product_page_list`，列表键是 `rows`；确认 tool 名 |
 | 需要 `lowReviewNum`/差评数环比 | 字段只在 489 宽表，本技能已不再取 | 转 `custom-report-analysis` 技能；本技能只出评分快照 |
-| `action` 被 `CONTRACT_VERSION_MISMATCH` 拒 | 契约已变更 | 重 `search` 一次、按新 schema 重建参数、重试一次（只一次） |
-| `action` 被 `INVALID_PARAMS` 拒 | 参数类型/字段与当次契约不符 | 按 `field_errors[{path,rule}]` 修正；只传契约 properties 里的字段 |
+| `sf_execute` 被 `CONTRACT_VERSION_MISMATCH` 拒 | 契约已变更 | 重 `sf_describe` 一次、按新 schema 重建参数、重试一次（只一次） |
+| `sf_execute` 被 `INVALID_PARAMS` 拒 | 参数类型/字段与当次契约不符 | 按 `field_errors[{path,rule}]` 修正；只传契约 properties 里的字段 |
 | 外部评论源调用挂起/超时 | 外部 MCP 并发能力未知 | 外部源默认串行调用；赛狐取数走 agent 元工具（并发安全），无此问题 |
 | 主题全是 `other` | 关键词词典不覆盖该品类 | 扩充 `config/voc.yaml → themes[*].keywords`，并用 `--llm-themes` 补语义 |
 | 差评很多但无 pattern | 阈值偏高或确实零散 | 这是**正确行为**，不要调低到把单条当模式 |

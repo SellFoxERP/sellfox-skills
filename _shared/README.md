@@ -67,7 +67,7 @@ cfg = ConfigLoader()                                   # 自动定位 config/
 thresholds = cfg.section("thresholds", "sales")        # {'drop_pct_vs_7d': 30, ...}
 
 env = load_envelope("<skill>/out/raw/profit_shop.json")  # agent 落盘的信封
-rows = env.rows("reportList")                            # 列表字段从契约 pagination 来
+rows = env.rows()                                         # 列表键自动识别（网关默认标准化为 rows）
 print(env.summary())                                     # "profit_shop.json: status=complete | rows=20 | ..."
 if detect_demo_environment(env.obj):
     print("⚠️ 演示数据，输出需加水印并默认阻断写入")

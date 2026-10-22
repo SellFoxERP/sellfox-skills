@@ -53,7 +53,7 @@ def precheck() -> List[str]:
     if not raw_dir.exists() or not any(raw_dir.glob("*.json")):
         warnings.append(
             f"取数落盘为空（{raw_dir}）：v3 取数面由 agent 完成，"
-            "请按 references/workflow.md 的「取数计划」调用 mcp__Sellfox-MCP__{search,action} "
+            "请按 references/workflow.md 的「取数计划」调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} "
             "并把每步信封落盘到 out/raw/，再重跑本脚本。"
         )
 

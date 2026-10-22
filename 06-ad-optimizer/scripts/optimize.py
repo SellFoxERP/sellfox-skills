@@ -10,7 +10,7 @@
     execute    **不调用任何写工具**：解析批准文本 → 累计闸 → 输出「执行清单」
                （被批准项 × tool_id × 参数模板 × before 快照 × read-back 计划 ×
                record 模板），指导 agent 按 workflow.md「写操作 agent 执行协议」
-               逐项调 mcp__Sellfox-MCP__action
+               逐项调 mcp__Sellfox-MCP__sf_execute
     record     agent 每执行完一项，把结果（含 read-back 实际值、status）落
                logs/ad_changes.jsonl：``optimize.py record --change change.json``
     verify     对比写后回读与期望，输出差异（read-back 校验的确定性部分）：
@@ -19,8 +19,8 @@
                未执行项标注「未执行（不在本次批准范围）」，不报不一致
     selftest   用内置合成数据离线自检（不调用 MCP，全绿）
 
-铁律：脚本零 HTTP；写操作只经 agent 按会话内人工确认流程调 action；写契约**执行前重取**
-（contract_version 占位必须替换为当次 search 结果）；写后 read-back；
+铁律：脚本零 HTTP；写操作只经 agent 按会话内人工确认流程调 sf_execute；写契约**执行前重取**
+（contract_version 占位必须替换为当次 sf_describe 结果）；写后 read-back；
 累计闸防连续调用；演示环境默认阻断写操作。
 """
 
@@ -46,12 +46,12 @@ from report_html import write_html_report  # HTML 主报告出口（_shared/scri
 _ITEM_FIELDS = ("tool", "target_type", "target_id", "field", "before", "after",
                 "reason", "action", "risk", "extra", "index")
 
-#: 提案/执行清单中 contract_version 的占位值：执行前必须重新 search 取当次版本。
+#: 提案/执行清单中 contract_version 的占位值：执行前必须重新 sf_describe 取当次版本。
 CONTRACT_VERSION_PLACEHOLDER = None
 
 _WRITE_PROTOCOL_NOTE = (
     "contract_version 为 null 占位：写契约变更频率高于读契约，"
-    "每项执行前必须重新 mcp__Sellfox-MCP__search 该 tool_id 取当次 contract_version，"
+    "每项执行前必须重新 mcp__Sellfox-MCP__sf_describe 该 tool_id 取当次 contract_version，"
     "不得沿用旧版本、不得沿用其他项的版本。"
 )
 
@@ -206,7 +206,7 @@ def render_report(
         "- 无法获取账户健康 / 绩效通知 / 政策合规，相关判断一律标注「需人工核查」。",
         "- `servingStatus` 的 `BUDGET_CAPPED` 取值未经实测，本技能不以其自动判定预算受限。",
         "- 关键词级竞价（`edit_sp_targeting` 的 `targetId` 语义）未实测确认，默认不自动执行。",
-        "- 本脚本不直接执行任何写操作：执行由 agent 按会话内人工确认后的执行协议逐项调 action（见 workflow.md）。",
+        "- 本脚本不直接执行任何写操作：执行由 agent 按会话内人工确认后的执行协议逐项调 sf_execute（见 workflow.md）。",
     ]
     return "\n".join(lines)
 
@@ -232,7 +232,7 @@ def _sources_markdown() -> str:
 def _item_payload(it: ChangeItem) -> Dict[str, Any]:
     """ChangeItem → 提案 JSON 行（含 tool_id 与 contract_version 占位）。"""
     d = asdict(it)
-    d["tool_id"] = it.tool  # 与 tool 同值；显式写出便于 agent 直接寻址 action
+    d["tool_id"] = it.tool  # 与 tool 同值；显式写出便于 agent 直接寻址 sf_execute
     d["contract_version"] = CONTRACT_VERSION_PLACEHOLDER
     return d
 
@@ -270,7 +270,7 @@ def load_proposal(path: Path) -> Dict[str, Any]:
 
 
 def _write_args(item: ChangeItem, shop_id: str) -> Dict[str, Any]:
-    """把 ChangeItem 映射为对应写工具的参数模板（agent 调 action 时用）。"""
+    """把 ChangeItem 映射为对应写工具的参数模板（agent 调 sf_execute 时用）。"""
     if item.tool == "edit_sp_campaign":
         entry: Dict[str, Any] = {"campaignId": item.target_id}
         entry[item.field] = item.after
@@ -296,14 +296,14 @@ def _write_args(item: ChangeItem, shop_id: str) -> Dict[str, Any]:
 def _read_back_plan(item: ChangeItem, shop_id: str) -> Dict[str, Any]:
     """写后 read-back 的确定性计划：读哪个工具、怎么匹配、期望什么（不发请求）。
 
-    agent 拿到本计划后调 action 写入 → 按计划回读 → 把实际值交给
+    agent 拿到本计划后调 sf_execute 写入 → 按计划回读 → 把实际值交给
     ``optimize.py record / verify``。
     """
     if item.tool == "edit_sp_campaign":
         return {
             "tool_id": "get_sp_campaign_list",
             "params": {"shop_id": shop_id, "campaign_id": item.target_id},
-            "list_key": "itemList", "id_field": "campaignId", "id_value": item.target_id,
+            "list_key": "rows", "id_field": "campaignId", "id_value": item.target_id,
             "field": item.field, "expected": item.after,
         }
     if item.tool == "edit_sp_targeting":
@@ -313,7 +313,7 @@ def _read_back_plan(item: ChangeItem, shop_id: str) -> Dict[str, Any]:
             args["campaign_id"] = camp
         return {
             "tool_id": "get_sp_keyword_list", "params": args,
-            "list_key": "itemList", "id_field": "keywordId", "id_value": item.target_id,
+            "list_key": "rows", "id_field": "keywordId", "id_value": item.target_id,
             "field": item.field, "expected": item.after,
         }
     if item.tool == "create_sp_negative_keyword_targeting":
@@ -323,7 +323,7 @@ def _read_back_plan(item: ChangeItem, shop_id: str) -> Dict[str, Any]:
             args["campaign_id"] = camp
         return {
             "tool_id": "get_sp_negative_keyword_list", "params": args,
-            "list_key": "itemList", "id_field": "keywordText", "id_value": item.after,
+            "list_key": "rows", "id_field": "keywordText", "id_value": item.after,
             "field": "keywordText", "expected": item.after,
             "note": "新增否定词按 keywordText 集合包含校验（无稳定 ID 可回读）。",
         }
@@ -411,7 +411,7 @@ def _rows_from_actual(actual: Any) -> Tuple[List[Dict[str, Any]], str]:
     1. **判定表形态**：``{"items": [{"index", "target_id", "field", "actual"}, ...]}``
        （agent 已从回读中摘出实际值）——**先判**：旧版把无 ``data`` 键的判定表
        误判为信封形态，导致判定表比对分支不可达（评测 #9）；
-    2. **信封形态**（agent 把回读 action 的完整信封存盘）：有 ``status``/``data``
+    2. **信封形态**（agent 把回读 sf_execute 的完整信封存盘）：有 ``status``/``data``
        等信封特征键 → 自动识别 itemList/rows/reportList。
     """
     if isinstance(actual, dict) and isinstance(actual.get("items"), list):
@@ -600,7 +600,7 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     except ad_fetch.AdFetchError as exc:
         print(f"❌ 落盘数据不满足诊断前提：{exc}", file=sys.stderr)
         print("   v3 取数面由 agent 完成：请按 references/workflow.md 的「取数计划」"
-              "调用 mcp__Sellfox-MCP__{search,action} 并落盘到 out/raw/，再重跑。", file=sys.stderr)
+              "调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并落盘到 out/raw/，再重跑。", file=sys.stderr)
         return 1
 
     findings = diag.diagnose(ad_data, thresholds, opt_cfg)
@@ -673,8 +673,8 @@ def _execution_checklist(
             "warning": _WRITE_PROTOCOL_NOTE,
             "protocol": (
                 "写操作由 agent 执行（脚本零网络）：① 本清单已过会话内人工确认与累计闸；"
-                "② 逐项执行前重新 search 该 tool_id 取当次 contract_version；"
-                "③ 调 mcp__Sellfox-MCP__action(tool_id, params, contract_version)；"
+                "② 逐项执行前重新 sf_describe 该 tool_id 取当次 contract_version；"
+                "③ 调 mcp__Sellfox-MCP__sf_execute(tool_id, params, contract_version)；"
                 "④ 按 read_back_plan 回读目标对象；⑤ 填 record_template 存为 change.json，"
                 "执行 `python scripts/optimize.py record --change change.json`；"
                 "⑥ 全部执行完跑 `optimize.py verify` 比对；"
@@ -686,7 +686,7 @@ def _execution_checklist(
 
 
 def cmd_execute(args: argparse.Namespace) -> int:
-    """输出「执行清单」—— 不调用任何写工具（v3：写操作由 agent 逐项调 action）。"""
+    """输出「执行清单」—— 不调用任何写工具（v3：写操作由 agent 逐项调 sf_execute）。"""
     thresholds = load_thresholds()
     loaded = load_proposal(Path(args.proposal))
     meta, proposal = loaded["meta"], loaded["proposal"]
@@ -740,7 +740,7 @@ def cmd_execute(args: argparse.Namespace) -> int:
         f"- ⚠️ {_WRITE_PROTOCOL_NOTE}",
         "",
         "按 `references/workflow.md`「写操作 agent 执行协议」逐项执行："
-        "重取契约 → action → 回读 → record → （全部完成后）verify。partial/failed 不重放。",
+        "重取契约 → sf_execute → 回读 → record → （全部完成后）verify。partial/failed 不重放。",
         "",
     ]
     for e in checklist["items"]:
@@ -749,7 +749,7 @@ def cmd_execute(args: argparse.Namespace) -> int:
             f"：{e['before']!r} → {e['after']!r}",
             "",
             f"- 理由：{e['reason']} ｜ 风险：{e['risk']} ｜ 回滚值（before 快照）：`{e['before']!r}`",
-            f"- action 参数模板（contract_version 执行前重取）：",
+            f"- sf_execute 参数模板（contract_version 执行前重取）：",
             "",
             "```json",
             json.dumps({"tool_id": e["tool_id"], "contract_version": None,

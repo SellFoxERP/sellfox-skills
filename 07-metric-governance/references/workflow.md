@@ -3,7 +3,7 @@
 > 执行本技能前读本文件。它把 SKILL.md 的 7 个 Step 展开到可操作粒度，并给出各分支
 > （空数据 / 截断 / 演示环境 / 公式未确认 / 回读失败）的处理方式。
 >
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `run_governance.py`
 > （落盘检查 → 差异比对 → dry-run 提案 / 执行清单 / 记录 / 回读比对），**零网络**。
 > **写操作（add/update_custom_report_index）由 agent 按批准逐项执行**，脚本永不直接调写工具。
@@ -37,8 +37,8 @@
 
 ## 一、取数计划（agent 执行）
 
-按顺序取数；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。
-每步把 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）
+按顺序取数；已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`。
+每步把 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）
 原样写盘，**不在对话中复述行级数据**。
 
 | # | 落盘文件 | 工具 | 关键参数 | list_key | max_rows | 说明 |
@@ -54,7 +54,7 @@
 
 - 单次调用 ≤1 页（历史测试常见 20 条/页（当前分页以契约为准），`page_size` 不被尊重）；
   触达 `max_rows` 必须保留 coverage 让脚本披露；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」；
 - 演示环境日期过滤不可信：落盘数据含日期字段且不在请求窗口内须标注。
@@ -108,16 +108,16 @@ python scripts/run_governance.py --verify --manifest out/execute_manifest_<ts>.j
 agent，按下述闭环逐项走（清单 `protocol` 字段内嵌了同样的步骤）：
 
 ```
-批准（人工，parse_confirmation） → 重取写契约 → action → record → 回读 verify
+批准（人工，parse_confirmation） → 重取写契约 → sf_execute → record → 回读 verify
 ```
 
 1. **批准**：只执行被人工批准的条目（清单 `items[].index` 命中批准序号）；
    `unclear` 必须回到人工再问，**不得默认执行**。
-2. **重取写契约**：`search(tool_ids=[tool_id], detail=true)` 取**当次** `contract_version`
+2. **重取写契约**：`sf_describe(tool_ids=[tool_id], detail=true)` 取**当次** `contract_version`
    （写工具契约变更频率高于读工具，**每次执行前必重取**，禁止沿用旧版本或 null 占位）；
    并按当次 `inputSchema` 校正参数模板的类型/必填/枚举（未声明字段不传）。
-3. **action**：`action(tool_id, params, contract_version)`。
-   - `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次
+3. **sf_execute**：`sf_execute(tool_id, params, contract_version)`。
+   - `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次
      （版本失配未发业务请求，安全）；只重试一次。
    - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（未发业务请求，安全）。
    - **上游业务失败 / status=partial**：写操作一律按失败处理，**不重放**，进人工核查。

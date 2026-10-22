@@ -5,7 +5,7 @@ description: 销售利润分析（赛狐/SellFox ERP，只读）。即席回答�
 
 # sales-profit-analysis · 销售利润分析
 
-> v3 双平面：取数 = agent 调客户端 `mcp__Sellfox-MCP__{help,search,action}` 按
+> v3 双平面：取数 = agent 调客户端 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}` 按
 > [workflow.md](references/workflow.md) 的取数计划把完整信封落盘 `out/raw/`；
 > 计算 = `scripts/run_analysis.py` → `scripts/render_report.py`，零网络。
 > 铁律：**口径没锁不出数 · 比率不重算不出榜 · 十几行以上不口算 · 无源就不判。**
@@ -41,7 +41,7 @@ description: 销售利润分析（赛狐/SellFox ERP，只读）。即席回答�
 ## 1. 三门（不过门不出数）
 
 **门 1 · 利润口径** `_by_msku/shop/sku` 用 `profit_caliber_type`（`""|settlement|shipment`），
-`_by_order` 用 `caliber_type`（`""|settlement|delivery`）。默认 `""` 是**未选**；help 对本域返回
+`_by_order` 用 `caliber_type`（`""|settlement|delivery`）。默认 `""` 是**未选**；sf_discover 对本域返回
 `needs_clarification` → 先澄清。本期与基期必须同口径，跨口径比较整份作废。
 
 **门 2 · 币种不可加** 契约 `not_for` 原文：「不直接汇总不同币种或口径」。多站点**分开报**，

@@ -13,7 +13,7 @@
         --copy-json copy.json --out out/listing-package.md
 
 设计要点：
-- **v3 分工**：取数面 = agent 调 `mcp__Sellfox-MCP__{help,search,action}` 落盘 `out/raw/`；
+- **v3 分工**：取数面 = agent 调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}` 落盘 `out/raw/`；
   本脚本（计算面）零网络，只做「检查落盘 → fetch_baseline 校验组装」。
 - **只读 + 外部 MCP**：本脚本不调用任何赛狐写工具；生图/生视频由 AI 助手 按
   references/asset-brief-spec.md 的适配器契约执行，且必须先过「成本确认闸」。
@@ -93,7 +93,7 @@ def run(args: argparse.Namespace) -> int:
     if missing:
         notes.warn(
             f"缺少落盘 {missing}：v3 取数面由 agent 完成——请按 references/workflow.md 的"
-            "「取数计划」调 mcp__Sellfox-MCP__{search,action} 并把完整信封落盘 "
+            "「取数计划」调 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并把完整信封落盘 "
             f"{raw_dir}/ 后重跑。本次实时字段标「需人工核查」，骨架照出。"
         )
 

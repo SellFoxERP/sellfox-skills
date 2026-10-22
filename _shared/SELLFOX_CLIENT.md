@@ -1,26 +1,26 @@
 # 赛狐 MCP 调用与落盘契约
 
 本文供执行技能的 AI 使用。MCP 由客户端管理连接，技能脚本不持有 Key，也不直连赛狐。
-文中 `mcp__Sellfox-MCP__{help,search,action}` 为示意名称，客户端可能将名称规范化；按实际可用工具匹配。
+文中 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}` 为 2026-10 实测网关名，客户端可能将名称规范化；按实际可用工具匹配。
 
 ## 1. 发现与契约
 
 - **元工具命名以当前连接的 tools/list 为准**：三个元工具（发现候选 / 读契约 / 执行）在不同网关版本
-  命名可能不同——实测见过 `help`/`search`/`action` 与 `sf_discover`/`sf_describe`/`sf_execute`
-  两套形态，语义一一对应；本仓库文档统一以 `help/search/action` 指代，调用前按实际名称适配，
-  不因改名当作连接故障。
-- 不知道业务 `tool_id`：向 `help` 传完整业务问题，可用 domain/platform/operation 收窄。
+  命名可能不同——2026-10 实测为 `sf_discover`/`sf_describe`/`sf_execute`，更早连接见过
+  `help`/`search`/`action`，语义一一对应；本仓库文档统一以 `sf_discover/sf_describe/sf_execute`
+  指代，调用前按实际名称适配，不因改名当作连接故障。
+- 不知道业务 `tool_id`：向 `sf_discover` 传完整业务问题，可用 domain/platform/operation 收窄。
 - `selection_status=needs_clarification` 先澄清，`no_match` 不猜工具 ID。
-- `help(include_schema=true)` 返回 `schema_included=true` 且完整契约时可直接 `action`。
-- 已知 tool_id、缺当前契约时调用 `search(tool_ids=[...], detail=true)`，一次 1–5 个。
-- search 部分返回 `CONTRACT_BUDGET_EXCEEDED` 时，仅对失败项缩小批次重取；已成功的契约继续使用。
-- 已有当前完整契约不重复 search；`contract_version` 来自本次会话的 help/search，版本失配时重新获取。
+- `sf_discover(include_schema=true)` 返回 `schema_included=true` 且完整契约时可直接 `sf_execute`。
+- 已知 tool_id、缺当前契约时调用 `sf_describe(tool_ids=[...], detail=true)`，一次 1–5 个。
+- sf_describe 部分返回 `CONTRACT_BUDGET_EXCEEDED` 时，仅对失败项缩小批次重取；已成功的契约继续使用。
+- 已有当前完整契约不重复 sf_describe；`contract_version` 来自本次会话的 sf_discover/sf_describe，版本失配时重新获取。
 - 阅读 `inputSchema`、`pagination`、`output_fields`、字段说明、`business_constraints` 后构造参数。
-- 各技能 workflow 中的工具 ID 和参数是取数计划参考，不能覆盖当前契约。工具不可用时重新 help，不编造替代 ID。
+- 各技能 workflow 中的工具 ID 和参数是取数计划参考，不能覆盖当前契约。工具不可用时重新 sf_discover，不编造替代 ID。
 
 ## 2. 执行
 
-`action(tool_id, params, contract_version)` 的 params 只含契约声明的字段。
+`sf_execute(tool_id, params, contract_version)` 的 params 只含契约声明的字段。
 参数类型、枚举、日期格式、币种和时区按当次契约，不从历史样例推断。店铺、商品等 ID 从查询结果取得或由用户提供。
 财务口径（结算/发货）、日期范围、币种在取数前确认；默认配置只能作为待确认的起点。
 
@@ -43,12 +43,15 @@
 失败分层（实测补充）：`failed` 带 `error_code=UPSTREAM_BUSINESS_ERROR` 且 `upstream.stage=business`
 表示已过网关本地校验、**被上游拒绝**（鉴权、授权范围、数据权限）——调用方改参数无用；
 `retryable=false` 不再重试，保留 `trace_id` 交上游排查。能连上网关拿到工具目录不等于有业务权限，
-判据只有 action 的返回。另有 `RESULT_BUDGET_EXCEEDED` 属**返回体积**问题而非参数问题
+判据只有 sf_execute 的返回。另有 `RESULT_BUDGET_EXCEEDED` 属**返回体积**问题而非参数问题
 （`retryable=true`，提示缩小 page_size 或用投影字段）：先聚合、再换有投影的工具、再降页大小。
 
 ## 4. 分页与覆盖
 
-分页类型、参数名、列表字段从当前契约读取。常见列表字段为 rows/reportList/itemList，但不得据此猜测。
+分页类型、参数名、列表字段从当前契约读取。2026-10 实测网关分页默认**标准化**（`options.pagination=normalized`），
+根字段固定为 `rows/page_no/page_size/total_count/total_pages`；`raw` 模式才返回 `reportList`/`itemList` 等原始根字段名。
+计算面读列表一律用共享库 `rows()` 缺省自动识别（rows/reportList/itemList），不硬编码历史键名。
+常见列表字段为 rows/reportList/itemList，但不得据此猜测。
 使用 coverage、响应计数和分页标记交叉核对；发生矛盾时优先按可核验的分页计数判定——
 实测利润类工具出现过 `coverage.complete=false` 与 `pagination.has_more=false` **同时成立**的矛盾，
 此时以 `data.totalPage`/`pageNo` 翻完为准并在口径行披露矛盾信号；确实无法核验时标“覆盖未知”，
@@ -56,7 +59,7 @@
 历史测试曾出现请求 1 条返回 20 条，这是特定环境观察，不是所有工具的固定上限。
 每次处理一页，按实际 next cursor/page 翻页，并遵守本技能 max_rows 安全阀。
 达到上限时披露“仅覆盖前 N 条，其余未纳入”，只有实际按指标排序后才称 Top N。
-目录 help 的分页不是业务数据分页。
+目录 sf_discover 的分页不是业务数据分页。
 
 ## 5. 输出契约与数据质量
 
@@ -74,7 +77,7 @@ MCP 包装层有 structuredContent 时取其业务信封；仅有 text 时解析
 不同分页使用 workflow 支持的命名/合并形式，合并时保留每页信封，不能静默丢掉失败页或覆盖信息。
 先运行共享 `scripts/validate_raw.py` 检查状态和列表结构，再运行技能计算脚本。
 行级数据保留在本地，不在聊天中重复粘贴整份数据，不随代码上传。
-上下文预算（本节纪律存在的原因）：action 的返回必先经过对话上下文，落盘收不回这部分占用；
+上下文预算（本节纪律存在的原因）：sf_execute 的返回必先经过对话上下文，落盘收不回这部分占用；
 当前网关也没有“结果直写本地文件、只回引用”的通道。控制占用在两端做：**取数端**让每次返回
 尽量小——先聚合后下钻、有投影就投影、`page_size` 从小起步、max_rows 到量即停
 （RESULT_BUDGET_EXCEEDED 是网关侧的体积保护，按 §3 处置，不硬闯）；**落盘端**不再回读——
@@ -108,7 +111,7 @@ MCP 元工具（ZCode 等支持）时，取数一律先交给子代理执行；�
 **交给子代理的三样**：① 本契约的调用纪律（§1~§4）；② 该技能 workflow.md 的
 取数计划表；③ 本次窗口/口径参数与落盘目录（`out/raw/`）。
 
-**子代理职责边界**：按计划 search→action→完整信封落盘→逐页核对 status/coverage→
+**子代理职责边界**：按计划 sf_describe→sf_execute→完整信封落盘→逐页核对 status/coverage→
 按 §3 处置错误（至多重试一次）。不分析数据、不修改计划参数语义、不执行任何写工具。
 
 **返回契约（子代理唯一回传物，禁止回传行级数据）**：

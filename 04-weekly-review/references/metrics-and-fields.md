@@ -19,15 +19,15 @@
 
 | 指标 | 字段名 | 来源工具 | 列表字段 | 备注 |
 |---|---|---|---|---|
-| GMV / 销售额 | `productSales` | `get_profit_report_by_shop` / `_msku` | `reportList` | 赛狐订单口径 |
-| 销量 | `salesNum` | `get_profit_report_by_*` | `reportList` | — |
-| 毛利 | `grossProfit` | `get_profit_report_by_*` | `reportList` | 口径由 `profit_caliber_type` 决定 |
-| 毛利率 | `grossProfitRate` | `get_profit_report_by_shop` / `_msku` | `reportList` | 小数（0.2364） |
-| 广告花费 | `cpcCost` | `get_profit_report_by_*` | `reportList` | **为负数**；展示取绝对值 |
+| GMV / 销售额 | `productSales` | `get_profit_report_by_shop` / `_msku` | `rows`（标准化分页） | 赛狐订单口径 |
+| 销量 | `salesNum` | `get_profit_report_by_*` | `rows`（标准化分页） | — |
+| 毛利 | `grossProfit` | `get_profit_report_by_*` | `rows`（标准化分页） | 口径由 `profit_caliber_type` 决定 |
+| 毛利率 | `grossProfitRate` | `get_profit_report_by_shop` / `_msku` | `rows`（标准化分页） | 小数（0.2364） |
+| 广告花费 | `cpcCost` | `get_profit_report_by_*` | `rows`（标准化分页） | **为负数**；展示取绝对值 |
 | 广告成本占比 | 自算 | — | — | `|cpcCost| / productSales` |
-| 退款率 | `refundRate` | `get_profit_report_by_*` | `reportList` | 直接用赛狐算法 |
-| 汇率 | `rate` | `get_profit_report_by_msku` | `reportList` | `rate` 在利润报表中（`06` 备注）；`currencyList` 未在 `01/06` 确认，勿用 |
-| 标识（MSKU 利润报表） | **字段名未确认** | `get_profit_report_by_msku` | `reportList` | ⚠️ `06` 的 `msku`/`asin`/`sku`/`title`「出现于」均不含该工具，`01` 亦未列；须用真实响应核实后回填 `weekly.yaml → rank_identifiers`，取不到即标「需人工核查」 |
+| 退款率 | `refundRate` | `get_profit_report_by_*` | `rows`（标准化分页） | 直接用赛狐算法 |
+| 汇率 | `rate` | `get_profit_report_by_msku` | `rows`（标准化分页） | `rate` 在利润报表中（`06` 备注）；`currencyList` 未在 `01/06` 确认，勿用 |
+| 标识（MSKU 利润报表） | **字段名未确认** | `get_profit_report_by_msku` | `rows`（标准化分页） | ⚠️ `06` 的 `msku`/`asin`/`sku`/`title`「出现于」均不含该工具，`01` 亦未列；须用真实响应核实后回填 `weekly.yaml → rank_identifiers`，取不到即标「需人工核查」 |
 
 > 宽表专属指标（订单数 `orderNum`、ACOS `acos`、广告转化率 `adConversionRateCpc`、
 > 广告点击率 `adClickRate`、会话数 `sessions`、可售天数 `availableDays`、评分 `rating`、
@@ -42,11 +42,11 @@
 | 类型 | 列表字段 | 示例 |
 |---|---|---|
 | 分页类 | `data.rows` | `get_shop_page_list`、`get_custom_report_page_list`、`get_product_analyze_list` |
-| 利润报表 | `data.reportList` | `get_profit_report_by_shop` / `_msku` / `_sku` / `_order` |
-| 广告类（游标） | `data.itemList` + `data.nextToken` | `get_sp_campaign_list` 等 |
+| 利润报表 | `data.rows`（标准化分页） | `get_profit_report_by_shop` / `_msku` / `_sku` / `_order` |
+| 广告类（游标） | `data.rows`（标准化分页）+ 游标 | `get_sp_campaign_list` 等 |
 
 > 用 `rows` 解析利润报表会拿到**空结果且不报错** —— 这是最常见的隐性错误。
-> 本技能在 `call_paged(..., list_key="reportList")` 中显式指定，避免踩坑。
+> 组装层用共享库自动识别列表键（rows/reportList/itemList），网关默认标准化分页根字段为 `rows`。
 
 ## 三、币种与汇率
 

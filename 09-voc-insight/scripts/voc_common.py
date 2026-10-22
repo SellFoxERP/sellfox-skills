@@ -5,7 +5,7 @@
 所以先读本技能 ``config/paths.yaml`` 的 ``shared_root``（绝对路径），再把
 ``_shared/scripts`` 加入 ``sys.path``，之后才能 import ``config_loader`` /
 ``sellfox_offline``（旧 ``sellfox_client`` 已废弃，v3 计算面**不 import** 它；
-取数面 = agent 调 ``mcp__Sellfox-MCP__{help,search,action}`` 并落盘 ``out/raw/``）。
+取数面 = agent 调 ``mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`` 并落盘 ``out/raw/``）。
 
 本模块还提供：
 - 评论者昵称掩码（评论原文含 PII，写外部文档前必须脱敏，铁律 8）；
@@ -295,5 +295,5 @@ def read_json(path: str) -> Any:
 
 
 # 说明：v3 起本模块不再提供 new_client() —— 赛狐取数由 agent 调客户端元工具
-# mcp__Sellfox-MCP__{help,search,action} 并落盘 out/raw/ 完成（见
+# mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute} 并落盘 out/raw/ 完成（见
 # _shared/SELLFOX_CLIENT.md）；计算面脚本零 HTTP、零 Key、不 import sellfox_client。

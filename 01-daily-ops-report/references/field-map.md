@@ -1,7 +1,7 @@
 # 日报字段地图（field-map.md）
 
 > 字段名**以此为准**，不凭记忆书写。权威来源：`_shared/FIELD_DICTIONARY.md`（字段 → 工具）；
-> 工具参数以网关当次 `search` 返回的契约为准。
+> 工具参数以网关当次 `sf_describe` 返回的契约为准。
 > SKILL.md 需要核对字段时读本文件。
 >
 > ⚠️ **v1.7.0 起本技能不再调用 `get_custom_report_page_list`（自定义报表宽表）**，
@@ -30,16 +30,16 @@
 | # | 工具 | 列表字段 | 分页 | 本技能用途 |
 |---|---|---|---|---|
 | 1 | `get_shop_page_list` | `data.rows` | 页码（硬上限 20） | 店铺清单（可缓存） |
-| 2 | `get_profit_report_by_shop` | **`data.reportList`** | 页码 | 店铺级利润 → 结论速览（含 30 天基线切片） |
+| 2 | `get_profit_report_by_shop` | **`data.rows`**（标准化分页） | 页码 | 店铺级利润 → 结论速览（含 30 天基线切片） |
 | 3 | `get_order_page_list` | `data.rows` | 页码 | 订单异常下钻样本 |
-| 4 | `get_sp_campaign_list` | **`data.itemList`** + `data.nextToken` | **游标** | 广告活动状态 |
+| 4 | `get_sp_campaign_list` | **`data.rows`**（标准化分页）+ 游标 | **游标** | 广告活动状态 |
 | 5 | `get_multiplatform_sale_stats` | `data.rows` | 页码（`page_size<=1000`） | 跨平台销量 |
 
 > `get_custom_report_page_list`（489 字段宽表）不在本技能取数范围——
 > 宽表字段分析由 `custom-report-analysis` 技能承接。
 
 > ⚠️ 用 `rows` 解析利润报表会拿到空结果且不报错。`sellfox_client` 已按工具自动识别，
-> 显式传入时务必用 `list_key="reportList"` / `"itemList"`。
+> 网关分页默认标准化（根字段 `rows`）；建议缺省调用让共享库自动识别 rows/reportList/itemList，不显式传历史键名。
 
 ### 关键请求参数（实测确认）
 
@@ -54,7 +54,7 @@
 
 ## 二、结论速览字段
 
-来源均为 `get_profit_report_by_shop` 的 `reportList[]`：
+来源均为 `get_profit_report_by_shop` 的列表行（标准化分页 `rows[]`，读取自动识别）：
 
 | 指标 | 字段 | 说明 |
 |---|---|---|
@@ -132,7 +132,7 @@
 | 广告销售额 | `adSalePrice` |
 | **广告转化率** | **`adConversionRateCpc`** ⭐ 字段字典 06 确认（样例 2.33），可用于 ACOS 归因 |
 
-活动维度 `get_sp_campaign_list.itemList[]`：`campaignId`、`name`、`state`、`budget`、
+活动维度 `get_sp_campaign_list` 列表行（标准化分页 `rows[]`）：`campaignId`、`name`、`state`、`budget`、
 `targetingType`（`auto`/`manual`）、`servingStatus`、`campaignSite`、`adjustments`、`lastUpdatedDate`。
 
 > ⚠️ `state` 取值仅用实测确认的 **`enabled` / `paused` / `archived`**。

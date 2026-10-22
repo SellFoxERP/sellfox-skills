@@ -238,7 +238,7 @@ def daily_checks(daily_envs: List[RawEnvelope], agg_sum: Dict[str, Any],
     for env in daily_envs:
         if env.status == "failed":
             continue
-        for r in env.rows("reportList"):
+        for r in env.rows():
             if isinstance(r, dict):
                 days.append(r)
     days.sort(key=_day_key)

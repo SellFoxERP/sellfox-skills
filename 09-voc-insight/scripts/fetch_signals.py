@@ -6,7 +6,7 @@
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
   * **取数面 = agent**：按 `references/workflow.md` 的**取数计划**调
-    `mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/`：
+    `mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封落盘 `out/raw/`：
       online_products.json   get_online_product_page_list（主路径，评分快照）→ rows
   * **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/coverage 截断），
     并组装出与旧版相同形状的 `signals.json` —— analyze_themes / render_report /
@@ -236,7 +236,7 @@ def run(args: argparse.Namespace) -> int:
         raise SystemExit(
             f"❌ 落盘目录为空或不存在：{raw_dir}。\n"
             "   v3 取数面由 agent 完成：请按 references/workflow.md 的「取数计划」\n"
-            "   调用 mcp__Sellfox-MCP__{search,action} 并把完整信封落盘到 out/raw/，再重跑本脚本。"
+            "   调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并把完整信封落盘到 out/raw/，再重跑本脚本。"
         )
 
     current: List[Dict[str, Any]] = []

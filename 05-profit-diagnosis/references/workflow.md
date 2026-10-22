@@ -2,7 +2,7 @@
 
 本文件是执行取数时的详细编排。SKILL.md 的 Step 0~2 是摘要，这里给出每一步的坑与正确写法。
 
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按下方「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 = `fetch_profit.py`（校验+组装）
 > → `diagnose.py` → `render.py`，全部零网络。
 > 调用纪律（契约版本/参数类型/错误处理/并发）见 `_shared/SELLFOX_CLIENT.md`；
@@ -26,7 +26,7 @@
 
 动手取数前先确认三件事，否则跑出来的结论不可信：
 
-1. **客户端 MCP 是否就绪。** 会话内能调 `mcp__Sellfox-MCP__{help,search,action}`
+1. **客户端 MCP 是否就绪。** 会话内能调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`
    （Key 只在客户端 MCP 配置里，脚本不需要 `SELLFOX_MCP_KEY`）。若数据源为演示/沙箱环境，
    数值可能内部不自洽（沙箱曾实测 `quantity` 与 `totalInventory` 矛盾），
    仅可用于验证字段名与分页，**不可用于验证任何利润口径**。命中演示指纹
@@ -65,17 +65,17 @@ msku 报表拿不到）由 `custom-report-analysis` 技能承接：
 
 ## 3. 取数计划（agent 执行）
 
-按顺序取数；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再 `action`。
+按顺序取数；已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再 `sf_execute`。
 参数类型以当次契约为准（⚠️ 标注处为实测差异）。各步骤**可并行发起**
 （新网关同 session 并发安全），但每步都要落盘并核对 status。
 为做环比，**MSKU 主源取两次**（本期 + 基期）——文件名按窗口区分，绝不能互相覆盖。
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
-| 1 | `out/raw/profit_msku_current.json` | `get_profit_report_by_msku` | `date_type=2`；`start_date`/`end_date`=**本期窗口**（`yyyyMMdd`）；`profit_caliber_type` **显式**；`page_no`/`page_size` 为 **integer** | **`reportList`** | 200 | 主源（本期）：171 字段财务深度 |
-| 2 | `out/raw/profit_msku_base.json` | 同上 | 同上，但日期=**基期窗口** | `reportList` | 200 | 主源（基期） |
-| 3 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | 同步骤 1（`yyyyMMdd` + `date_type=2` + `profit_caliber_type`；分页 **integer**） | `reportList` | 60 | 背景源：判断整体恶化 vs 个别 MSKU（本期） |
-| 4 | `out/raw/profit_shop_base.json` | 同上 | 同上，但日期=基期 | `reportList` | 60 | 背景源（基期） |
+| 1 | `out/raw/profit_msku_current.json` | `get_profit_report_by_msku` | `date_type=2`；`start_date`/`end_date`=**本期窗口**（`yyyyMMdd`）；`profit_caliber_type` **显式**；`page_no`/`page_size` 为 **integer** | **`rows`**（标准化分页） | 200 | 主源（本期）：171 字段财务深度 |
+| 2 | `out/raw/profit_msku_base.json` | 同上 | 同上，但日期=**基期窗口** | `rows`（标准化分页） | 200 | 主源（基期） |
+| 3 | `out/raw/profit_shop_current.json` | `get_profit_report_by_shop` | 同步骤 1（`yyyyMMdd` + `date_type=2` + `profit_caliber_type`；分页 **integer**） | `rows`（标准化分页） | 60 | 背景源：判断整体恶化 vs 个别 MSKU（本期） |
+| 4 | `out/raw/profit_shop_base.json` | 同上 | 同上，但日期=基期 | `rows`（标准化分页） | 60 | 背景源（基期） |
 | 5 | `out/raw/reimbursement.json` | `get_amazon_reimbursement_report` | `start_time`=基期起点、`end_time`=本期终点（**`yyyy-MM-dd HH:mm:ss`**，按契约；范围 ≤1 年） | `rows` | 100 | 交叉核对赔偿漏领。**可能返回 `data:{}`** → 落盘原样保留，标「无数据」，不重试 |
 
 **子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
@@ -85,11 +85,11 @@ msku 报表拿不到）由 `custom-report-analysis` 技能承接：
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，分析交给脚本；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数（注意 `reportList`
-  列表字段与 integer 分页）、重试一次，不重放原请求；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数（注意标准化分页
+  根字段 `rows` 与 integer 分页）、重试一次，不重放原请求；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时**未发业务请求**，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，分析层标「无数据」；
 - 翻页前先看 `totalSize` 是否值得继续，触达 max_rows 必须保留 coverage 让脚本披露；

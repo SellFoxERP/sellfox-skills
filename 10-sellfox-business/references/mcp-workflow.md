@@ -8,13 +8,13 @@
 
 | 入口 | 何时使用 | 如何使用 |
 |---|---|---|
-| `help` | 不知道业务工具 ID，或原工具不再可用 | 用完整业务问句，包括对象、读写目的、已知范围；`include_schema=true`，`limit` 为 1–10。按返回结果选择工具 |
-| `search` | 已知工具 ID，但缺当前完整契约 | `tool_ids` 一次 1–5 个，`detail=true`；这不是关键词搜索 |
-| `action` | 已选定工具，有当前完整契约和必要参数 | 传 `tool_id`、`params`、本次 help/search 返回的 `contract_version` |
+| `sf_discover` | 不知道业务工具 ID，或原工具不再可用 | 用完整业务问句，包括对象、读写目的、已知范围；`include_schema=true`，`limit` 为 1–200（默认 5）。按返回结果选择工具 |
+| `sf_describe` | 已知工具 ID，但缺当前完整契约 | `tool_ids` 一次 1–5 个，`detail=true`；这不是关键词搜索 |
+| `sf_execute` | 已选定工具，有当前完整契约和必要参数 | 传 `tool_id`、`params`、本次 sf_discover/sf_describe 返回的 `contract_version` |
 
 候选排序不是最终选择。核对候选的 platform、use_when、not_for、operation_type 与用户问题；例如未指定平台的利润问题不能直接选择返回的 TikTok 工具。平台未知且影响工具选择时先确定平台，候选不匹配时细化问句。
 
-业务域文档中的工具 ID 是导航线索，不是固定调用链或可调用性保证。已有当前完整契约可直接执行；`help` 已返回完整 schema 时不再重复 search。目录 `next_cursor` 只用于发现更多工具，不可用于业务分页。
+业务域文档中的工具 ID 是导航线索，不是固定调用链或可调用性保证。已有当前完整契约可直接执行；`sf_discover` 已返回完整 schema 时不再重复 sf_describe。目录 `next_cursor` 只用于发现更多工具，不可用于业务分页。
 
 `selection_status=needs_clarification` 时先处理 clarification；`no_match` 时不编造工具。可用更具体的业务描述再发现一次；仍无匹配则说明当前连接未提供能力，并使用用户已有导出文件（如有）。不要把“本次没匹配到”说成“赛狐永远不支持”。
 

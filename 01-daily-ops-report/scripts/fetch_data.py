@@ -2,7 +2,7 @@
 """每日经营日报 —— 落盘校验与组装层（fetch_data.py，v3：零网络）。
 
 v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
-  * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{help,search,action}`，
+  * **取数面 = agent**：在会话里调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
     按 `references/workflow.md` 的**取数计划**把每步信封落盘到 `out/raw/<step>.json`。
   * **本脚本 = 计算面**：校验落盘文件（存在性/status/空数据/演示指纹/截断），
     并组装出与旧版完全相同形状的 `bundle.json` —— analyze.py / render_report.py 无需改动。
@@ -16,10 +16,10 @@ v3 分工（见 `_shared/SELLFOX_CLIENT.md`）：
 
 落盘步骤名（与取数计划一致）：
     shops.json                 get_shop_page_list          → rows
-    profit_shop.json           get_profit_report_by_shop   → reportList
-    profit_shop_range.json     （可选，30 天基线切片）       → reportList
+    profit_shop.json           get_profit_report_by_shop   → rows（标准化分页）
+    profit_shop_range.json     （可选，30 天基线切片）       → rows（标准化分页）
     orders.json                get_order_page_list         → rows（含 PII，渲染前脱敏）
-    campaigns_<shopId>.json    get_sp_campaign_list        → itemList（游标）
+    campaigns_<shopId>.json    get_sp_campaign_list        → rows（标准化分页，游标）
     multiplatform_<metric>.json get_multiplatform_sale_stats → rows（可选）
 
 v1.7.0 起**不再取自定义报表宽表**（get_custom_report_page_list / report_id 依赖整体移除）：
@@ -232,7 +232,7 @@ def run(
         raise SystemExit(
             f"❌ 落盘目录为空或不存在：{raw_dir}。\n"
             "   v3 取数面由 agent 完成：请按 references/workflow.md 的「取数计划」\n"
-            "   调用 mcp__Sellfox-MCP__{search,action} 并把信封落盘到 out/raw/，再重跑本脚本。"
+            "   调用 mcp__Sellfox-MCP__{sf_describe,sf_execute} 并把信封落盘到 out/raw/，再重跑本脚本。"
         )
 
     # 1) 店铺清单
@@ -266,7 +266,7 @@ def run(
         _scan(env.obj, "步骤 2 店铺级利润")
         t = _cov_truncation(env, "get_profit_report_by_shop")
         bundle["data"]["store_profit"] = {
-            "reportList": env.rows("reportList"),
+            "reportList": env.rows(),
             "truncation": (t or {}).get("message", "未截断。"),
             "truncated": bool(t),
         }
@@ -304,7 +304,7 @@ def run(
     if env is not None and not is_no_data(env.data):
         _scan(env.obj, "步骤 2b 30 天基线")
         bundle["data"]["store_profit_range"] = {
-            "reportList": env.rows("reportList"),
+            "reportList": env.rows(),
             "truncated": bool(_cov_truncation(env, "get_profit_report_by_shop(range)")),
         }
 
@@ -341,7 +341,7 @@ def run(
         t = _cov_truncation(env_, "get_sp_campaign_list")
         if t:
             trunc_store.append(t)
-        for it in env_.rows("itemList"):
+        for it in env_.rows():
             it.setdefault("shopId", sid)
             items.append(it)
     bundle["data"]["campaigns"] = {"itemList": items} if items else None

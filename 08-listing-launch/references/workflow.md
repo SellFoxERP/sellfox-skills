@@ -3,7 +3,7 @@
 > 本文件是 `SKILL.md` 执行流程的展开版。当需要逐步落地、排障或向使用者解释每一步时读它。
 > SKILL.md 里的每一步都能在这里找到更细的操作、字段与判据。
 >
-> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{help,search,action}`，
+> **v3 分工**：取数面 = agent 调客户端配置的 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，
 > 按阶段 2 的「取数计划」把每步**完整信封**落盘 `out/raw/`；计算面 =
 > `fetch_baseline.py`（校验+组装）→ 文案/需求单/合规/测算/渲染，全部零网络。
 > 调用纪律（契约版本/参数类型/错误处理/并发/落盘）见 `_shared/SELLFOX_CLIENT.md`。
@@ -63,8 +63,8 @@
 
 ### 取数计划（agent 执行）
 
-本技能只用两个赛狐只读工具；已知 tool_id **直接 `search` 拿契约**（一次 ≤5 个），再
-`action`。参数类型以当次契约 inputSchema 为准（分页 string/integer 因工具而异）。
+本技能只用两个赛狐只读工具；已知 tool_id **直接 `sf_describe` 拿契约**（一次 ≤5 个），再
+`sf_execute`。参数类型以当次契约 inputSchema 为准（分页 string/integer 因工具而异）。
 两步**可并行发起**（新网关同 session 并发安全），但每步都要落盘并核对 status。
 
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
@@ -76,10 +76,10 @@
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
-- 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
+- 每步 sf_execute 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；
 - **不在对话中复述行级数据**——数据只落盘，组装交给脚本（上下文是稀缺资源）；
 - 单次调用 ≤1 页（多数工具服务端强制 20 条/页，`page_size` 不被尊重）；
-- `CONTRACT_VERSION_MISMATCH` → 重 search 一次、按新 schema 重建参数、重试一次；
+- `CONTRACT_VERSION_MISMATCH` → 重 sf_describe 一次、按新 schema 重建参数、重试一次；
 - `INVALID_PARAMS` → 按 `field_errors[{path,rule}]` 修正后重试（失败时未发业务请求，安全）；
 - 空 data（status=complete）= 无数据 → 落盘原样保留，组装层标「无数据」；
 - 触达 max_rows 必须保留 coverage，让 `fetch_baseline.py` 披露「仅覆盖 Top N」。

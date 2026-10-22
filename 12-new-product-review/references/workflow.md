@@ -11,7 +11,7 @@
 
 ## MCP 与数据约束
 
-使用客户端实际连接的 Sellfox-MCP help/search/action。未知工具先用完整业务问句 help；已知工具缺当前契约再 search（每次最多 5 个，detail=true），已有完整契约直接 action。help 的 limit 为 1–10，版本来自本次连接。响应 failed/unknown 不进入计算，retryable=false 不重试。
+使用客户端实际连接的 Sellfox-MCP sf_discover/sf_describe/sf_execute。未知工具先用完整业务问句 sf_discover；已知工具缺当前契约再 sf_describe（每次最多 5 个，detail=true），已有完整契约直接 sf_execute。sf_discover 的 limit 为 1–200（默认 5），版本来自本次连接。响应 failed/unknown 不进入计算，retryable=false 不重试。
 
 店铺 ID 来自实际店铺列表；分页按当前契约继续，单页 complete 不证明全量。保留请求、response、trace_id、coverage 和 output_validation。原始文件存本地 out，不能进 GitHub。金额按币种分组，不将省略值补零。不要求商家提供 report_id；本主题优先内置接口，确需宽表时由助手自动发现并验证。
 

@@ -11,8 +11,8 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 → `SELLFOX_SHARED_ROOT` → `config/paths.yaml` → 包内 `_shared` → 同级 `_shared`。
 批量安装器将共享路径写入配置，专项技能（01~09）复用同一份商家配置。
 `mcp__Sellfox-MCP__...` 是服务工具的示意名称；使用客户端实际暴露的 Sellfox-MCP
-`help/search/action`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 help 或 search；
-已有完整契约直接 action，不重复 search。首先读取共享 `SELLFOX_CLIENT.md`。
+`sf_discover/sf_describe/sf_execute`，不得因客户端前缀不同而判定工具缺失。当前完整契约来自 sf_discover 或 sf_describe；
+已有完整契约直接 sf_execute，不重复 sf_describe。首先读取共享 `SELLFOX_CLIENT.md`。
 下文“零网络”指赛狐取数后的离线计算。报告仅本地 HTML，不外发
 （飞书写入能力 v1.7.0 已移除；演示数据仅加顶部水印，不外发）。
 没有原始数据时仅说明缺口或产出明确标识的模板，不能把空数据报告当作经营正常的结论。
@@ -61,7 +61,7 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 确认范围：店铺（`shop_id_list`）、站点、时间窗口（默认近 7/30 天）、是否含不可售状态扫描。未提供时用配置默认值。
 
 **先做前置校验并写入报告顶部**：
-- **客户端 MCP 就绪**：会话内能调 `mcp__Sellfox-MCP__{help,search,action}`（Key 只在客户端 MCP 配置里，脚本**不需要** `SELLFOX_MCP_KEY`，也**不得自己发 HTTP**）。若数据源为演示/沙箱环境，运行时指纹识别后加水印并默认阻断写入。
+- **客户端 MCP 就绪**：会话内能调 `mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`（Key 只在客户端 MCP 配置里，脚本**不需要** `SELLFOX_MCP_KEY`，也**不得自己发 HTTP**）。若数据源为演示/沙箱环境，运行时指纹识别后加水印并默认阻断写入。
 - 读 `config/paths.yaml` 解析 `shared_root`（为空走同仓库同级兜底）；读 `_shared/config/thresholds.yaml`（`listing` 段）。
 - **宽表边界（固定）**：不取自定义报表（由 `custom-report-analysis` 承接），报告显式写「口径降级：未接入自定义报表，流量/购物车占比/CVR 等不可用」。
 - **落盘目录**：`out/raw/` 为空 → 还没取数，先按 `references/workflow.md` 的取数计划落盘，再跑计算面。
@@ -70,7 +70,7 @@ description: 对亚马逊 Listing 做只读健康体检，诊断不可售/被抑
 ### Step 1：取数（agent 按取数计划落盘 → 脚本校验组装）
 
 **v3：取数面是 agent**——按 `references/workflow.md` 的**取数计划**调
-`mcp__Sellfox-MCP__{search,action}`，把每步完整信封落盘 `out/raw/<step>.json`：
+`mcp__Sellfox-MCP__{sf_describe,sf_execute}`，把每步完整信封落盘 `out/raw/<step>.json`：
 
 | 顺序 | 落盘文件 | 工具 | 列表字段 | 用途 |
 |---|---|---|---|---|
@@ -128,10 +128,10 @@ python scripts/render_report.py --in problems.json --out report.md       # 报�
 
 ## 硬约束速查（违反即为缺陷）
 
-- **MCP 访问只走客户端元工具**：`mcp__Sellfox-MCP__{help,search,action}`，脚本零 HTTP、
+- **MCP 访问只走客户端元工具**：`mcp__Sellfox-MCP__{sf_discover,sf_describe,sf_execute}`，脚本零 HTTP、
   不需要 Key 环境变量（契约见 `_shared/SELLFOX_CLIENT.md`；旧直连 `sellfox_client.py` 已废弃，不得 import）。
-- **action 必带当次 search 返回的 `contract_version`**；失配（`CONTRACT_VERSION_MISMATCH`）
-  → 重 search 一次、按新 schema 重建参数、重试一次，不重放原请求。
+- **sf_execute 必带当次 sf_describe 返回的 `contract_version`**；失配（`CONTRACT_VERSION_MISMATCH`）
+  → 重 sf_describe 一次、按新 schema 重建参数、重试一次，不重放原请求。
 - **参数类型/参数名按当次 inputSchema**：分页参数 string/integer 因工具而异
   （如 `get_product_by_label` 页参数名是 `page_num` 不是 `page_no`）；未声明字段不传。
 - **不信 `pagination.has_more`，信 `coverage` 与 `totalSize`**（实测 has_more 与 coverage 矛盾）。
@@ -165,7 +165,7 @@ python scripts/render_report.py --in problems.json --out report.md       # 报�
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 脚本里自己发 HTTP 调 MCP | 双路径漂移、Key 泄漏面扩大 | 取数只走客户端元工具，脚本零网络 |
-| action 不带/带旧 `contract_version` | 被网关拒绝 | 每次执行前 search 拿当次契约 |
+| sf_execute 不带/带旧 `contract_version` | 被网关拒绝 | 每次执行前 sf_describe 拿当次契约 |
 | 参数类型/参数名沿用旧习惯（全字符串、`page_no` 写到 `get_product_by_label`） | `INVALID_PARAMS` 拒绝 | 类型与参数名按当次 inputSchema（该工具是 `page_num`） |
 | 传未声明字段 | `additionalProperties` 拒绝 | 只传契约 properties 里的字段 |
 | 信 `pagination.has_more` 翻页 | 与 coverage 矛盾导致误判 | 只信 coverage 与 totalSize |
