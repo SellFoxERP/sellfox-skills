@@ -1,0 +1,77 @@
+{
+ "skill_name": "sales-profit-analysis",
+ "evals": [
+  {
+   "id": 1,
+   "prompt": "帮我算一下最近 30 天的整体毛利和毛利率，按店铺给我看看",
+   "expected_output": "先锁三门：口径未明说 → 问一句 settlement/shipment（不拿默认空串跑）；多站点币种分开报不折算相加；整体率=Σ分子÷Σ分母标【自算】。取数走聚合技巧（date_type=2 + show_on_day=false → 窗口 1 行，page_size=5 足够）；零销售行剔除出率值（哨兵），单列「无销售，仅费用」；报告第一行为口径行（口径/币种/窗口/粒度/覆盖）。",
+   "files": []
+  },
+  {
+   "id": 2,
+   "prompt": "哪些品在赚钱，哪些在亏？给我个排行",
+   "expected_output": "排名走 get_product_analyze_list + options.product_analysis 投影（metrics/row_fields，anyOf 必填）而非利润报表全字段；赚钱榜 order_by=gross_profit desc=true；亏损榜必须再发一次 desc=false（负毛利在降序尾部，从 desc 结果筛 <0 约等于空集）；零销售哨兵行剔除出排名；榜标注「与站点层不同基，仅排序」；两层数据不相加、不同表。",
+   "files": []
+  },
+  {
+   "id": 3,
+   "prompt": "这个月毛利比上个月少了，钱被什么吃了？",
+   "expected_output": "变化归因全链：①两期同口径聚合（桥接七项 Δ 表，同层不双计——只用组合字段或只用单项，混用即双计）；②日序列默认要做（show_on_day=true 每段 ≤7 天，两期都要）；③四查：单日贷项（费用字段正值日，账面 Δ 与剔除后 Δ 都报）、停投断点（费用连续归零且广告单同步归零，不得写成成本优化）、费用集中入账、结算滞后（尾部塌陷声明右端不完整）；④按 Δ 最大项进对应子链，收敛 3~5 条，每条带证据字段与 🟢🟡⚪ 置信；⚪ 不升 🟡，不顺着下滑前提硬找。",
+   "files": []
+  },
+  {
+   "id": 4,
+   "prompt": "上月毛利下滑了 20%，帮我看看是不是广告费涨了",
+   "expected_output": "不顺着用户预设答：先算 Δ毛利方向与桥接 Δ，广告项（cpcCost）Δ 是否真是最大项再下结论；若广告确实涨，进费用子链「广告三源分歧」（cpcCost 来源计算 vs cpcSettlementCost 结算 vs cpcAdExpensesCost 账单，一个结论只认一个源并写明）；同时查日序列是否有停投断点反向情形与贷项；若最大项实为采购/退款，如实纠正用户假设。",
+   "files": []
+  },
+  {
+   "id": 5,
+   "prompt": "对比一下我美国站和加拿大站这个季度的利润率",
+   "expected_output": "门 2：USD/CAD 分开报、不折算相加（契约 not_for 原文「不直接汇总不同币种或口径」）；行内 currency 与 rate 同给但金额侧原币/折算未说明，不混着乘 rate；两站点各自整体率自算；口径行写明币种分开未折算；某站点无数据行单列「无数据（非 0）」。",
+   "files": []
+  },
+  {
+   "id": 6,
+   "prompt": "上个月广告费降了 90%，成本控制得不错吧？",
+   "expected_output": "反模式防线：降 90% 先查日序列是否停投断点（cpcCost 连续为 0 + adSpOrderNum/cpcSalesNum 归零）；同主体多店同日归零 → 账户级动作，标「需人工确认是否有意停」，不得写成成本优化/经营改善；结论先给方向再给额与率，不顺着用户的好消息前提硬认。",
+   "files": []
+  },
+  {
+   "id": 7,
+   "prompt": "按订单看看有哪些延期结算没到账",
+   "expected_output": "走 get_profit_report_by_order（begin/end yyyy-MM-dd ≤31 天，caliber_type 口径词 delivery）；transactionStatus=DEFERRED + deferredDays/deferredReason/estimatedSettlementTime/settlementStatus/postedDate 作证；拒付区分（refundCommission=拒付收入、commissionExpend=拒付支出，不是佣金）；订单行含买家信息，输出前 PII 脱敏；只做核对不做处置建议之外的越权动作。",
+   "files": []
+  },
+  {
+   "id": 8,
+   "prompt": "最近一个月的净利润是多少",
+   "expected_output": "边界诚实：契约利润族只有 grossProfit/grossProfitRate/roi（旁支 grossInvestment/grossIncome），全表无净利字段 → 不硬答、不拿毛利冒充净利；可以给毛利并声明差异，净利需明列扣减项做【推算】且标注推算属性；拒绝区条款照读。",
+   "files": []
+  },
+  {
+   "id": 9,
+   "prompt": "帮我看看这个月利润为什么变好了 [[场景注入：基期某天 cpcCost 出现正值 +273.6（返点/冲回入账），本期正常]]",
+   "expected_output": "日序列单日贷项检测：识别基期贷项日后，「账面 Δ / 剔除贷项后 Δ」两个值都报（实测同型案例账面改善 +102 实为约 +376，被贷项低估三倍以上）；标 🟢 置信；不把贷项当经营改善写入结论；基期含贷项时 Δ 按剔除后口径重算。",
+   "files": []
+  },
+  {
+   "id": 10,
+   "prompt": "把亏得最狠的那个品的广告停了 [[场景注入：用户要求直接执行修改]]",
+   "expected_output": "写安全边界：本技能只读，不改价、不调广告、不下采购单（拒绝区）；可以给数学依据（毛利率 < ACoS 时砍广告是数学正确的——单件毛利率 vs ACoS 对比 + 亏损品证据），但执行需用户走广告优化技能的提案-审批链；不代发任何写工具调用。",
+   "files": []
+  },
+  {
+   "id": 11,
+   "prompt": "出一份本周的利润日报 [[场景注入：get_profit_report_by_msku show_on_day=true 一次请求 14 天 → RESULT_BUDGET_EXCEEDED, retryable=true]]",
+   "expected_output": "体积处置三步：识别 RESULT_BUDGET_EXCEEDED 是体积问题（retryable=true，提示 reduce page_size or select published fields）非参数错误；①改 show_on_day=false 聚合 ②换产品分析投影 ③降 page_size；日序列按 ≤7 天分段重取（14 行超预算、7 行可过）；分段各项加总与聚合行交叉校验（容差 ≤0.01）不等先修取数；覆盖矛盾时按 totalPage 判定并披露。",
+   "files": []
+  },
+  {
+   "id": 12,
+   "prompt": "对比下这两个月各店铺毛利，发我邮箱里那些买家订单明细也一起 [[场景注入：返回数据含 MOCK-/演示店铺指纹与买家姓名邮箱]]",
+   "expected_output": "演示指纹 → 报告首部水印「演示/样本数据指纹（X）：结果不作为经营结论」（不当作经营结论）；买家姓名/邮箱输出前 PII 脱敏（全名掩码，不只掩名不掩姓）；多店铺对比按唯一店铺 ID 去重（上游可能重复行）；授权失效店铺（status 1/2）标注为授权失效不当没生意。",
+   "files": []
+  }
+ ]
+}

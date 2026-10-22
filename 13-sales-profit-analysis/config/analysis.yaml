@@ -1,0 +1,31 @@
+# sales-profit-analysis 配置（阈值是分析约定非契约值；不足 2 个可比周期只报结构占比）
+thresholds:
+  gross_profit_mom_watch_pct: -5        # 毛利额环比 关注 🟡 下限（%）
+  gross_profit_mom_alert_pct: -15       # 毛利额环比 异常 🔴（%）
+  margin_change_watch_pp: -1            # 毛利率变化 关注（百分点）
+  margin_change_alert_pp: -3            # 毛利率变化 异常（百分点）
+  cost_rate_change_watch_pp: 1          # 成本率/费用率变化 关注（+pp）
+  cost_rate_change_alert_pp: 3          # 成本率/费用率变化 异常（+pp）
+  refund_share_change_watch_pp: 0.5     # 退款占比变化 关注（+pp）
+  refund_share_change_alert_pp: 2       # 退款占比变化 异常（+pp）
+  cpc_cost_rate_watch_pct: 15           # cpcCostRate 关注（%）
+  cpc_cost_rate_alert_pct: 30           # cpcCostRate 异常（%）
+  row_margin_watch_band: [0, 10]        # 行级 grossProfitRate 关注区间（%）
+  row_margin_alert_below: 0             # 行级 < 0 = 亏损品
+window:
+  daily_recent_days: 14                 # 日窗口默认：近 14 天 vs 前 14 天（相邻不重叠）
+  segment_max_days: 7                   # show_on_day=true 每段 ≤7 天（实测 14 行超预算）
+new_product:
+  min_days: 7                           # <7 天不进归因
+  downgrade_until_days: 28              # 7–27 天降一档；≥28 正常
+degradation:
+  missing_items_for_alert_downgrade: 2  # 缺 2 项以上只出"关注"不出"异常"
+  residual_tolerance: 0.01              # 桥接残差/日分段交叉校验容差
+bridge_fields:                          # 桥接七项（符号照原值代数和）
+  - orderIncome
+  - orderExpend
+  - serviceFeeExpend
+  - refund
+  - purchasePcFeeBatch
+  - headTripPcFeeBatch
+  - cpcCost

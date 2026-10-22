@@ -36,10 +36,19 @@
 其他只读失败按 retryable 判断是否重试一次；写入失败、部分成功或结果未知不自动重放。
 空值、字段省略与空结果均不等于 0。没有数据不等于“没有经营异常”。
 
+失败分层（实测补充）：`failed` 带 `error_code=UPSTREAM_BUSINESS_ERROR` 且 `upstream.stage=business`
+表示已过网关本地校验、**被上游拒绝**（鉴权、授权范围、数据权限）——调用方改参数无用；
+`retryable=false` 不再重试，保留 `trace_id` 交上游排查。能连上网关拿到工具目录不等于有业务权限，
+判据只有 action 的返回。另有 `RESULT_BUDGET_EXCEEDED` 属**返回体积**问题而非参数问题
+（`retryable=true`，提示缩小 page_size 或用投影字段）：先聚合、再换有投影的工具、再降页大小。
+
 ## 4. 分页与覆盖
 
 分页类型、参数名、列表字段从当前契约读取。常见列表字段为 rows/reportList/itemList，但不得据此猜测。
-使用 coverage、响应计数和分页标记交叉核对；发生矛盾时标“覆盖未知”，不能宣布全量。
+使用 coverage、响应计数和分页标记交叉核对；发生矛盾时优先按可核验的分页计数判定——
+实测利润类工具出现过 `coverage.complete=false` 与 `pagination.has_more=false` **同时成立**的矛盾，
+此时以 `data.totalPage`/`pageNo` 翻完为准并在口径行披露矛盾信号；确实无法核验时标“覆盖未知”，
+不能宣布全量。
 历史测试曾出现请求 1 条返回 20 条，这是特定环境观察，不是所有工具的固定上限。
 每次处理一页，按实际 next cursor/page 翻页，并遵守本技能 max_rows 安全阀。
 达到上限时披露“仅覆盖前 N 条，其余未纳入”，只有实际按指标排序后才称 Top N。

@@ -198,3 +198,13 @@ python3 scripts/build_release.py
 2026-10-16 为 10/11/12 新编评测用例（14+7+7=28 例，E0 规范：域/工具覆盖 + 场景注入 + 边界）并同协议线上执行：28/28 通过，零 0 分维，写工具零调用。RUNBOOK 扩至 99+18 例，coverage.md 补记三技能线上实际调用工具。新发现 12 条（多为披露/文档级），其中 P2 一条：topic_review/process_data 流水线无演示指纹检测，与 01~09 的水印+阻断纪律不一致，列入待修。当日修正用例基准漂移一处（evals #8 工具名）。12 技能评测合计：离线 89/89 + 线上 99/99 全部通过；仍不认证生产业务口径。
 
 12 条新发现已于当日全部修复：演示指纹检测落地（技能 10 双脚本入口扫描 + report 顶部水印 + result.json `demo_fingerprint`，指纹清单与 _shared 同步、保持技能独立零 _shared 依赖）、被排除行的窗口外日期样例可见、快照对比（无期间信息）差异为 0 警示、未来上架日期 launch_date 置 null 保留原始值、文档 7 处（shops 平台推断表述、多元素日数组策略、文档化未返回字段披露、退出码提示、字段映射核对清单、Python 口径、evals #11 场景口径）。新增 7 项回归（tests/test_fix_10_12.py），全套 256 项测试通过；复放使用评测归档信封，未新增线上调用。
+
+## 1.6.0 新增销售利润分析技能（13）
+
+将外部评审过的 sales-profit-analysis SKILL 按本仓库规范重构为第 13 个技能：入口渐进加载（SKILL.md + 5 篇 references）、v3 取数计划落盘（out/raw + analysis_plan.json）、计算面脚本化（run_analysis.py 内置四自检 + selfcheck、render_report.py 六段渲染 + 演示水印 + PII 脱敏）、消费 _shared 底座（01~09 同款 paths.yaml 模式）。原文件的实测字段知识（桥接七项、哨兵值、符号方向、日序列四查、两榜 desc=false、弃用与名不符实清单）全部保留进 references。frontmatter 规范化（非标 metadata 键移入 field-map 头注）。
+
+- 评测：新编 12 例（E0 规范）双轨执行——线上真实网关 22 次调用 + 离线注入，12/12 通过通过线、写安全零破防；selfcheck 全绿。
+- 评测发现 14 条问题当日全部修复，其中 3 条 P1 均为真实信封形态硬伤：int 日期崩溃（修复后归档崩溃场景 rc=0）、成本符号与假设相反致贷项误判（改为主符号方向判定，与 05 的运行时校准同族）、产品分析嵌套行形态致榜单消失（兼容 asinList/mskuList+fieldsMap）。新增 32 项回归（tests/test_fix_13.py），全套 288 项测试通过。
+- 实测反哺共享契约：_shared/SELLFOX_CLIENT.md 增补「coverage.complete=false ∧ has_more=false 矛盾时按 totalPage 判定并披露」「UPSTREAM_BUSINESS_ERROR 分层（upstream.stage=business 为上游拒绝）」「RESULT_BUDGET_EXCEEDED 体积处置三步」。
+- 集成：插件清单/audit 正则/README/INSTALL/coverage/cross-skill（新增 04/05/13/10 消歧 4 例，22 例）全部更新；RUNBOOK 扩至 111+22=133 例。
+- 已知边界：alpha 数据源侧 show_on_day/page_size/排序/投影多项被忽略或拒绝（数据源问题清单 10 条，详见 out/eval-live-2026-10-16/13-sales-profit-analysis.md），按协议只记录不分析；生产端点复核留给 E6。
