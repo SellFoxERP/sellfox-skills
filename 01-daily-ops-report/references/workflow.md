@@ -49,7 +49,7 @@
 | 4 | `out/raw/campaigns_<shopId>.json`（每店铺一个） | `get_sp_campaign_list` | `shop_id`（string）；游标 `nextToken`（60s 过期） | `itemList` | 200/店 | STEP 03 广告结构 |
 | 5 | `out/raw/multiplatform_<metric>.json`（可选，默认关） | `get_multiplatform_sale_stats` | `type=<metric>`；`group_type=shop`；`stat_time_type=1`；`currency` **必填**（空串=原币种）；分页参数 **string** | `rows` | 200 | 非亚马逊平台；跨币种不得直接合计 |
 
-**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+**子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 

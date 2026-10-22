@@ -229,3 +229,7 @@ python3 scripts/build_release.py
 - **移除自定义报表查询**：01~05、09、13 撤销 `get_custom_report_page_list` 取数步骤与 report_id/自动发现依赖（共享 ONBOARDING/reports.yaml/发现脚本删除）；受影响指标改为固定承接披露（「由 custom-report-analysis 承接」）；05 的 `get_amazon_reimbursement_report`（非自定义报表）保留；07 的指标治理工具保留；10 的 reports 域改为指标/公式+路由。
 - **新增 `14-custom-report-analysis`**：自定义报表分析专项技能——index 发现候选→验证读→plan.json（字段映射核对）→复用 10 的 process_data 执行→仅 HTML 报告；8 例评测，合成信封全链复放（partial 失败页披露、分币种、双出口退出码、安装布局兼容）通过。
 - 集成：插件 1.7.0/14 技能、audit 正则与计数、README/INSTALL、coverage/RUNBOOK（119+22=141 例）、cross-skill 自定义报表用例归属改 14。全量 323 项自动化测试通过。
+
+## 1.7.1 v1.7.0 形态全量评测（eval4）
+
+2026-10-22 对 v1.7.0 形态（去飞书、技能侧去自定义报表查询、新增技能 14）执行首次全量评测：14 技能 119 例单轮线上 + 跨技能 22 例静态，全部通过、写安全零破防；v1.7.0 各变化点逐项加检落地（承接披露/无飞书残留/会话内审批/guard_demo 三态/按天默认/摘要层与 sample 双闸/HTML 唯一出口）。新技能 14 首评 8/8（验证读被网关全拒属数据源场景，处置合规）。新发现问题以两条跨技能 P1 最重：网关默认 options.pagination=normalized 改写列表键（04/05/13 硬编码 reportList 受影响）与契约交付改游标分片——已列入待修；其余为技能侧缺陷与文档漂移（明细见 out/eval4-2026-10-22/SUMMARY.md）。本轮未修复，按用户节奏另行安排。

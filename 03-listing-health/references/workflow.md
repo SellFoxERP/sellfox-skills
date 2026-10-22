@@ -44,7 +44,7 @@ inputSchema 为准（⚠️ 标注处为实测差异）。多状态/多店铺批
 | 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `start/end`（`yyyy-MM-dd`）；`dim_type=1`（asin 维度）；返回字段集取决于 `fields` 入参 | `rows` | 100 | 可选增强：类目名/BSR 明细/FBM 可用天数（fields 实测含 sessions/buyBoxPercent 等，可作宽表替代源） |
 | 3 | `out/raw/labels.json` | `get_product_by_label` | `label_ids`；`group_type=asin`；页参数名 **`page_num`**（非 `page_no`） | `rows` | 100 | **仅配置了 `labels.required_groups` 时**取；未配置则不取 |
 
-**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+**子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
 
 > `custom_report_<label>.json`（`get_custom_report_page_list`，489 字段宽表）已不在取数计划
 > ——宽表字段分析由 `custom-report-analysis` 技能承接；残留落盘一律忽略。

@@ -42,7 +42,7 @@
 | 4 | `out/raw/rank_current.json` / `rank_base.json` | `get_product_analyze_list` | 顶层 `fields`（字段常量 ≤199）/ `field_modules`（模块 ≤14）——**anyOf 至少一项非空**（投影后行极小；**参数以当轮契约为准**，实测没有 options 投影嵌套参数）；`dim_type` 1/6；`merge_asin` 显式 false；分页 **integer**；店铺参数名 `shop_id_list`（**string 数组**，与利润工具不同） | `rows` | 200 | 赚钱榜/亏损榜各发一次 desc=true/false（排序常量以当轮契约为准——fields 字典的利润列常量是 `profitPrice`，无 `gross_profit`）；**亏损榜必须再发一次 `desc=false`**（负毛利在降序尾部，从 desc 结果筛 `<0` ≈ 空集） |
 | 5（可选） | `out/raw/order_current.json` | `get_profit_report_by_order` | `begin`/`end` `yyyy-MM-dd`，≤31 天；`caliber_type`；分页 **string** | `reportList` | 60 | 延期结算/拒付核对；行含买家信息，**渲染前 PII 脱敏** |
 
-**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+**子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
 
 **窗口聚合成一行（本技能最重要的取数技巧）**：
 

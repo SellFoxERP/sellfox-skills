@@ -51,7 +51,7 @@ session 并发安全，实测 10 并发 10/10 成功），但每步都要落盘�
 | 3 | `out/raw/fba_shipments.json` | `get_fba_shipment_page_list` | `update_time_start/end` 至少一组完整区间（`yyyy-MM-dd HH:mm:ss`，≤360 天）；`shop_ids` 契约为 **integer 数组**——与店铺清单字符串 ID（`"AD-10001"`）不兼容，从在线产品行取数字 `shopId` 传入，取不到则省略（default `[]`） | `rows` | 100 | 在途货件明细；可能 `data:{}` → 无数据 |
 | 4 | `out/raw/awd_inventory.json` | `get_awd_inventory_page_list` | `page_no/page_size` 必填 | `rows` | 100 | AWD 库存；可能为空 → 无数据 |
 
-**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+**子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
 
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 

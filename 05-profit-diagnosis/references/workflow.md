@@ -78,7 +78,7 @@ msku 报表拿不到）由 `custom-report-analysis` 技能承接：
 | 4 | `out/raw/profit_shop_base.json` | 同上 | 同上，但日期=基期 | `reportList` | 60 | 背景源（基期） |
 | 5 | `out/raw/reimbursement.json` | `get_amazon_reimbursement_report` | `start_time`=基期起点、`end_time`=本期终点（**`yyyy-MM-dd HH:mm:ss`**，按契约；范围 ≤1 年） | `rows` | 100 | 交叉核对赔偿漏领。**可能返回 `data:{}`** → 落盘原样保留，标「无数据」，不重试 |
 
-**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+**子代理取数（优先尝试）**：默认先把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；客户端不支持/派发失败/摘要不合规时回退主代理直取（兜底路径，行为一致）。
 
 > 历史落盘中的 `custom_current.json` / `custom_base.json` 已不在取数计划内；
 > `fetch_profit` 会忽略它们并在覆盖语中披露「宽表因子由 custom-report-analysis 承接」。
