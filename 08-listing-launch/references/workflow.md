@@ -72,6 +72,8 @@
 | 1 | `out/raw/online_product.json` | `get_online_product_page_list` | `search_type`/`search_content`（asin/parentAsin/msku/sku/title/fnsku/commodityName）；`marketplace_id_list=[站点]`；`shop_id_list`（每批 ≤20 行）；分页参数类型按当次契约 | `rows` | 20 | Listing 属性 + 成本/费用/价格 + FBA 库存 → 商品基线 `products` |
 | 2 | `out/raw/product_analyze.json` | `get_product_analyze_list` | `search_type`；`search_mode=exact`；`search_contents`；`dim_type="1"`（asin 维度）；`fields` / `field_modules` **至少一项非空**（契约顶层 anyOf 必填——线上实测缺省被拒 `INVALID_PARAMS field_errors=[{path:"",rule:"anyOf"}]`，补 `fields` 可恢复）；`marketplace_id_list` / `shop_id_list` 同上 | `rows` | 20 | 类目 / BSR / 上架时间 → 基线 `analysis`；失败不阻断主流程（标需人工核查） |
 
+**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+
 **落盘纪律**（详见 SELLFOX_CLIENT.md §6）：
 
 - 每步 action 的**完整信封**（status/data/coverage/pagination/warnings/trace_id）原样写盘；

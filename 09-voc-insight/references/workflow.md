@@ -56,6 +56,8 @@
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/online_products.json` | `get_online_product_page_list` | `online_status_list=["active"]`；`shop_id_list`（可选） | `rows` | 200 | **唯一必选步骤**：评分快照（rating/ratingCount）。无差评数、无好评率、无历史基线 |
 
+**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+
 > 历史落盘中的 `custom_current.json` / `custom_previous.json` 已不在取数计划内；
 > `fetch_signals` 会忽略它们并在披露语中说明「宽表信号由 custom-report-analysis 承接」。
 

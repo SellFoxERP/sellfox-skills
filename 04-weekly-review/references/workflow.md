@@ -86,6 +86,8 @@ python scripts/period.py --period week --anchor 2026-10-12
 | 7 | `out/raw/trend.json`（可选，`trend.enabled` 时） | `get_product_analyze_detail`（先 `get_product_analyze_list` 取 `groupByStr`） | `dim_type=1`；本期窗口；`stat_time_type`（周报=1 按日 / 月报=4 按月）；⚠️ `get_product_analyze_list` 契约顶层 `anyOf` 要求 **`fields` / `field_modules` 至少一项非空**（实测缺失即 `INVALID_PARAMS rule:anyOf`），如 `fields=["asin","title","sevenSaleNum","profitPrice","profitRate"]`；⚠️ 其 `start_date`/`end_date` 为 **`yyyy-MM-dd`**（当次契约 `anyOf[const "", format:date]`）——勿沿用利润报表 `yyyyMMdd` 惯例，实测 `yyyyMMdd` 首调即被拒（`field_errors=[{start_date,anyOf},{end_date,anyOf}]`） | — | — | 落盘 `data.charData` 所在信封；缺失时计算层自动降级为利润报表 `bizDay` 日粒度 |
 | 8 | `out/raw/shops.json`（可选） | `get_shop_page_list` | `page_no/page_size` 为 **string** | `rows` | 40 | 本技能计算面不依赖；仅告警路由/展示备用 |
 
+**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+
 > 自定义报表（`get_custom_report_page_list`）已不在本技能取数计划内：宽表指标由
 > `custom-report-analysis` 技能承接。历史落盘中的 `custom_current.json` / `custom_prev*.json`
 > 会被组装层忽略并披露「未消费」。

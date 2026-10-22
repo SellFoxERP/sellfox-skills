@@ -51,3 +51,5 @@ run_report.py 复用完整包中 sellfox-business/scripts/process_data.py（impo
 ## MCP 与数据约束
 
 使用客户端实际连接的 Sellfox-MCP help/search/action。未知工具先用完整业务问句 help；已知工具缺当前契约再 search（每次最多 5 个，detail=true），已有完整契约直接 action。help 的 limit 为 1–10，版本来自本次连接。店铺 ID 来自实际店铺列表；分页按当前契约继续。保留请求、response、trace_id、coverage 和 output_validation。金额按币种分组，不将省略值补零。本技能只读，不创建/修改报表与指标。
+
+**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。

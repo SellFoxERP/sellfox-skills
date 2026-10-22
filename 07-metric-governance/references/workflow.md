@@ -48,6 +48,8 @@
 | 3 | `out/raw/custom_indices_<page>.json`（逐页一盘，如 `custom_indices_1.json`） | `get_custom_report_index_page_list` | `page_no`/`page_size`；`share_status=0`（**只取「我的」，避免越权改共享项**）；可加 `report_id_list`（使用者网页端确认后回填 config 的 report_ids） | `rows` | 100 | 现有自定义指标；翻页各落一盘，翻页前看 `totalSize` 是否值得继续 |
 | 4 | `out/raw/custom_indices_verify_<page>.json`（仅写后） | 同步骤 3 | 同步骤 3 | `rows` | 100 | **写后回读**：agent 执行完写操作后重取，供 `--verify` 比对 |
 
+**子代理取数（可选）**：客户端支持子代理时，可把上表连同调用纪律（`_shared/SELLFOX_CLIENT.md` §9）交给子代理执行——原始信封只进子代理上下文，主代理仅验收步骤摘要并抽验落盘；不支持则主代理直取（默认，行为一致）。
+
 取数纪律（详见 SELLFOX_CLIENT.md）：
 
 - 单次调用 ≤1 页（历史测试常见 20 条/页（当前分页以契约为准），`page_size` 不被尊重）；
