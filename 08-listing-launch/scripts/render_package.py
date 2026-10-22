@@ -198,12 +198,15 @@ def _main() -> int:  # pragma: no cover
     if args.out:
         out_path = Path(args.out)
         html_path = None
-        if ensure_shared_path():  # HTML 主报告出口（仅同名 .html；--keep-md 才附 .md）
+        try:  # HTML 即报告：底座缺位/失效（含路径失效）统一报错引导重装，不降级写 md
+            if not ensure_shared_path():
+                raise ImportError
             from report_html import write_html_report  # type: ignore  # 由 _shared 提供
 
             html_path = write_html_report(md, out_path, keep_md=args.keep_md)
-        else:  # pragma: no cover  # _shared 缺位时降级为只写 md
-            out_path.write_text(md, encoding="utf-8")
+        except ImportError:
+            raise SystemExit("❌ 未找到 _shared 底座（report_html），无法生成 HTML 报告。"
+                             "请重新运行批量安装器修复安装，再重试；本技能不再降级产出 Markdown 报告。")
         print(f"已写入 {html_path or out_path}")
     else:
         print(md)
