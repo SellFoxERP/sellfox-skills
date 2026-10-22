@@ -39,7 +39,7 @@
 | # | 落盘文件 | 工具 | 关键参数（类型注意） | list_key | max_rows | 说明 |
 |---|---|---|---|---|---|---|
 | 1 | `out/raw/shops.json` | `get_shop_page_list` | `page_no/page_size` 为 **string** | `rows` | 40 | 店铺清单；可缓存 7 天（本地 `out/shops_cache.json`） |
-| 2 | `out/raw/profit_shop.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=昨日`（`yyyyMMdd`）；`profit_caliber_type`；`page_no/page_size` 为 **integer** | `reportList` | 40 | 店铺级利润 → L1；**用户点名口径（结算=settlement / 发货=shipment）时取数传该值，并把同一值透传计算面 `--caliber`**（缺省 settlement 走配置） |
+| 2 | `out/raw/profit_shop.json` | `get_profit_report_by_shop` | `date_type=2`；`start/end=昨日`（`yyyyMMdd`）；`profit_caliber_type`；`page_no/page_size` 为 **integer** | `reportList` | 40 | 店铺级利润 → 结论速览；**用户点名口径（结算=settlement / 发货=shipment）时取数传该值，并把同一值透传计算面 `--caliber`**（缺省 settlement 走配置） |
 | 2b | `out/raw/profit_shop_range.json`（可选） | 同上 | `show_on_day=true`；近 30 天窗口 | `reportList` | 40×30 | 仅 `baseline=slice_30d` 时取 |
 | 3 | `out/raw/msku_<shopId>.json`（每店铺批一个） | `get_custom_report_page_list` | `report_id`；`start=end=昨日`（`yyyy-MM-dd`）；`shop_ids=<单个>` | `rows` | 20/批 | 依赖 report_id；缺 → 跳过整步（降级） |
 | 4 | `out/raw/orders.json` | `get_order_page_list` | `date_type=purchase`；`date_start/end` 当日 00:00:00~23:59:59 | `rows` | 40 | 仅异常下钻样本；**含 PII**，渲染前脱敏 |
@@ -92,7 +92,7 @@ python scripts/run_daily_report.py --date 2026-09-29     # 校验+组装 → 分
 
 | 缺失项 | 影响 | 降级做法 | 必须标注 |
 |---|---|---|---|
-| `reports.daily_ops.id` 为空 | L2 宽表不可用 | 只用步骤 1/2/4/5；流量/广告点击/库龄分桶/补货建议不可用 | 「口径降级：缺少自定义报表」 |
+| `reports.daily_ops.id` 为空 | 明细层宽表不可用 | 只用步骤 1/2/4/5；流量/广告点击/库龄分桶/补货建议不可用 | 「口径降级：缺少自定义报表」 |
 | `out/raw/` 为空 | 无法组装 | 停止并提示按取数计划落盘 | — |
 | 某步骤信封 `status=failed` | 该源缺失 | 该项标「⚠️ 需人工核查」，其余照常 | 数据说明记录 error_code |
 | 步骤 6 失败/缺失 | 跨平台销量缺失 | 跳过，记录 `degradations` | 「跨平台销量缺失（已跳过）」 |

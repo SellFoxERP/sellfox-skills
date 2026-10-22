@@ -5,7 +5,7 @@
 输出：Markdown 日报（本地文件），可选写入飞书。
 
 要点：
-  * 严格使用 references/report-template.md 的结构：L1 结论 / L2 七步 / L3 附录 / 数据说明。
+  * 严格使用 references/report-template.md 的结构：结论与行动 / 分项明细 / 附录 / 数据说明。
   * 若命中演示环境指纹 → 顶部加水印，且**默认阻断写飞书**（可 --override-demo 显式覆盖）。
   * 写飞书前对订单 PII（buyerEmail/buyerName）脱敏并标注「已脱敏」。
   * 截断披露、口径降级、无数据、需人工核查项一律显式输出（禁止静默省略）。
@@ -180,11 +180,11 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     # 利润步骤缺失降级横幅（顶部）：最小集运行（如仅订单下钻）时不阻断，但必须显式披露
     if (bundle.get("data") or {}).get("store_profit") is None:
         L.append("> ⚠️ **利润步骤缺失**：店铺级利润（get_profit_report_by_shop）未取到，"
-                 "L1 利润类指标（GMV/毛利/毛利率）不可用 — ⚠️ 需人工核查；订单/广告等其余步骤照常。")
+                 "结论速览的利润类指标（GMV/毛利/毛利率）不可用 — ⚠️ 需人工核查；订单/广告等其余步骤照常。")
         L.append("")
 
-    # ---------- L1 结论层 ----------
-    L.append("## 【L1 结论层】管理层看这里")
+    # ---------- 今日结论与行动 ----------
+    L.append("## 今日结论与行动")
     L.append("")
 
     # 今日行动建议：把数据缺口翻译成动作（商家视角：缺什么给什么，2~4 条）
@@ -233,8 +233,8 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
     L.append(f"> 一句话结论：{_one_line_conclusion(l1, reds, gaps, cur)}")
     L.append("")
 
-    # ---------- L2 明细层 ----------
-    L.append("## 【L2 明细层】运营看这里")
+    # ---------- 分项明细（七步检查） ----------
+    L.append("## 分项明细（七步检查）")
     L.append("")
     steps = analysis.get("steps") or {}
 
@@ -318,8 +318,8 @@ def render_markdown(analysis: Dict[str, Any], bundle: Optional[Dict[str, Any]] =
         L.append(f"- {m}")
     L.append("")
 
-    # ---------- L3 附录 ----------
-    L.append("## 【L3 附录】")
+    # ---------- 附录 ----------
+    L.append("## 附录（样本与数据说明）")
     L.append("")
     L.append("### 订单下钻样本（已脱敏）")
     L.append("")

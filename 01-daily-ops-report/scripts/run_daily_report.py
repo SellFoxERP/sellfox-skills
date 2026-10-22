@@ -58,7 +58,7 @@ def precheck() -> List[str]:
         rid = str((reports.get("daily_ops") or {}).get("id") or "").strip()
         if not rid:
             warnings.append(
-                "reports.yaml 的 daily_ops.report_id 为空：L2 明细层将口径降级。"
+                "reports.yaml 的 daily_ops.report_id 为空：分项明细将口径降级。"
                 "缺少自定义报表支持的指标将在报告中说明。"
             )
     except Exception as exc:  # noqa: BLE001

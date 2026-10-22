@@ -24,8 +24,8 @@
 | # | 工具 | 列表字段 | 分页 | 本技能用途 |
 |---|---|---|---|---|
 | 1 | `get_shop_page_list` | `data.rows` | 页码（硬上限 20） | 店铺清单（可缓存） |
-| 2 | `get_profit_report_by_shop` | **`data.reportList`** | 页码 | 店铺级利润 → L1 |
-| 3 | `get_custom_report_page_list` | `data.rows` | 页码 | 489 字段宽表 → L2 主力 |
+| 2 | `get_profit_report_by_shop` | **`data.reportList`** | 页码 | 店铺级利润 → 结论速览 |
+| 3 | `get_custom_report_page_list` | `data.rows` | 页码 | 489 字段宽表 → 分项明细主力 |
 | 4 | `get_order_page_list` | `data.rows` | 页码 | 订单异常下钻样本 |
 | 5 | `get_sp_campaign_list` | **`data.itemList`** + `data.nextToken` | **游标** | 广告活动状态 |
 | 6 | `get_multiplatform_sale_stats` | `data.rows` | 页码（`page_size<=1000`） | 跨平台销量 |
@@ -45,7 +45,7 @@
 
 ---
 
-## 二、L1 结论层字段
+## 二、结论速览字段
 
 来源均为 `get_profit_report_by_shop` 的 `reportList[]`：
 

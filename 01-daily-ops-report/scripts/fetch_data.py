@@ -255,7 +255,7 @@ def run(
         )
     shop_regions = sorted({str(r.get("region")) for r in bundle["data"]["shops"] if r.get("region")})
 
-    # 2) 店铺级利润（L1）
+    # 2) 店铺级利润（结论速览）
     env = _load(raw_dir, "profit_shop")
     if env is not None and not is_no_data(env.data):
         _scan(env.obj, "步骤 2 店铺级利润")
@@ -271,7 +271,7 @@ def run(
         bundle["data"]["store_profit"] = None
         degradations.append(
             "利润步骤缺失（out/raw/profit_shop.json 未落盘或无数据）："
-            "L1 利润类指标（GMV/毛利/毛利率）不可用，标「⚠️ 需人工核查」；订单/广告等其余步骤照常。"
+            "结论速览的利润类指标（GMV/毛利/毛利率）不可用，标「⚠️ 需人工核查」；订单/广告等其余步骤照常。"
         )
 
     # 站点过滤核验：请求了 marketplace 过滤时，与上游实际返回的站点对比，
@@ -315,7 +315,7 @@ def run(
     if not report_id:
         note = str(_cfg("degradation", "no_report_id_note", default="") or "")
         if not note or note.startswith((">", "|")):  # YAML 块标量被朴素解析时的兜底
-            note = "尚未取得适用报表，L2 口径降级；助手可自动发现关联报表，当前先展示已有数据。"
+            note = "尚未取得适用报表，明细层口径降级；助手可自动发现关联报表，当前先展示已有数据。"
         degradations.append(note)
         bundle["data"]["msku_report"] = None
     elif msku_envs:
@@ -328,7 +328,7 @@ def run(
         bundle["data"]["msku_report"] = {"rows": rows, "report_id": report_id, "batches": len(msku_envs)}
     else:
         bundle["data"]["msku_report"] = None
-        degradations.append("宽表落盘缺失（out/raw/msku_*.json）：L2 明细层降级。")
+        degradations.append("宽表落盘缺失（out/raw/msku_*.json）：分项明细降级。")
 
     # 5) 订单异常样本（PII：渲染前脱敏由 render 层负责）
     env = _load(raw_dir, "orders")
@@ -426,7 +426,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"⚠️ 口径降级：{d}")
     if bundle["data"].get("store_profit") is None:
         # 最小集运行（如仅订单下钻）不再硬退：利润缺失走降级（横幅 + 需人工核查），其余步骤照常
-        print("⚠️ 利润步骤缺失：L1 利润类指标不可用（已降级，不阻断）。")
+        print("⚠️ 利润步骤缺失：结论速览的利润类指标不可用（已降级，不阻断）。")
     return 0
 
 

@@ -306,7 +306,7 @@ class MerchantViewRenderTest(unittest.TestCase):
                               "CAD": {"gmv": 3890.4, "gross_profit": 895.7}},
               "currency": "多币种（分组展示）"}
         a = minimal_analysis(l1=l1, redlines=[],
-                             degradations=["缺少自定义报表 report_id：L2 明细层口径降级。"],
+                             degradations=["缺少自定义报表 report_id：分项明细口径降级。"],
                              no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
         md = render.render_markdown(a, {"data": {"msku_report": None}})
         self.assertIn("一句话结论：红线 0 条；销量 1,042 件；毛利按币种分列（USD 1,210.40 等，2 个币种未折算）", md)
@@ -316,7 +316,7 @@ class MerchantViewRenderTest(unittest.TestCase):
         l1 = {"units": 1042.0, "by_currency": {c: {"gmv": 1.0, "gross_profit": 1.0}
                                                for c in ["USD", "CAD", "GBP", "EUR", "JPY", "AUD", "MXN"]}}
         a = minimal_analysis(l1=l1,
-                             degradations=["缺少自定义报表 report_id：L2 明细层口径降级。"],
+                             degradations=["缺少自定义报表 report_id：分项明细口径降级。"],
                              no_data_sources=["get_custom_report_page_list（自定义报表宽表）"])
         md = render.render_markdown(a, {"data": {"msku_report": None}})
         self.assertIn("### ✅ 今日行动建议", md)

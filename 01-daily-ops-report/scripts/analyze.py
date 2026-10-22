@@ -2,7 +2,7 @@
 """每日经营日报 —— 分析层（analyze.py）。
 
 输入：fetch_data.py 产出的 bundle.json
-输出：analysis.json（L1 结论 / L2 七步 / 红线 / 归因线索 / 无数据与需人工核查项）
+输出：analysis.json（结论速览 / 七步明细 / 红线 / 归因线索 / 无数据与需人工核查项）
 
 原则：
   * 阈值一律读 ``thresholds.yaml``，**不硬编码**。
@@ -192,7 +192,7 @@ def analyze(bundle: Dict[str, Any]) -> Dict[str, Any]:
 
     anomalies: List[Dict[str, Any]] = []
 
-    # ---------- L1 结论层（管理层）----------
+    # ---------- 结论速览 ----------
     gmv = _sum(store_rows, "productSales")
     gross = _sum(store_rows, "grossProfit")
     units = _sum(store_rows, "salesNum")
